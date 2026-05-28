@@ -161,7 +161,10 @@ func ReadPackRules(ctx context.Context, opts PackRulesReadOptions) (PackRulesRea
 	if pack == "" {
 		return PackRulesReadResult{}, fmt.Errorf("pack name is required")
 	}
-	detail, ok := catalog.Details[PackKey(source, pack)]
+	detail, ok, err := resolvePackDetail(catalog, source, pack)
+	if err != nil {
+		return PackRulesReadResult{}, err
+	}
 	if !ok {
 		return PackRulesReadResult{}, fmt.Errorf("pack %q/%q not found in pack cache", source, pack)
 	}
@@ -324,7 +327,10 @@ func selectPackDetails(catalog PackCatalog, packs []PackSelector, source, name, 
 			if seen[key] {
 				continue
 			}
-			detail, ok := catalog.Details[key]
+			detail, ok, err := resolvePackDetail(catalog, source, pack)
+			if err != nil {
+				return nil, err
+			}
 			if !ok {
 				return nil, fmt.Errorf("pack %q/%q not found in pack cache", source, pack)
 			}

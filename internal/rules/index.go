@@ -122,9 +122,49 @@ func (index *PackIndex) ResolvePackRef(source, pack string) (PackRef, error) {
 	}
 	ref, ok := index.Refs[PackKey(source, pack)]
 	if !ok {
+		ref, ok, err := index.resolveGeoSiteSelectorRef(source, pack)
+		if err != nil {
+			return PackRef{}, err
+		}
+		if ok {
+			return ref, nil
+		}
 		return PackRef{}, fmt.Errorf("pack %q/%q not found in pack cache", source, pack)
 	}
 	return ref, nil
+}
+
+func (index *PackIndex) resolveGeoSiteSelectorRef(source, selector string) (PackRef, bool, error) {
+	base, ok := splitGeoSiteSelector(selector)
+	if !ok {
+		return PackRef{}, false, nil
+	}
+	ref, ok := index.Refs[PackKey(source, base)]
+	if !ok {
+		return PackRef{}, false, nil
+	}
+	if !packRefIsGeoSite(ref) {
+		return PackRef{}, true, fmt.Errorf("pack %q/%q is a GEOSITE selector, but base pack %q is type %q", source, selector, base, ref.Type)
+	}
+	ref.Pack = selector
+	ref.Name = selector
+	ref.Type = PackTypeGeoSite
+	ref.RenderStrategy = RenderStrategyGeoSite
+	ref.RenderRuleTemplate = fmt.Sprintf("GEOSITE,%s,<target>", selector)
+	return ref, true, nil
+}
+
+func splitGeoSiteSelector(selector string) (string, bool) {
+	selector = strings.TrimSpace(selector)
+	base, attr, ok := strings.Cut(selector, "@")
+	if !ok || strings.TrimSpace(base) == "" || strings.TrimSpace(attr) == "" {
+		return "", false
+	}
+	return strings.TrimSpace(base), true
+}
+
+func packRefIsGeoSite(ref PackRef) bool {
+	return ref.Type == PackTypeGeoSite || ref.RenderStrategy == RenderStrategyGeoSite
 }
 
 func (index *PackIndex) addPackRef(ref PackRef) {
