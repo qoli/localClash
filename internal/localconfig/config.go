@@ -76,7 +76,7 @@ func (pack *Pack) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	if raw.ID != nil {
-		return fmt.Errorf("packs[].id is no longer supported; use packs[].source and packs[].pack")
+		return fmt.Errorf("packs[].id is no longer supported; use packs[].source and packs[].pack from packs_list. Composite renderer/provider names are not MCP pack selectors")
 	}
 	*pack = Pack{Source: raw.Source, Pack: raw.Pack, Type: raw.Type, Target: raw.Target, Reason: raw.Reason}
 	return nil

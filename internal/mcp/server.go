@@ -1199,8 +1199,8 @@ func (s *Server) callConfigStatus(args json.RawMessage) (toolResult, error) {
 		"usage_guidance": []string{
 			"config_status is the preferred tool for checking durable localClash routing intent and generated overlay state.",
 			"By default config_status is lightweight and does not resolve subscription-node matches or inspect generated overlay details; pass detail=true when a full audit is needed.",
-			"generated_summary.rules_sample is a truncated sample, not the complete rule list. Do not infer absent rules from the sample.",
-			"Use intent.packs and overlay.rules to verify localClash-managed pack routing. Use nl_file only when explicit line-level file evidence is needed.",
+			"generated_summary omits raw Mihomo rule/provider identifiers; use nl_file only when explicit generated config line evidence is needed.",
+			"Use intent.packs and overlay pack metadata to verify localClash-managed pack routing.",
 			"runtime_status only reports whether Mihomo is running; it does not prove that a pending config change is loaded by a running process.",
 		},
 	}
@@ -1578,9 +1578,6 @@ func (s *Server) callPacksGet(args json.RawMessage) (toolResult, error) {
 	if err := decodeToolInput(args, &in); err != nil {
 		return toolResult{}, err
 	}
-	if in.ID != nil {
-		return toolResult{}, fmt.Errorf("pack id is no longer supported; use source and pack")
-	}
 	if s.state != nil {
 		if in.Cache == "" {
 			in.Cache = s.state.Paths.RulesCacheDir
@@ -1588,6 +1585,9 @@ func (s *Server) callPacksGet(args json.RawMessage) (toolResult, error) {
 		if in.RuntimeDir == "" {
 			in.RuntimeDir = s.state.Paths.MihomoRuntimeDir
 		}
+	}
+	if in.ID != nil {
+		return toolResult{}, legacyPackIDError("pack id", *in.ID, in.Cache)
 	}
 	result, err := rules.GetPack(rules.PackGetOptions{CacheDir: in.Cache, RuntimeDir: in.RuntimeDir, Source: in.Source, Pack: in.Pack})
 	if err != nil {
@@ -1611,10 +1611,10 @@ func (s *Server) callPackRulesRead(ctx context.Context, args json.RawMessage) (t
 	if err := decodeToolInput(args, &in); err != nil {
 		return toolResult{}, err
 	}
-	if in.ID != nil {
-		return toolResult{}, fmt.Errorf("pack id is no longer supported; use source and pack")
-	}
 	s.applyPackRulesDefaults(&in.Cache, &in.Sources, &in.ProviderCache)
+	if in.ID != nil {
+		return toolResult{}, legacyPackIDError("pack id", *in.ID, in.Cache)
+	}
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
 	result, err := rules.ReadPackRules(ctx, rules.PackRulesReadOptions{
@@ -1649,10 +1649,10 @@ func (s *Server) callPackRulesPrefetch(ctx context.Context, args json.RawMessage
 	if err := decodeToolInput(args, &in); err != nil {
 		return toolResult{}, err
 	}
-	if len(in.IDs) > 0 {
-		return toolResult{}, fmt.Errorf("pack ids are no longer supported; use packs[].source and packs[].pack")
-	}
 	s.applyPackRulesDefaults(&in.Cache, &in.Sources, &in.ProviderCache)
+	if len(in.IDs) > 0 {
+		return toolResult{}, legacyPackIDsError(in.IDs, in.Cache)
+	}
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
 	result, err := rules.PrefetchPackRules(ctx, rules.PackRulesPrefetchOptions{
@@ -1703,6 +1703,54 @@ func (s *Server) callPackRulesQuery(ctx context.Context, args json.RawMessage) (
 		return toolResult{}, err
 	}
 	return jsonToolResult(result)
+}
+
+func legacyPackIDError(label, id, cacheDir string) error {
+	id = strings.TrimSpace(id)
+	if ref, ok := legacyPackIDSuggestion(id, cacheDir); ok {
+		return fmt.Errorf("%s is no longer supported. Use %s. Composite renderer/provider names are not MCP pack selectors.", label, packRefExample(ref.Source, ref.Pack))
+	}
+	return fmt.Errorf("%s is no longer supported. Use source and pack fields from packs_list, for example %s. Composite renderer/provider names are not MCP pack selectors.", label, packRefExample("syncnext", "SyncnextUnbreak"))
+}
+
+func legacyPackIDsError(ids []string, cacheDir string) error {
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if ref, ok := legacyPackIDSuggestion(id, cacheDir); ok {
+			return fmt.Errorf("pack ids are no longer supported. Use packs: [%s]. Composite renderer/provider names are not MCP pack selectors.", packRefExample(ref.Source, ref.Pack))
+		}
+		break
+	}
+	return fmt.Errorf("pack ids are no longer supported. Use packs[].source and packs[].pack from packs_list, for example packs: [%s]. Composite renderer/provider names are not MCP pack selectors.", packRefExample("syncnext", "SyncnextUnbreak"))
+}
+
+func legacyPackIDSuggestion(id, cacheDir string) (rules.PackRefArgs, bool) {
+	if id == "" {
+		return rules.PackRefArgs{}, false
+	}
+	catalog, err := rules.LoadPackCatalog(cacheDir)
+	if err != nil {
+		return rules.PackRefArgs{}, false
+	}
+	for _, detail := range catalog.Details {
+		for _, provider := range detail.Providers {
+			if provider.Name == id {
+				return rules.PackRefArgs{Source: detail.Source, Pack: detail.Pack}, true
+			}
+		}
+	}
+	return rules.PackRefArgs{}, false
+}
+
+func packRefExample(source, pack string) string {
+	data, err := json.Marshal(rules.PackRefArgs{Source: source, Pack: pack})
+	if err != nil {
+		return `{"source":"syncnext","pack":"SyncnextUnbreak"}`
+	}
+	return string(data)
 }
 
 func (s *Server) applyPackRulesDefaults(cache, sources, providerCache *string) {

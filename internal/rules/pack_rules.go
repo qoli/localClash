@@ -80,14 +80,15 @@ type PackRulesQueryResult struct {
 }
 
 type PackRulePackSummary struct {
-	Source             string `json:"source"`
-	Pack               string `json:"pack"`
-	Name               string `json:"name"`
-	Type               string `json:"type"`
-	RenderStrategy     string `json:"render_strategy"`
-	RenderRuleTemplate string `json:"render_rule_template"`
-	Target             string `json:"target,omitempty"`
-	Renderable         bool   `json:"renderable"`
+	Source             string       `json:"source"`
+	Pack               string       `json:"pack"`
+	Name               string       `json:"name"`
+	Type               string       `json:"type"`
+	RenderStrategy     string       `json:"render_strategy"`
+	RenderRuleTemplate string       `json:"-"`
+	Target             string       `json:"target,omitempty"`
+	Renderable         bool         `json:"renderable"`
+	ToolArgs           PackToolArgs `json:"tool_args"`
 }
 
 type PackRulesSummary struct {
@@ -129,16 +130,17 @@ type PackRuleComponent struct {
 }
 
 type PackRuleMatch struct {
-	Source         string `json:"source"`
-	Pack           string `json:"pack"`
-	PackName       string `json:"pack_name"`
-	Type           string `json:"type"`
-	RenderStrategy string `json:"render_strategy"`
-	Component      string `json:"component"`
-	Rule           string `json:"rule"`
-	Kind           string `json:"kind"`
-	Value          string `json:"value"`
-	SourceURL      string `json:"source_url"`
+	Source         string       `json:"source"`
+	Pack           string       `json:"pack"`
+	PackName       string       `json:"pack_name"`
+	Type           string       `json:"type"`
+	RenderStrategy string       `json:"render_strategy"`
+	Component      string       `json:"component"`
+	Rule           string       `json:"rule"`
+	Kind           string       `json:"kind"`
+	Value          string       `json:"value"`
+	SourceURL      string       `json:"source_url"`
+	ToolArgs       PackToolArgs `json:"tool_args"`
 }
 
 type parsedRule struct {
@@ -278,6 +280,7 @@ func QueryPackRules(ctx context.Context, opts PackRulesQueryOptions) (PackRulesQ
 					Kind:           rule.Kind,
 					Value:          rule.Value,
 					SourceURL:      provider.URL,
+					ToolArgs:       packToolArgs(detail.Source, detail.Pack, detail.Target),
 				})
 			}
 		}
@@ -640,6 +643,7 @@ func packRuleSummary(detail PackDetail) PackRulePackSummary {
 		RenderRuleTemplate: detail.RenderRuleTemplate,
 		Target:             detail.Target,
 		Renderable:         detail.Renderable,
+		ToolArgs:           packToolArgs(detail.Source, detail.Pack, detail.Target),
 	}
 }
 

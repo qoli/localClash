@@ -39,6 +39,7 @@ func TestInspectBaseReturnsBaseSummary(t *testing.T) {
 		t.Fatalf("rules sample = %+v, want base applications rule only", result.Summary.RulesSample)
 	}
 	assertInspectNoSensitiveLeak(t, result)
+	assertInspectJSONExcludes(t, result, "rules_sample", "RULE-SET,", "blackmatrix7_OpenAI", `"name":"applications"`)
 }
 
 func TestInspectBaseMissingConfigReturnsClearError(t *testing.T) {
@@ -77,6 +78,7 @@ func TestInspectOverlayWithMetadataReturnsOverlay(t *testing.T) {
 		t.Fatalf("rules = %+v, want AI target", result.Rules)
 	}
 	assertInspectNoSensitiveLeak(t, result)
+	assertInspectJSONExcludes(t, result, "blackmatrix7_OpenAI", `"provider":`, `"name":`)
 }
 
 func TestInspectOverlayWithoutMetadataDoesNotGuess(t *testing.T) {
@@ -225,6 +227,20 @@ proxy_groups:
 	}
 	if result.ProxyGroups[0].Nodes[0] != "Missing Node" {
 		t.Fatalf("nodes = %+v, want missing raw node preserved", result.ProxyGroups[0].Nodes)
+	}
+}
+
+func assertInspectJSONExcludes(t *testing.T, value any, forbidden ...string) {
+	t.Helper()
+	data, err := json.Marshal(value)
+	if err != nil {
+		t.Fatalf("inspect JSON is not serializable: %v", err)
+	}
+	text := string(data)
+	for _, needle := range forbidden {
+		if strings.Contains(text, needle) {
+			t.Fatalf("inspect JSON contains %q: %s", needle, text)
+		}
 	}
 }
 

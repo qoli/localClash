@@ -466,6 +466,7 @@ packs:
 	if len(exits) != 3 || exits[0] != "DIRECT-EXIT" || exits[1] != "HK" || exits[2] != "⚡ 自动选择" {
 		t.Fatalf("policy exits = %+v, want layered exits", exits)
 	}
+	assertNoStructuredCompositeStrings(t, result.StructuredContent, "RULE-SET,", "GEOSITE,", "rendered_backend", "rule_template")
 	if _, err := json.Marshal(result.StructuredContent); err != nil {
 		t.Fatalf("routing_explain structured content is not serializable: %v", err)
 	}
@@ -1549,7 +1550,8 @@ func TestToolsCallConfigPatchCreateRejectsLegacyPackID(t *testing.T) {
 	if resp.Error == nil {
 		t.Fatal("expected config_patch_create JSON-RPC error")
 	}
-	if !strings.Contains(resp.Error.Message, "packs[].id is no longer supported; use packs[].source and packs[].pack") {
+	if !strings.Contains(resp.Error.Message, "packs[].id is no longer supported; use packs[].source and packs[].pack from packs_list") ||
+		!strings.Contains(resp.Error.Message, "Composite renderer/provider names are not MCP pack selectors") {
 		t.Fatalf("error = %+v, want legacy pack id rejection", resp.Error)
 	}
 }
@@ -1597,9 +1599,17 @@ func TestToolsCallPacksListReturnsSerializableResult(t *testing.T) {
 	}
 	packs := content["packs"].([]any)
 	first := packs[0].(map[string]any)
+	if first["source"] != "blackmatrix7" || first["pack"] != "OpenAI" {
+		t.Fatalf("pack identity = %+v, want source/pack", first)
+	}
+	toolArgs := first["tool_args"].(map[string]any)
+	if _, ok := toolArgs["packs_get"].(map[string]any); !ok {
+		t.Fatalf("tool_args = %+v, want packs_get args", toolArgs)
+	}
 	if !strings.Contains(first["target_meaning"].(string), "not active configuration") {
 		t.Fatalf("pack = %+v, want target meaning", first)
 	}
+	assertNoStructuredCompositeStrings(t, result.StructuredContent, "blackmatrix7_OpenAI", "RULE-SET,")
 	if _, err := json.Marshal(result.StructuredContent); err != nil {
 		t.Fatalf("packs_list structured content is not serializable: %v", err)
 	}
@@ -1682,6 +1692,9 @@ func TestToolsCallPacksGetReturnsSerializableResult(t *testing.T) {
 	}
 	providers := pack["providers"].([]any)
 	provider := providers[0].(map[string]any)
+	if _, ok := provider["name"]; ok {
+		t.Fatalf("provider contains renderer name: %+v", provider)
+	}
 	if provider["path"] != ".runtime/mihomo/rule-packs/blackmatrix7/OpenAI.yaml" {
 		t.Fatalf("provider path = %v", provider["path"])
 	}
@@ -1690,25 +1703,32 @@ func TestToolsCallPacksGetReturnsSerializableResult(t *testing.T) {
 			t.Fatalf("provider contains %s: %+v", key, provider)
 		}
 	}
+	toolArgs := pack["tool_args"].(map[string]any)
+	if toolArgs["packs_get"].(map[string]any)["pack"] != "OpenAI" {
+		t.Fatalf("tool_args = %+v, want OpenAI pack args", toolArgs)
+	}
+	assertNoStructuredCompositeStrings(t, result.StructuredContent, "blackmatrix7_OpenAI", "RULE-SET,")
 	if _, err := json.Marshal(result.StructuredContent); err != nil {
 		t.Fatalf("packs_get structured content is not serializable: %v", err)
 	}
 }
 
 func TestToolsCallPacksGetRejectsLegacyID(t *testing.T) {
+	setupMCPPackCache(t)
 	resp := callHandle(t, map[string]any{
 		"jsonrpc": "2.0",
 		"id":      1,
 		"method":  "tools/call",
 		"params": map[string]any{
 			"name":      "packs_get",
-			"arguments": map[string]any{"id": "v2fly_dlc_geolocation__cn"},
+			"arguments": map[string]any{"id": "blackmatrix7_OpenAI"},
 		},
 	})
 	if resp.Error == nil {
 		t.Fatal("expected packs_get JSON-RPC error")
 	}
-	if !strings.Contains(resp.Error.Message, "pack id is no longer supported; use source and pack") {
+	if !strings.Contains(resp.Error.Message, `{"source":"blackmatrix7","pack":"OpenAI"}`) ||
+		!strings.Contains(resp.Error.Message, "Composite renderer/provider names are not MCP pack selectors") {
 		t.Fatalf("error = %+v, want legacy pack id rejection", resp.Error)
 	}
 }
@@ -1744,6 +1764,9 @@ func TestToolsCallPacksGetReadsCurrentCatalogWhenServerStateIsStale(t *testing.T
 	}
 	providers := pack["providers"].([]any)
 	provider := providers[0].(map[string]any)
+	if _, ok := provider["name"]; ok {
+		t.Fatalf("provider contains renderer name: %+v", provider)
+	}
 	if provider["path"] != ".runtime/mihomo/rule-packs/blackmatrix7/OpenAI.yaml" {
 		t.Fatalf("provider = %+v, want runtime-local path", provider)
 	}
@@ -1784,6 +1807,7 @@ func TestToolsCallPackRulesReadReturnsRuleSamples(t *testing.T) {
 	if component["available"] != true || component["truncated"] != true {
 		t.Fatalf("component = %+v, want available truncated sample", component)
 	}
+	assertNoStructuredCompositeStrings(t, result.StructuredContent, "sukkaw_ai", "RULE-SET,")
 	if _, err := json.Marshal(result.StructuredContent); err != nil {
 		t.Fatalf("pack_rules_read structured content is not serializable: %v", err)
 	}
@@ -1830,25 +1854,31 @@ func TestToolsCallPackRulesPrefetchThenQuery(t *testing.T) {
 	if len(matches) != 1 || matches[0].(map[string]any)["source"] != "sukkaw" || matches[0].(map[string]any)["pack"] != "ai" {
 		t.Fatalf("matches = %+v, want sukkaw_ai hit", matches)
 	}
+	matchArgs := matches[0].(map[string]any)["tool_args"].(map[string]any)
+	if matchArgs["pack_rules_read"].(map[string]any)["pack"] != "ai" {
+		t.Fatalf("match tool_args = %+v, want ai pack args", matchArgs)
+	}
 	if content["cache_complete"] != true {
 		t.Fatalf("content = %+v, want complete local cache", content)
 	}
 }
 
 func TestToolsCallPackRulesPrefetchRejectsLegacyIDs(t *testing.T) {
+	setupMCPPackCache(t)
 	resp := callHandle(t, map[string]any{
 		"jsonrpc": "2.0",
 		"id":      1,
 		"method":  "tools/call",
 		"params": map[string]any{
 			"name":      "pack_rules_prefetch",
-			"arguments": map[string]any{"ids": []string{"v2fly_dlc_geolocation__cn"}},
+			"arguments": map[string]any{"ids": []string{"blackmatrix7_OpenAI"}},
 		},
 	})
 	if resp.Error == nil {
 		t.Fatal("expected pack_rules_prefetch JSON-RPC error")
 	}
-	if !strings.Contains(resp.Error.Message, "pack ids are no longer supported; use packs[].source and packs[].pack") {
+	if !strings.Contains(resp.Error.Message, `{"source":"blackmatrix7","pack":"OpenAI"}`) ||
+		!strings.Contains(resp.Error.Message, "Composite renderer/provider names are not MCP pack selectors") {
 		t.Fatalf("error = %+v, want legacy pack ids rejection", resp.Error)
 	}
 }
@@ -1881,11 +1911,26 @@ func TestToolsCallConfigStatusReturnsGeneratedSummary(t *testing.T) {
 		t.Fatalf("summary = %+v, want one proxy", summary)
 	}
 	guidance := content["usage_guidance"].([]any)
-	if len(guidance) == 0 || !guidanceContains(guidance, "truncated sample") {
-		t.Fatalf("usage_guidance = %+v, want truncated sample warning", guidance)
+	if len(guidance) == 0 || !guidanceContains(guidance, "omits raw Mihomo rule/provider identifiers") {
+		t.Fatalf("usage_guidance = %+v, want raw identifier omission warning", guidance)
 	}
+	assertNoStructuredCompositeStrings(t, result.StructuredContent, "blackmatrix7_OpenAI", "RULE-SET,")
 	if _, err := json.Marshal(result.StructuredContent); err != nil {
 		t.Fatalf("config_status structured content is not serializable: %v", err)
+	}
+}
+
+func assertNoStructuredCompositeStrings(t *testing.T, value any, forbidden ...string) {
+	t.Helper()
+	data, err := json.Marshal(value)
+	if err != nil {
+		t.Fatalf("structured content is not serializable: %v", err)
+	}
+	text := string(data)
+	for _, needle := range forbidden {
+		if strings.Contains(text, needle) {
+			t.Fatalf("structured content contains composite %q: %s", needle, text)
+		}
 	}
 }
 

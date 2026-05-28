@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -35,6 +36,13 @@ func TestListPacksReturnsSummaries(t *testing.T) {
 	if result.Packs[0].TargetMeaning == "" {
 		t.Fatalf("pack summary = %+v, want target meaning", result.Packs[0])
 	}
+	if result.Packs[0].ToolArgs.PacksGet.Source != "blackmatrix7" || result.Packs[0].ToolArgs.PacksGet.Pack != "GitHub" {
+		t.Fatalf("tool args = %+v, want copyable source/pack args", result.Packs[0].ToolArgs)
+	}
+	if result.Packs[0].ToolArgs.ConfigPatchCreatePack == nil || result.Packs[0].ToolArgs.ConfigPatchCreatePack.Target != "⚡ 自动选择" {
+		t.Fatalf("tool args = %+v, want config_patch_create pack args", result.Packs[0].ToolArgs)
+	}
+	assertPublicPackJSONExcludes(t, result, "render_rule_template", "RULE-SET,", "blackmatrix7_GitHub")
 }
 
 func TestListPacksFiltersNameCaseInsensitive(t *testing.T) {
@@ -108,6 +116,10 @@ func TestGetPackReturnsDetail(t *testing.T) {
 	if pack.Backend.Type != PackTypeRuleProvider || pack.Backend.QuerySource != QuerySourceProviderCache {
 		t.Fatalf("backend = %+v, want provider cache backend", pack.Backend)
 	}
+	if pack.ToolArgs.PackRulesRead.Source != "blackmatrix7" || pack.ToolArgs.PackRulesRead.Pack != "OpenAI" {
+		t.Fatalf("tool args = %+v, want copyable source/pack args", pack.ToolArgs)
+	}
+	assertPublicPackJSONExcludes(t, result, "render_rule_template", "RULE-SET,", "blackmatrix7_OpenAI", `"rules":`)
 }
 
 func TestGetPackReturnsGeoSiteBackend(t *testing.T) {
@@ -313,6 +325,23 @@ func TestResolvePackRefKeepsBangCNSeparateFromCN(t *testing.T) {
 		}
 		if ref.Pack != pack {
 			t.Fatalf("ResolvePackRef(%q) = %+v, want exact pack", pack, ref)
+		}
+	}
+}
+
+func assertPublicPackJSONExcludes(t *testing.T, value any, forbidden ...string) {
+	t.Helper()
+	data, err := json.Marshal(value)
+	if err != nil {
+		t.Fatalf("pack JSON is not serializable: %v", err)
+	}
+	text := string(data)
+	if !strings.Contains(text, `"tool_args"`) {
+		t.Fatalf("pack JSON = %s, want tool_args", text)
+	}
+	for _, needle := range forbidden {
+		if strings.Contains(text, needle) {
+			t.Fatalf("pack JSON contains %q: %s", needle, text)
 		}
 	}
 }

@@ -232,11 +232,12 @@ on subscription proxy names.
 MCP packs catalog tools:
 
 - `packs_list`: list and filter adapter-generated pack cache entries from
-  `.runtime/rules/packs/*.yaml`.
+  `.runtime/rules/packs/*.yaml`. Each result includes copyable `tool_args`;
+  pack tools use only `{source, pack}` selectors.
 - `packs_get`: inspect one pack's target, provider summaries, and rule summary
   before enabling it in a selection file.
-- `pack_rules_read`: read provider rules for a known pack id, downloading only
-  that pack's missing provider-cache entries.
+- `pack_rules_read`: read provider rules for one `{source, pack}` selector,
+  downloading only that pack's missing provider-cache entries.
 - `pack_rules_prefetch`: download provider rules for selected candidate packs
   into `.runtime/rules/provider-cache/`.
 - `pack_rules_query`: search locally cached provider rules for a domain or
@@ -248,10 +249,14 @@ rendering. Agents should not normally need to call a separate rules adapter
 tool. Provider rule content is not downloaded for every pack at startup. For a
 question such as "does huggingface.co have a pack?", use `pack_rules_query`;
 if it reports incomplete cache coverage, use `packs_list` to find semantic
-candidates such as `ai`, call `pack_rules_prefetch`, then query again. For a
-question such as "what does sukkaw_ai cover?", call `pack_rules_read` directly.
-Ronnie's app maintenance packs are exposed as `syncnext_SyncnextProxy` and
-`syncnext_SyncnextUnbreak`.
+candidates such as `{"source":"sukkaw","pack":"ai"}`, call
+`pack_rules_prefetch` with `packs:[{"source":"sukkaw","pack":"ai"}]`, then
+query again. For a question such as "what does the sukkaw ai pack cover?", call
+`pack_rules_read` with `{"source":"sukkaw","pack":"ai"}` directly. Ronnie's app
+maintenance packs are exposed as `{"source":"syncnext","pack":"SyncnextProxy"}`
+and `{"source":"syncnext","pack":"SyncnextUnbreak"}`. Composite renderer or
+provider names such as `syncnext_SyncnextProxy` are generated-config internals,
+not MCP pack selectors.
 
 MCP config model:
 
@@ -337,7 +342,9 @@ MCP patch-building tools:
   `.runtime/patches/<patch-id>/`. MCP `arguments` must be a JSON object, not a
   JSON-encoded string. If a pack, custom rule, or external provider targets a new
   proxy group or policy group, include it in `overlay.proxy_groups` or
-  `overlay.policy_groups` in the same call.
+  `overlay.policy_groups` in the same call. Pack overlay entries use
+  `{"source":"blackmatrix7","pack":"OpenAI","target":"AI"}`; `id` is not a
+  supported pack selector.
 - `config_patch_apply`: applies a reviewed patch by writing durable
   `localclash.json`, deriving `localclash-packs.gob`, and regenerating
   `generated/mihomo.yaml`.

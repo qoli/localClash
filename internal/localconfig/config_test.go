@@ -73,7 +73,8 @@ func TestResolveNameRegexUsesSourceArtifactsAndMergeNames(t *testing.T) {
 func TestLoadRejectsLegacyPackID(t *testing.T) {
 	var config Config
 	err := json.Unmarshal([]byte(`{"version":3,"packs":[{"id":"v2fly_dlc_geolocation__cn","target":"DIRECT"}]}`), &config)
-	if err == nil || !strings.Contains(err.Error(), "packs[].id is no longer supported; use packs[].source and packs[].pack") {
+	if err == nil || !strings.Contains(err.Error(), "packs[].id is no longer supported; use packs[].source and packs[].pack from packs_list") ||
+		!strings.Contains(err.Error(), "Composite renderer/provider names are not MCP pack selectors") {
 		t.Fatalf("error = %v, want legacy pack id rejection", err)
 	}
 }

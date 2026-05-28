@@ -43,7 +43,7 @@ type BaseSummary struct {
 	ProxyGroups        []ProxyGroupSummary   `json:"proxy_groups"`
 	RuleProviders      []RuleProviderSummary `json:"rule_providers"`
 	RulesCount         int                   `json:"rules_count"`
-	RulesSample        []string              `json:"rules_sample"`
+	RulesSample        []string              `json:"-"`
 }
 
 type ProxyGroupSummary struct {
@@ -53,7 +53,7 @@ type ProxyGroupSummary struct {
 }
 
 type RuleProviderSummary struct {
-	Name     string `json:"name"`
+	Name     string `json:"-"`
 	Behavior string `json:"behavior"`
 	Type     string `json:"type"`
 }

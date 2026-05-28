@@ -31,6 +31,28 @@ type PackRef struct {
 	RenderRuleTemplate string
 }
 
+type PackToolArgs struct {
+	PacksGet              PackRefArgs        `json:"packs_get"`
+	PackRulesRead         PackRefArgs        `json:"pack_rules_read"`
+	PackRulesPrefetch     PackPrefetchArgs   `json:"pack_rules_prefetch"`
+	ConfigPatchCreatePack *PackPatchPackArgs `json:"config_patch_create_pack,omitempty"`
+}
+
+type PackRefArgs struct {
+	Source string `json:"source"`
+	Pack   string `json:"pack"`
+}
+
+type PackPrefetchArgs struct {
+	Packs []PackRefArgs `json:"packs"`
+}
+
+type PackPatchPackArgs struct {
+	Source string `json:"source"`
+	Pack   string `json:"pack"`
+	Target string `json:"target"`
+}
+
 type PackListResult struct {
 	Total       int           `json:"total"`
 	Returned    int           `json:"returned"`
@@ -41,16 +63,17 @@ type PackListResult struct {
 }
 
 type PackSummary struct {
-	Source             string `json:"source"`
-	Pack               string `json:"pack"`
-	Name               string `json:"name"`
-	Type               string `json:"type"`
-	RenderStrategy     string `json:"render_strategy"`
-	RenderRuleTemplate string `json:"render_rule_template"`
-	Target             string `json:"target"`
-	TargetMeaning      string `json:"target_meaning,omitempty"`
-	ProviderCount      int    `json:"provider_count"`
-	RuleCount          int    `json:"rule_count"`
+	Source             string       `json:"source"`
+	Pack               string       `json:"pack"`
+	Name               string       `json:"name"`
+	Type               string       `json:"type"`
+	RenderStrategy     string       `json:"render_strategy"`
+	RenderRuleTemplate string       `json:"-"`
+	Target             string       `json:"target"`
+	TargetMeaning      string       `json:"target_meaning,omitempty"`
+	ProviderCount      int          `json:"provider_count"`
+	RuleCount          int          `json:"rule_count"`
+	ToolArgs           PackToolArgs `json:"tool_args"`
 }
 
 type PackGetResult struct {
@@ -69,20 +92,21 @@ type PackDetail struct {
 	Name               string            `json:"name"`
 	Type               string            `json:"type"`
 	RenderStrategy     string            `json:"render_strategy"`
-	RenderRuleTemplate string            `json:"render_rule_template"`
+	RenderRuleTemplate string            `json:"-"`
 	Backend            PackBackend       `json:"backend"`
 	Target             string            `json:"target"`
 	TargetMeaning      string            `json:"target_meaning,omitempty"`
 	Renderable         bool              `json:"renderable"`
 	Reason             string            `json:"reason,omitempty"`
 	Providers          []ProviderSummary `json:"providers"`
-	Rules              []string          `json:"rules"`
+	Rules              []string          `json:"-"`
 	ProviderCount      int               `json:"provider_count"`
 	RuleCount          int               `json:"rule_count"`
+	ToolArgs           PackToolArgs      `json:"tool_args"`
 }
 
 type ProviderSummary struct {
-	Name      string `json:"name"`
+	Name      string `json:"-"`
 	Component string `json:"component"`
 	Type      string `json:"type"`
 	Behavior  string `json:"behavior"`
@@ -176,6 +200,7 @@ func selectorPackDetail(detail PackDetail, selector string) PackDetail {
 	detail.Backend.Type = PackTypeGeoSite
 	detail.Backend.RenderStrategy = RenderStrategyGeoSite
 	detail.Backend.RenderRuleTemplate = fmt.Sprintf("GEOSITE,%s,<target>", selector)
+	detail.ToolArgs = packToolArgs(detail.Source, selector, detail.Target)
 	return detail
 }
 
@@ -200,7 +225,7 @@ func PackListGuidance() []string {
 
 func PackListNextActions() []string {
 	return []string{
-		"Use packs_get or pack_rules_read on candidate source/pack pairs before choosing packs.",
+		"Use the exact source/pack fields or tool_args from packs_list when calling packs_get, pack_rules_read, or pack_rules_prefetch.",
 		"To change routing, call config_status first, then config_patch_create with the full desired retained config plus new pack targets.",
 		"Apply only the exact patch_id returned by config_patch_create, then call config_status to verify.",
 	}
@@ -265,6 +290,7 @@ func packSummary(entry catalogEntry) PackSummary {
 		TargetMeaning:      "catalog default/recommended target; not active configuration",
 		ProviderCount:      len(entry.Pack.Components),
 		RuleCount:          len(entry.Pack.Components),
+		ToolArgs:           packToolArgs(entry.Cache.Source, entry.Pack.ID, entry.Pack.Target),
 	}
 }
 
@@ -326,7 +352,21 @@ func packDetail(entry catalogEntry) PackDetail {
 		Rules:              rules,
 		ProviderCount:      len(providers),
 		RuleCount:          len(rules),
+		ToolArgs:           packToolArgs(entry.Cache.Source, entry.Pack.ID, entry.Pack.Target),
 	}
+}
+
+func packToolArgs(source, pack, target string) PackToolArgs {
+	ref := PackRefArgs{Source: source, Pack: pack}
+	args := PackToolArgs{
+		PacksGet:          ref,
+		PackRulesRead:     ref,
+		PackRulesPrefetch: PackPrefetchArgs{Packs: []PackRefArgs{ref}},
+	}
+	if strings.TrimSpace(target) != "" {
+		args.ConfigPatchCreatePack = &PackPatchPackArgs{Source: source, Pack: pack, Target: target}
+	}
+	return args
 }
 
 func packBackend(source string, pack Pack, target string) PackBackend {

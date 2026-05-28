@@ -838,7 +838,8 @@ func TestRenderUnknownPackIDReturnsError(t *testing.T) {
 func TestOverlayPackIntentRejectsLegacyPackID(t *testing.T) {
 	var pack OverlayPackIntent
 	err := json.Unmarshal([]byte(`{"id":"v2fly_dlc_geolocation__cn","target":"DIRECT"}`), &pack)
-	if err == nil || !strings.Contains(err.Error(), "packs[].id is no longer supported; use packs[].source and packs[].pack") {
+	if err == nil || !strings.Contains(err.Error(), "packs[].id is no longer supported; use packs[].source and packs[].pack from packs_list") ||
+		!strings.Contains(err.Error(), "Composite renderer/provider names are not MCP pack selectors") {
 		t.Fatalf("error = %v, want legacy pack id rejection", err)
 	}
 }

@@ -43,14 +43,14 @@ type OverlayPolicyGroup struct {
 }
 
 type OverlayRuleProvider struct {
-	Name     string `yaml:"name" json:"name"`
+	Name     string `yaml:"name" json:"-"`
 	Behavior string `yaml:"behavior" json:"behavior"`
 	Type     string `yaml:"type" json:"type"`
 }
 
 type OverlayRule struct {
 	Type     string `yaml:"type" json:"type"`
-	Provider string `yaml:"provider" json:"provider"`
+	Provider string `yaml:"provider" json:"-"`
 	Value    string `yaml:"value,omitempty" json:"value,omitempty"`
 	Target   string `yaml:"target" json:"target"`
 }
