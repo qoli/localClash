@@ -62,6 +62,8 @@ func Run(opts Options) (Result, error) {
 	if !opts.DryRun {
 		if status := corerun.Status(corerun.StatusOptions{WorkDir: filepath.Join(ws.Path, ".runtime", "mihomo")}); status.Running {
 			return Result{}, fmt.Errorf("mihomo runtime is running (pid %d); stop it before reset", status.PID)
+		} else if status.ProcessAlive {
+			return Result{}, fmt.Errorf("mihomo runtime is running or pid file points to a live process (pid %d); stop it before reset", status.PID)
 		}
 	}
 	targets, err := buildPlanForWorkspace(opts, ws)
