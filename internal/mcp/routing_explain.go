@@ -68,7 +68,8 @@ type routingExplainRoute struct {
 }
 
 type routingExplainPack struct {
-	ID             string `json:"id"`
+	Source         string `json:"source,omitempty"`
+	Pack           string `json:"pack"`
 	Name           string `json:"name,omitempty"`
 	Type           string `json:"type,omitempty"`
 	RenderStrategy string `json:"render_strategy,omitempty"`
@@ -108,7 +109,8 @@ type routingExplainExit struct {
 }
 
 type routingExplainRuleMatch struct {
-	PackID         string `json:"pack_id"`
+	Source         string `json:"source"`
+	Pack           string `json:"pack"`
 	PackName       string `json:"pack_name,omitempty"`
 	Active         bool   `json:"active"`
 	ActiveTarget   string `json:"active_target,omitempty"`
@@ -251,7 +253,7 @@ func buildRoutingIndex(config localconfig.Config, resolved localconfig.Resolved,
 		ResolvedProxy: map[string]localconfig.ProxyGroupResult{},
 	}
 	for _, pack := range config.Packs {
-		index.Packs[pack.ID] = pack
+		index.Packs[rules.PackKey(pack.Source, pack.Pack)] = pack
 	}
 	for id, group := range config.PolicyGroups {
 		index.PolicyGroups[id] = group
@@ -285,10 +287,11 @@ func queryRoutingMatches(query string, index routingIndex) []routingExplainMatch
 		}
 	}
 	for _, pack := range index.Config.Packs {
-		detail := index.PackDetails[pack.ID]
-		if score := matchScore(query, pack.ID, pack.Target, pack.Reason, detail.Name, detail.Source); score > 0 {
-			route := "pack:" + pack.ID + " -> " + pack.Target
-			matches = append(matches, routingExplainMatch{Kind: "pack", ID: pack.ID, Target: pack.Target, Reason: pack.Reason, Score: score, Route: &route})
+		key := rules.PackKey(pack.Source, pack.Pack)
+		detail := index.PackDetails[key]
+		if score := matchScore(query, pack.Source, pack.Pack, pack.Target, pack.Reason, detail.Name, detail.Source); score > 0 {
+			route := "pack:" + key + " -> " + pack.Target
+			matches = append(matches, routingExplainMatch{Kind: "pack", ID: key, Target: pack.Target, Reason: pack.Reason, Score: score, Route: &route})
 		}
 	}
 	for _, pack := range index.Config.EnabledRulePacks {
@@ -372,8 +375,9 @@ func routesFromRuleMatches(matches []routingExplainRuleMatch, index routingIndex
 		if !match.Active {
 			continue
 		}
-		pack := index.Packs[match.PackID]
-		route := routeForSource("pack", match.PackID, pack.Target, pack.Reason, index)
+		key := rules.PackKey(match.Source, match.Pack)
+		pack := index.Packs[key]
+		route := routeForSource("pack", key, pack.Target, pack.Reason, index)
 		if addRoute(route, seen) {
 			routes = append(routes, route)
 		}
@@ -400,7 +404,7 @@ func routeForSource(sourceKind, id, target, reason string, index routingIndex) r
 	}
 	if sourceKind == "pack" {
 		detail := index.PackDetails[id]
-		pack := routingExplainPack{ID: id, Name: detail.Name, Type: detail.Type, RenderStrategy: detail.RenderStrategy, RuleTemplate: detail.RenderRuleTemplate}
+		pack := routingExplainPack{Source: detail.Source, Pack: detail.Pack, Name: detail.Name, Type: detail.Type, RenderStrategy: detail.RenderStrategy, RuleTemplate: detail.RenderRuleTemplate}
 		route.Pack = &pack
 		if detail.RenderStrategy != "" || detail.RenderRuleTemplate != "" {
 			route.RenderedBackend = map[string]string{
@@ -411,7 +415,7 @@ func routeForSource(sourceKind, id, target, reason string, index routingIndex) r
 		}
 	}
 	if sourceKind == "local_rule_pack" {
-		route.Pack = &routingExplainPack{ID: id, Type: "local_rule_pack"}
+		route.Pack = &routingExplainPack{Pack: id, Type: "local_rule_pack"}
 	}
 	if group, ok := index.PolicyGroups[target]; ok {
 		policy := routingExplainPolicy{ID: target, Mode: group.Mode, Exits: append([]string{}, group.Exits...), Reason: group.Reason, Boundary: group.Boundary}
@@ -482,20 +486,22 @@ func queryRoutingRuleMatches(ctx context.Context, in routingExplainInput, index 
 	}
 	activePacks := map[string]localconfig.Pack{}
 	for _, pack := range index.Config.Packs {
-		activePacks[pack.ID] = pack
+		activePacks[rules.PackKey(pack.Source, pack.Pack)] = pack
 	}
 	var out []routingExplainRuleMatch
 	for _, match := range result.Matches {
 		active := false
 		activeTarget := ""
 		activeRoute := ""
-		if pack, ok := activePacks[match.PackID]; ok {
+		key := rules.PackKey(match.Source, match.Pack)
+		if pack, ok := activePacks[key]; ok {
 			active = true
 			activeTarget = pack.Target
-			activeRoute = "pack:" + pack.ID + " -> " + pack.Target
+			activeRoute = "pack:" + key + " -> " + pack.Target
 		}
 		out = append(out, routingExplainRuleMatch{
-			PackID:         match.PackID,
+			Source:         match.Source,
+			Pack:           match.Pack,
 			PackName:       match.PackName,
 			Active:         active,
 			ActiveTarget:   activeTarget,

@@ -2,7 +2,7 @@
   "id": "default.games.v1",
   "description": "Add Bahamut and generic game-platform routing.",
   "config": {
-    "version": 2,
+    "version": 3,
     "policy_groups": {
       "🕹 Bahamut": {
         "mode": "manual",
@@ -33,13 +33,15 @@
     },
     "packs": [
       {
-        "id": "v2fly_dlc_bahamut",
+        "source": "v2fly-dlc",
+        "pack": "bahamut",
         "type": "geosite",
         "target": "🕹 Bahamut",
         "reason": "Route Bahamut domains through Bahamut selector."
       },
       {
-        "id": "v2fly_dlc_category_games",
+        "source": "v2fly-dlc",
+        "pack": "category-games",
         "type": "geosite",
         "target": "🎮 游戏平台",
         "reason": "Route game service categories through game platform selector."

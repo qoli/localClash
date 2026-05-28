@@ -2,7 +2,7 @@
   "id": "default.platform-media.v1",
   "description": "Add Apple, Google, Microsoft, TikTok, and streaming media groups.",
   "config": {
-    "version": 2,
+    "version": 3,
     "policy_groups": {
       "📺 YouTube": {
         "mode": "manual",
@@ -207,79 +207,92 @@
     },
     "packs": [
       {
-        "id": "v2fly_dlc_youtube",
+        "source": "v2fly-dlc",
+        "pack": "youtube",
         "type": "geosite",
         "target": "📺 YouTube",
         "reason": "Route YouTube domains through YouTube selector."
       },
       {
-        "id": "v2fly_dlc_apple_tvplus",
+        "source": "v2fly-dlc",
+        "pack": "apple-tvplus",
         "type": "geosite",
         "target": "📺 Apple TV",
         "reason": "Route Apple TV+ domains through Apple TV selector."
       },
       {
-        "id": "v2fly_dlc_apple",
+        "source": "v2fly-dlc",
+        "pack": "apple",
         "type": "geosite",
         "target": "🍎 Apple",
         "reason": "Route Apple service domains through Apple selector."
       },
       {
-        "id": "v2fly_dlc_microsoft",
+        "source": "v2fly-dlc",
+        "pack": "microsoft",
         "type": "geosite",
         "target": "💼 Microsoft",
         "reason": "Route Microsoft service domains through Microsoft selector."
       },
       {
-        "id": "v2fly_dlc_googlefcm",
+        "source": "v2fly-dlc",
+        "pack": "googlefcm",
         "type": "geosite",
         "target": "📬 Google FCM",
         "reason": "Route Google FCM domains through Google FCM selector."
       },
       {
-        "id": "v2fly_dlc_google",
+        "source": "v2fly-dlc",
+        "pack": "google",
         "type": "geosite",
         "target": "🔎 Google",
         "reason": "Route Google service domains through Google selector."
       },
       {
-        "id": "v2fly_dlc_tiktok",
+        "source": "v2fly-dlc",
+        "pack": "tiktok",
         "type": "geosite",
         "target": "🎵 TikTok",
         "reason": "Route TikTok domains through TikTok selector."
       },
       {
-        "id": "v2fly_dlc_netflix",
+        "source": "v2fly-dlc",
+        "pack": "netflix",
         "type": "geosite",
         "target": "🎬 Netflix",
         "reason": "Route Netflix domains through Netflix selector."
       },
       {
-        "id": "v2fly_dlc_disney",
+        "source": "v2fly-dlc",
+        "pack": "disney",
         "type": "geosite",
         "target": "🏰 Disney",
         "reason": "Route Disney+ domains through Disney selector."
       },
       {
-        "id": "v2fly_dlc_hbo",
+        "source": "v2fly-dlc",
+        "pack": "hbo",
         "type": "geosite",
         "target": "🎞 HBO",
         "reason": "Route HBO domains through HBO selector."
       },
       {
-        "id": "v2fly_dlc_primevideo",
+        "source": "v2fly-dlc",
+        "pack": "primevideo",
         "type": "geosite",
         "target": "🎥 Prime Video",
         "reason": "Route Prime Video domains through Prime Video selector."
       },
       {
-        "id": "v2fly_dlc_category_emby",
+        "source": "v2fly-dlc",
+        "pack": "category-emby",
         "type": "geosite",
         "target": "📺 Emby",
         "reason": "Route Emby domains through Emby selector."
       },
       {
-        "id": "v2fly_dlc_spotify",
+        "source": "v2fly-dlc",
+        "pack": "spotify",
         "type": "geosite",
         "target": "🎧 Spotify",
         "reason": "Route Spotify domains through Spotify selector."

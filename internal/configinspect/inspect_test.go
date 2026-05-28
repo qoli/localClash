@@ -64,7 +64,7 @@ func TestInspectOverlayWithMetadataReturnsOverlay(t *testing.T) {
 	if !result.MetadataPresent || !result.OverlayPresent {
 		t.Fatalf("metadata/overlay present = %v/%v, want true/true", result.MetadataPresent, result.OverlayPresent)
 	}
-	if len(result.Packs) != 1 || result.Packs[0].ID != "blackmatrix7_OpenAI" {
+	if len(result.Packs) != 1 || result.Packs[0].Source != "blackmatrix7" || result.Packs[0].Pack != "OpenAI" {
 		t.Fatalf("packs = %+v, want OpenAI pack", result.Packs)
 	}
 	if len(result.ProxyGroups) != 1 || result.ProxyGroups[0].ID != "AI" {
@@ -146,7 +146,8 @@ custom_rules:
       - type: domain_suffix
         value: huggingface.co
 packs:
-  - id: blackmatrix7_OpenAI
+  - source: blackmatrix7
+    pack: OpenAI
     target: AI
     reason: Route OpenAI domains through AI.
 `)
@@ -189,7 +190,7 @@ packs:
 	if len(result.CustomRules) != 1 || result.CustomRules[0].RuleCount != 1 || result.CustomRules[0].Target != "AI" {
 		t.Fatalf("custom rules = %+v, want one AI rule", result.CustomRules)
 	}
-	if len(result.Packs) != 1 || result.Packs[0].ID != "blackmatrix7_OpenAI" || result.Packs[0].Status != "resolved" {
+	if len(result.Packs) != 1 || result.Packs[0].Source != "blackmatrix7" || result.Packs[0].Pack != "OpenAI" || result.Packs[0].Status != "resolved" {
 		t.Fatalf("packs = %+v, want resolved OpenAI pack", result.Packs)
 	}
 	assertInspectNoSensitiveLeak(t, result)
@@ -274,8 +275,8 @@ x-localclash:
     packs:
 `
 		if overlay {
-			content += `      - id: blackmatrix7_OpenAI
-        source: blackmatrix7
+			content += `      - source: blackmatrix7
+        pack: OpenAI
         target: AI
     proxy_groups:
       - id: AI

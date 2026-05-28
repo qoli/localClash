@@ -2,7 +2,8 @@
   "id": "default.tail-fallback.v1",
   "description": "Add entertainment, ecommerce, fallback, and China direct tail routing.",
   "config": {
-    "version": 2,
+    "version": 3,
+    "fallback_target": "🧭 漏网之鱼",
     "policy_groups": {
       "🎞 媒体": {
         "mode": "manual",
@@ -54,25 +55,29 @@
     },
     "packs": [
       {
-        "id": "v2fly_dlc_category_entertainment",
+        "source": "v2fly-dlc",
+        "pack": "category-entertainment",
         "type": "geosite",
         "target": "🎞 媒体",
         "reason": "Route entertainment and media categories through media selector."
       },
       {
-        "id": "v2fly_dlc_category_ecommerce",
+        "source": "v2fly-dlc",
+        "pack": "category-ecommerce",
         "type": "geosite",
         "target": "🛒 电商",
         "reason": "Route non-China ecommerce services through ecommerce selector."
       },
       {
-        "id": "v2fly_dlc_geolocation__cn",
+        "source": "v2fly-dlc",
+        "pack": "geolocation-!cn",
         "type": "geosite",
         "target": "🧭 漏网之鱼",
         "reason": "Route non-China fallback through default business selector."
       },
       {
-        "id": "v2fly_dlc_cn",
+        "source": "v2fly-dlc",
+        "pack": "cn",
         "type": "geosite",
         "target": "DIRECT",
         "reason": "Keep China domains direct."

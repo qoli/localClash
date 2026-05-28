@@ -364,7 +364,7 @@ func TestToolsCallConfigConfigureWritesLocalClashDefaultTemplate(t *testing.T) {
 		t.Fatalf("config_configure content = %+v, want updated config and missing subscription", content)
 	}
 	config := readMCPFile(t, configPath)
-	for _, want := range []string{`"policy_template": "localclash-default"`, "v2fly_dlc_openai", "v2fly_dlc_category_media", "template_all_subscription_nodes"} {
+	for _, want := range []string{`"policy_template": "localclash-default"`, `"source": "v2fly-dlc"`, `"pack": "openai"`, `"pack": "category-media"`, "template_all_subscription_nodes"} {
 		if !strings.Contains(config, want) {
 			t.Fatalf("localclash.json missing %q:\n%s", want, config)
 		}
@@ -407,7 +407,8 @@ policy_groups:
     reason: Steam defaults to direct with fallback exits.
     boundary: business_to_exit_layer
 packs:
-  - id: v2fly_dlc_steam
+  - source: v2fly-dlc
+    pack: steam
     type: geosite
     target: Steam
     reason: Route Steam domains to the Steam business group.
@@ -814,7 +815,8 @@ proxy_groups:
     reason: Use Singapore-labelled nodes.
     boundary: name_based_hint_only
 packs:
-  - id: blackmatrix7_OpenAI
+  - source: blackmatrix7
+    pack: OpenAI
     target: AI
 `)
 	resp := callHandle(t, map[string]any{
@@ -873,7 +875,8 @@ custom_rules:
       - type: domain_suffix
         value: huggingface.co
 packs:
-  - id: blackmatrix7_OpenAI
+  - source: blackmatrix7
+    pack: OpenAI
     target: AI
 `)
 	resp := callHandle(t, map[string]any{
@@ -928,7 +931,8 @@ proxy_groups:
     mode: manual
     nodes: [SG 01]
 packs:
-  - id: blackmatrix7_OpenAI
+  - source: blackmatrix7
+    pack: OpenAI
     target: AI
 `)
 	resp := callHandle(t, map[string]any{
@@ -996,7 +1000,8 @@ proxy_groups:
       - SG 01
     reason: User explicitly selected this line.
 packs:
-  - id: blackmatrix7_OpenAI
+  - source: blackmatrix7
+    pack: OpenAI
     target: AI
 `)
 	writeMCPFile(t, generated, "sentinel: keep\n")
@@ -1125,7 +1130,7 @@ func TestToolsCallConfigPatchCreateReturnsSerializableResult(t *testing.T) {
 				"background":   false,
 				"overlay": map[string]any{
 					"packs": []map[string]any{
-						{"id": "blackmatrix7_OpenAI", "target": "AI"},
+						{"source": "blackmatrix7", "pack": "OpenAI", "target": "AI"},
 					},
 					"proxy_groups": []map[string]any{
 						{"id": "AI", "nodes": []string{"SG 01"}, "mode": "manual"},
@@ -1167,7 +1172,7 @@ func TestToolsCallConfigPatchCreateSupportsPolicyGroups(t *testing.T) {
 				"background":   false,
 				"overlay": map[string]any{
 					"packs": []map[string]any{
-						{"id": "blackmatrix7_OpenAI", "target": "AI"},
+						{"source": "blackmatrix7", "pack": "OpenAI", "target": "AI"},
 					},
 					"proxy_groups": []map[string]any{
 						{"id": "SG", "nodes": []string{"SG 01"}, "mode": "manual"},
@@ -1438,7 +1443,7 @@ func TestToolsCallConfigPatchApplyPersistsSelectionAndGeneratedConfig(t *testing
 				"background":   false,
 				"overlay": map[string]any{
 					"packs": []map[string]any{
-						{"id": "blackmatrix7_OpenAI", "target": "AI"},
+						{"source": "blackmatrix7", "pack": "OpenAI", "target": "AI"},
 					},
 					"proxy_groups": []map[string]any{
 						{"id": "AI", "nodes": []string{"SG 01"}, "mode": "manual"},
@@ -1505,7 +1510,7 @@ func TestToolsCallConfigPatchCreateInvalidInputReturnsError(t *testing.T) {
 				"background":   false,
 				"overlay": map[string]any{
 					"packs": []map[string]any{
-						{"id": "missing_pack", "target": "DIRECT"},
+						{"source": "blackmatrix7", "pack": "missing_pack", "target": "DIRECT"},
 					},
 				},
 			},
@@ -1516,6 +1521,36 @@ func TestToolsCallConfigPatchCreateInvalidInputReturnsError(t *testing.T) {
 	}
 	if !strings.Contains(resp.Error.Message, "missing_pack") {
 		t.Fatalf("error = %+v, want missing pack", resp.Error)
+	}
+}
+
+func TestToolsCallConfigPatchCreateRejectsLegacyPackID(t *testing.T) {
+	paths := setupMCPPlanFixture(t)
+	resp := callHandle(t, map[string]any{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  "tools/call",
+		"params": map[string]any{
+			"name": "config_patch_create",
+			"arguments": map[string]any{
+				"subscription": paths.subscription,
+				"rules_cache":  paths.cache,
+				"patches_dir":  paths.outputDir,
+				"test":         false,
+				"background":   false,
+				"overlay": map[string]any{
+					"packs": []map[string]any{
+						{"id": "v2fly_dlc_geolocation__cn", "target": "DIRECT"},
+					},
+				},
+			},
+		},
+	})
+	if resp.Error == nil {
+		t.Fatal("expected config_patch_create JSON-RPC error")
+	}
+	if !strings.Contains(resp.Error.Message, "packs[].id is no longer supported; use packs[].source and packs[].pack") {
+		t.Fatalf("error = %+v, want legacy pack id rejection", resp.Error)
 	}
 }
 
@@ -1630,7 +1665,7 @@ func TestToolsCallPacksGetReturnsSerializableResult(t *testing.T) {
 		"method":  "tools/call",
 		"params": map[string]any{
 			"name":      "packs_get",
-			"arguments": map[string]any{"id": "blackmatrix7_OpenAI"},
+			"arguments": map[string]any{"source": "blackmatrix7", "pack": "OpenAI"},
 		},
 	})
 	if resp.Error != nil {
@@ -1639,8 +1674,8 @@ func TestToolsCallPacksGetReturnsSerializableResult(t *testing.T) {
 	result := marshalToolResult(t, resp.Result)
 	content := result.StructuredContent.(map[string]any)
 	pack := content["pack"].(map[string]any)
-	if pack["id"] != "blackmatrix7_OpenAI" {
-		t.Fatalf("pack id = %v, want blackmatrix7_OpenAI", pack["id"])
+	if pack["source"] != "blackmatrix7" || pack["pack"] != "OpenAI" {
+		t.Fatalf("pack = %+v, want blackmatrix7/OpenAI", pack)
 	}
 	if _, ok := pack["catalog_path"]; ok {
 		t.Fatalf("pack contains catalog_path: %+v", pack)
@@ -1657,6 +1692,24 @@ func TestToolsCallPacksGetReturnsSerializableResult(t *testing.T) {
 	}
 	if _, err := json.Marshal(result.StructuredContent); err != nil {
 		t.Fatalf("packs_get structured content is not serializable: %v", err)
+	}
+}
+
+func TestToolsCallPacksGetRejectsLegacyID(t *testing.T) {
+	resp := callHandle(t, map[string]any{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  "tools/call",
+		"params": map[string]any{
+			"name":      "packs_get",
+			"arguments": map[string]any{"id": "v2fly_dlc_geolocation__cn"},
+		},
+	})
+	if resp.Error == nil {
+		t.Fatal("expected packs_get JSON-RPC error")
+	}
+	if !strings.Contains(resp.Error.Message, "pack id is no longer supported; use source and pack") {
+		t.Fatalf("error = %+v, want legacy pack id rejection", resp.Error)
 	}
 }
 
@@ -1678,7 +1731,7 @@ func TestToolsCallPacksGetReadsCurrentCatalogWhenServerStateIsStale(t *testing.T
 		"method":  "tools/call",
 		"params": map[string]any{
 			"name":      "packs_get",
-			"arguments": map[string]any{"id": "blackmatrix7_OpenAI"},
+			"arguments": map[string]any{"source": "blackmatrix7", "pack": "OpenAI"},
 		},
 	})
 	if resp.Error != nil {
@@ -1686,7 +1739,7 @@ func TestToolsCallPacksGetReadsCurrentCatalogWhenServerStateIsStale(t *testing.T
 	}
 	result := marshalToolResult(t, resp.Result)
 	pack := result.StructuredContent.(map[string]any)["pack"].(map[string]any)
-	if pack["id"] != "blackmatrix7_OpenAI" {
+	if pack["source"] != "blackmatrix7" || pack["pack"] != "OpenAI" {
 		t.Fatalf("pack = %+v, want OpenAI", pack)
 	}
 	providers := pack["providers"].([]any)
@@ -1709,7 +1762,8 @@ func TestToolsCallPackRulesReadReturnsRuleSamples(t *testing.T) {
 		"params": map[string]any{
 			"name": "pack_rules_read",
 			"arguments": map[string]any{
-				"id":             "sukkaw_ai",
+				"source":         "sukkaw",
+				"pack":           "ai",
 				"cache":          cache,
 				"provider_cache": providerCache,
 				"limit":          1,
@@ -1745,7 +1799,7 @@ func TestToolsCallPackRulesPrefetchThenQuery(t *testing.T) {
 		"params": map[string]any{
 			"name": "pack_rules_prefetch",
 			"arguments": map[string]any{
-				"ids":            []string{"sukkaw_ai"},
+				"packs":          []map[string]any{{"source": "sukkaw", "pack": "ai"}},
 				"cache":          cache,
 				"provider_cache": providerCache,
 			},
@@ -1773,11 +1827,29 @@ func TestToolsCallPackRulesPrefetchThenQuery(t *testing.T) {
 	result := marshalToolResult(t, query.Result)
 	content := result.StructuredContent.(map[string]any)
 	matches := content["matches"].([]any)
-	if len(matches) != 1 || matches[0].(map[string]any)["pack_id"] != "sukkaw_ai" {
+	if len(matches) != 1 || matches[0].(map[string]any)["source"] != "sukkaw" || matches[0].(map[string]any)["pack"] != "ai" {
 		t.Fatalf("matches = %+v, want sukkaw_ai hit", matches)
 	}
 	if content["cache_complete"] != true {
 		t.Fatalf("content = %+v, want complete local cache", content)
+	}
+}
+
+func TestToolsCallPackRulesPrefetchRejectsLegacyIDs(t *testing.T) {
+	resp := callHandle(t, map[string]any{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  "tools/call",
+		"params": map[string]any{
+			"name":      "pack_rules_prefetch",
+			"arguments": map[string]any{"ids": []string{"v2fly_dlc_geolocation__cn"}},
+		},
+	})
+	if resp.Error == nil {
+		t.Fatal("expected pack_rules_prefetch JSON-RPC error")
+	}
+	if !strings.Contains(resp.Error.Message, "pack ids are no longer supported; use packs[].source and packs[].pack") {
+		t.Fatalf("error = %+v, want legacy pack ids rejection", resp.Error)
 	}
 }
 
@@ -2721,10 +2793,12 @@ config:
         min: 1
       boundary: template_all_subscription_nodes
   packs:
-    - id: v2fly_dlc_openai
+    - source: v2fly-dlc
+      pack: openai
       type: geosite
       target: AI
-    - id: v2fly_dlc_category_media
+    - source: v2fly-dlc
+      pack: category-media
       type: geosite
       target: STREAMING
 `)
@@ -2801,8 +2875,8 @@ x-localclash:
   overlay:
     modifiable: true
     packs:
-      - id: blackmatrix7_OpenAI
-        source: blackmatrix7
+      - source: blackmatrix7
+        pack: OpenAI
         target: AI
     proxy_groups:
       - id: AI
@@ -2816,7 +2890,7 @@ x-localclash:
       - type: RULE-SET
         provider: blackmatrix7_OpenAI
         target: AI
-    insertion: after local safety baseline, before DIRECT fallback
+    insertion: after local safety baseline, before configured fallback
 `), 0o644); err != nil {
 		t.Fatal(err)
 	}

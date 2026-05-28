@@ -57,7 +57,7 @@ func Registry() []Tool {
 		{Name: "environment_inspect", SafetyLevel: SafeRead, Description: "Inspect host, network capability evidence, and localClash state without exposing credentials."},
 		{Name: "nl_file", SafetyLevel: SafeRead, Description: "Read a repository-local text file with nl-style stable line numbers for follow-up sed_file edits."},
 		{Name: "pack_rules_query", SafetyLevel: SafeRead, Description: "Search locally cached pack rules for a domain or keyword and return backend metadata such as rule_provider/RULE-SET or geosite/GEOSITE. Does not download provider rules; call pack_rules_prefetch first when cache coverage is incomplete."},
-		{Name: "packs_get", SafetyLevel: SafeRead, Description: "Read details for one generated rule pack cache entry, including type/backend/render_strategy. The target field is a catalog default/recommended target, not proof the pack is active; use config_status for active routing."},
+		{Name: "packs_get", SafetyLevel: SafeRead, Description: "Read details for one exact source/pack cache entry, including type/backend/render_strategy. The target field is a catalog default/recommended target, not proof the pack is active; use config_status for active routing."},
 		{Name: "packs_list", SafetyLevel: SafeRead, Description: "List and filter available rule pack catalog entries with type and render_strategy. This is discovery only: target is catalog default/recommended target, not current active configuration."},
 		{Name: "subscription_nodes_list", SafetyLevel: SafeRead, Description: "List safe subscription proxy name/type summaries without exposing connection credentials."},
 		{Name: "subscription_nodes_search", SafetyLevel: SafeRead, Description: "Search subscription proxy names and return safe name/type summaries; does not verify network egress location."},
@@ -72,7 +72,7 @@ func Registry() []Tool {
 		{Name: "config_render", SafetyLevel: SafeWrite, Description: "Render generated/mihomo.yaml from the current durable localclash.json source of truth, subscription, policy template graph, and runtime profile. Does not read patches and does not start runtime."},
 		{Name: "custom_rules_build", SafetyLevel: SafeWrite, Description: "Build and validate user custom routing rules for domains or CIDRs before adding them to a config patch."},
 		{Name: "pack_rules_prefetch", SafetyLevel: SafeWrite, Description: "Download provider rules for selected packs into local provider-cache so pack_rules_query can search them locally."},
-		{Name: "pack_rules_read", SafetyLevel: SafeWrite, Description: "Read rules for one pack by id, downloading missing provider-cache entries for that pack only, and return backend metadata such as rule_provider/RULE-SET or geosite/GEOSITE."},
+		{Name: "pack_rules_read", SafetyLevel: SafeWrite, Description: "Read rules for one exact source/pack pair, downloading missing provider-cache entries for that pack only, and return backend metadata such as rule_provider/RULE-SET or geosite/GEOSITE."},
 		{Name: "policy_group_build", SafetyLevel: SafeWrite, Description: "Build and validate a business-layer policy group that routes one rule domain, app, or scenario to existing exits such as HK, JP, US, ⚡ 自动选择, or DIRECT. This does not persist state; copy the returned policy_group into config_patch_create.overlay.policy_groups."},
 		{Name: "proxy_group_build", SafetyLevel: SafeWrite, Description: "Build and validate a reusable proxy group target from subscription node selectors or exact nodes. This does not persist state; copy the returned proxy_group into config_patch_create.overlay.proxy_groups when a patch should use it."},
 		{Name: "rule_provider_build", SafetyLevel: SafeWrite, Description: "Build and validate a reusable external rule-provider intent for user-supplied Mihomo rule-provider URLs before adding it to config_patch_create.overlay.rule_providers."},
@@ -201,7 +201,7 @@ func inputSchemaForTool(name string) map[string]any {
 			"additionalProperties": false,
 			"required":             []string{"query"},
 			"properties": map[string]any{
-				"query":                map[string]any{"type": "string", "description": "Service, app, domain, pack id/name, policy group, or exit to explain, for example Steam, ChatGPT, openai.com, or Singapore."},
+				"query":                map[string]any{"type": "string", "description": "Service, app, domain, exact pack name/source, policy group, or exit to explain, for example Steam, ChatGPT, openai.com, or Singapore."},
 				"config":               map[string]any{"type": "string", "description": "Durable localClash source-of-truth config path. Defaults to localclash.json."},
 				"subscription":         map[string]any{"type": "string", "description": "Subscription gob path used only for optional selector resolution. Defaults to subscription.gob."},
 				"subscription_config":  map[string]any{"type": "string", "description": "Subscription sources config path. Defaults to localclash-subscriptions.json."},
@@ -350,12 +350,13 @@ func inputSchemaForTool(name string) map[string]any {
 			"type":                 "object",
 			"additionalProperties": false,
 			"properties": map[string]any{
-				"id":     map[string]any{"type": "string", "description": "Pack id, for example blackmatrix7_OpenAI, sukkaw_ai_non_ip, or v2fly_dlc_google."},
+				"source": map[string]any{"type": "string", "description": "Exact pack source, for example blackmatrix7, sukkaw, or v2fly-dlc."},
+				"pack":   map[string]any{"type": "string", "description": "Exact upstream pack name, for example OpenAI, ai_non_ip, google, or geolocation-!cn."},
 				"type":   map[string]any{"type": "string", "enum": []string{"rule_provider", "geosite"}, "description": "Optional assertion for the catalog pack type. It validates the path but does not choose render behavior."},
 				"target": map[string]any{"type": "string", "description": "Desired rule target, for example DIRECT, REJECT, ⚡ 自动选择, or AI."},
 				"reason": map[string]any{"type": "string", "description": "Short durable reason for this pack routing choice."},
 			},
-			"required": []string{"id", "target"},
+			"required": []string{"source", "pack", "target"},
 		}
 		ruleIntent := map[string]any{
 			"type":                 "object",
@@ -599,8 +600,8 @@ func inputSchemaForTool(name string) map[string]any {
 			"type":                 "object",
 			"additionalProperties": false,
 			"properties": map[string]any{
-				"source": map[string]any{"type": "string", "description": "Exact pack source, for example sukkaw or blackmatrix7."},
-				"name":   map[string]any{"type": "string", "description": "Case-insensitive substring filter for pack name or id."},
+				"source": map[string]any{"type": "string", "description": "Exact pack source, for example sukkaw, blackmatrix7, or v2fly-dlc."},
+				"name":   map[string]any{"type": "string", "description": "Case-insensitive substring filter for pack name or exact upstream pack value."},
 				"target": map[string]any{"type": "string", "description": "Exact catalog default/recommended target filter, for example DIRECT, REJECT, or AI. This is not an active-config filter."},
 				"limit":  map[string]any{"type": "integer", "minimum": 1},
 			},
@@ -610,18 +611,20 @@ func inputSchemaForTool(name string) map[string]any {
 			"type":                 "object",
 			"additionalProperties": false,
 			"properties": map[string]any{
-				"id":          map[string]any{"type": "string", "description": "Catalog pack id, for example blackmatrix7_OpenAI."},
+				"source":      map[string]any{"type": "string", "description": "Exact pack source, for example blackmatrix7 or v2fly-dlc."},
+				"pack":        map[string]any{"type": "string", "description": "Exact upstream pack name, for example OpenAI or geolocation-!cn."},
 				"cache":       map[string]any{"type": "string", "description": "Pack cache directory. Defaults to .runtime/rules/packs."},
 				"runtime_dir": map[string]any{"type": "string", "description": "Mihomo runtime data directory used to resolve provider paths. Defaults to .runtime/mihomo."},
 			},
-			"required": []string{"id"},
+			"required": []string{"source", "pack"},
 		}
 	case "pack_rules_read":
 		return map[string]any{
 			"type":                 "object",
 			"additionalProperties": false,
 			"properties": map[string]any{
-				"id":             map[string]any{"type": "string", "description": "Catalog pack id, for example sukkaw_ai or blackmatrix7_OpenAI."},
+				"source":         map[string]any{"type": "string", "description": "Exact pack source, for example sukkaw, blackmatrix7, or v2fly-dlc."},
+				"pack":           map[string]any{"type": "string", "description": "Exact upstream pack name, for example ai, OpenAI, or geolocation-!cn."},
 				"component":      map[string]any{"type": "string", "description": "Optional component id such as domainset, non_ip, ip, or mixed provider id."},
 				"limit":          map[string]any{"type": "integer", "minimum": 0, "description": "Maximum sample rules per component. Defaults to 120. Use 0 to omit samples."},
 				"refresh":        map[string]any{"type": "boolean", "description": "Force refetching provider rules instead of using provider-cache."},
@@ -629,16 +632,25 @@ func inputSchemaForTool(name string) map[string]any {
 				"sources":        map[string]any{"type": "string", "description": "Rule sources directory used if pack catalog must be ensured. Defaults to rule-sources."},
 				"provider_cache": map[string]any{"type": "string", "description": "Provider rules cache directory. Defaults to .runtime/rules/provider-cache."},
 			},
-			"required": []string{"id"},
+			"required": []string{"source", "pack"},
 		}
 	case "pack_rules_prefetch":
+		packSelector := map[string]any{
+			"type":                 "object",
+			"additionalProperties": false,
+			"properties": map[string]any{
+				"source": map[string]any{"type": "string", "description": "Exact pack source."},
+				"pack":   map[string]any{"type": "string", "description": "Exact upstream pack name."},
+			},
+			"required": []string{"source", "pack"},
+		}
 		return map[string]any{
 			"type":                 "object",
 			"additionalProperties": false,
 			"properties": map[string]any{
-				"ids":            map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Explicit pack ids to prefetch."},
+				"packs":          map[string]any{"type": "array", "items": packSelector, "description": "Explicit source/pack pairs to prefetch."},
 				"source":         map[string]any{"type": "string", "description": "Exact pack source filter, for example sukkaw or blackmatrix7."},
-				"name":           map[string]any{"type": "string", "description": "Case-insensitive substring filter for pack name or id."},
+				"name":           map[string]any{"type": "string", "description": "Case-insensitive substring filter for pack name or exact upstream pack value."},
 				"target":         map[string]any{"type": "string", "description": "Exact target filter."},
 				"limit":          map[string]any{"type": "integer", "minimum": 1, "description": "Maximum packs selected by filters. Defaults to 20."},
 				"refresh":        map[string]any{"type": "boolean", "description": "Force refetching provider rules instead of using provider-cache."},
@@ -654,7 +666,7 @@ func inputSchemaForTool(name string) map[string]any {
 			"properties": map[string]any{
 				"query":          map[string]any{"type": "string", "description": "Domain or keyword to search in locally cached provider rules, for example huggingface.co."},
 				"source":         map[string]any{"type": "string", "description": "Optional exact pack source filter."},
-				"name":           map[string]any{"type": "string", "description": "Optional case-insensitive pack name/id filter."},
+				"name":           map[string]any{"type": "string", "description": "Optional case-insensitive pack name or exact upstream pack filter."},
 				"target":         map[string]any{"type": "string", "description": "Optional exact target filter."},
 				"limit":          map[string]any{"type": "integer", "minimum": 1, "description": "Maximum returned matches. Defaults to 20."},
 				"cache":          map[string]any{"type": "string", "description": "Pack catalog cache directory. Defaults to .runtime/rules/packs."},

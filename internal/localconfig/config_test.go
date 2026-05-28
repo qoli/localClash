@@ -48,7 +48,7 @@ func TestResolveNameRegexUsesSourceArtifactsAndMergeNames(t *testing.T) {
 					Match: &Match{Type: "name_regex", Pattern: "SG", SourceIDs: []string{"main"}, Min: 1},
 				},
 			},
-			Packs: []Pack{{ID: "blackmatrix7_Steam", Target: "SteamHK"}},
+			Packs: []Pack{{Source: "blackmatrix7", Pack: "Steam", Target: "SteamHK"}},
 		},
 		SubscriptionPath:    filepath.Join(dir, "subscription.gob"),
 		SubscriptionConfig:  configPath,
@@ -67,6 +67,32 @@ func TestResolveNameRegexUsesSourceArtifactsAndMergeNames(t *testing.T) {
 	want = []string{"[main] SG 01"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("selected nodes = %#v, want %#v", got, want)
+	}
+}
+
+func TestLoadRejectsLegacyPackID(t *testing.T) {
+	var config Config
+	err := json.Unmarshal([]byte(`{"version":3,"packs":[{"id":"v2fly_dlc_geolocation__cn","target":"DIRECT"}]}`), &config)
+	if err == nil || !strings.Contains(err.Error(), "packs[].id is no longer supported; use packs[].source and packs[].pack") {
+		t.Fatalf("error = %v, want legacy pack id rejection", err)
+	}
+}
+
+func TestResolveFallbackTarget(t *testing.T) {
+	resolved, err := Resolve(ResolveOptions{
+		Config: Config{
+			FallbackTarget: "Catchall",
+			ProxyGroups: map[string]ProxyGroup{
+				"Catchall": {Mode: "direct"},
+			},
+		},
+		SubscriptionNodes: []SubscriptionNode{{Name: "SG 01"}},
+	})
+	if err != nil {
+		t.Fatalf("Resolve returned error: %v", err)
+	}
+	if resolved.Selection.FallbackTarget != "Catchall" || resolved.Config.FallbackTarget != "Catchall" {
+		t.Fatalf("fallback = selection %q config %q, want Catchall", resolved.Selection.FallbackTarget, resolved.Config.FallbackTarget)
 	}
 }
 
@@ -325,7 +351,7 @@ func TestResolvePolicyGroupTargetsProxyGroupExits(t *testing.T) {
 			PolicyGroups: map[string]PolicyGroup{
 				"Steam": {Mode: "manual", Exits: []string{"HK", "JP", "DIRECT"}},
 			},
-			Packs: []Pack{{ID: "blackmatrix7_Steam", Target: "Steam"}},
+			Packs: []Pack{{Source: "blackmatrix7", Pack: "Steam", Target: "Steam"}},
 		},
 		SubscriptionPath: subscriptionPath,
 		RulesCache:       rulesCache,
@@ -396,7 +422,7 @@ func TestResolveOptionalProxyGroupCanBeEmpty(t *testing.T) {
 			PolicyGroups: map[string]PolicyGroup{
 				"Steam": {Mode: "manual", Exits: []string{"香港节点", "韩国节点", "DIRECT"}},
 			},
-			Packs: []Pack{{ID: "v2fly_dlc_steam", Target: "Steam"}},
+			Packs: []Pack{{Source: "v2fly-dlc", Pack: "steam", Target: "Steam"}},
 		},
 		SubscriptionPath: subscriptionPath,
 		RulesCache:       rulesCache,
@@ -486,7 +512,7 @@ func TestResolveEmitsStageTimings(t *testing.T) {
 			PolicyGroups: map[string]PolicyGroup{
 				"Steam": {Mode: "manual", Exits: []string{"香港节点", "DIRECT"}},
 			},
-			Packs: []Pack{{ID: "blackmatrix7_Steam", Target: "Steam"}},
+			Packs: []Pack{{Source: "blackmatrix7", Pack: "Steam", Target: "Steam"}},
 		},
 		SubscriptionPath:    filepath.Join(dir, "subscription.gob"),
 		SubscriptionConfig:  configPath,

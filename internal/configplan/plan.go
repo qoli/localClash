@@ -76,10 +76,30 @@ type OverlayIntent struct {
 }
 
 type OverlayPackIntent struct {
-	ID     string `json:"id" yaml:"id"`
+	Source string `json:"source" yaml:"source"`
+	Pack   string `json:"pack" yaml:"pack"`
 	Type   string `json:"type,omitempty" yaml:"type,omitempty"`
 	Target string `json:"target" yaml:"target"`
 	Reason string `json:"reason,omitempty" yaml:"reason,omitempty"`
+}
+
+func (pack *OverlayPackIntent) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		ID     *json.RawMessage `json:"id"`
+		Source string           `json:"source"`
+		Pack   string           `json:"pack"`
+		Type   string           `json:"type"`
+		Target string           `json:"target"`
+		Reason string           `json:"reason"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw.ID != nil {
+		return fmt.Errorf("packs[].id is no longer supported; use packs[].source and packs[].pack")
+	}
+	*pack = OverlayPackIntent{Source: raw.Source, Pack: raw.Pack, Type: raw.Type, Target: raw.Target, Reason: raw.Reason}
+	return nil
 }
 
 type OverlayProxyGroupIntent struct {
@@ -177,7 +197,8 @@ type OverlaySummary struct {
 }
 
 type OverlayPackSummary struct {
-	ID     string `json:"id"`
+	Source string `json:"source"`
+	Pack   string `json:"pack"`
 	Type   string `json:"type"`
 	Target string `json:"target"`
 	Reason string `json:"reason,omitempty"`
@@ -712,7 +733,7 @@ func applyPlanInputDefaults(opts ApplyOptions, inputs PlanInputs) ApplyOptions {
 
 func configFromOverlay(overlay OverlayIntent) localconfig.Config {
 	config := localconfig.Config{
-		Version:          1,
+		Version:          localconfig.ConfigSchemaVersion,
 		ProxyGroups:      map[string]localconfig.ProxyGroup{},
 		PolicyGroups:     map[string]localconfig.PolicyGroup{},
 		Packs:            make([]localconfig.Pack, 0, len(overlay.Packs)),
@@ -721,7 +742,7 @@ func configFromOverlay(overlay OverlayIntent) localconfig.Config {
 		RuleProviders:    make([]localconfig.ExternalRuleProvider, 0, len(overlay.RuleProviders)),
 	}
 	if len(overlay.PolicyGroups) > 0 {
-		config.Version = 2
+		config.Version = localconfig.ConfigSchemaVersion
 	}
 	for _, group := range overlay.ProxyGroups {
 		config.ProxyGroups[group.ID] = localconfig.ProxyGroup{
@@ -741,7 +762,7 @@ func configFromOverlay(overlay OverlayIntent) localconfig.Config {
 		}
 	}
 	for _, pack := range overlay.Packs {
-		config.Packs = append(config.Packs, localconfig.Pack{ID: pack.ID, Type: pack.Type, Target: pack.Target, Reason: pack.Reason})
+		config.Packs = append(config.Packs, localconfig.Pack{Source: pack.Source, Pack: pack.Pack, Type: pack.Type, Target: pack.Target, Reason: pack.Reason})
 	}
 	for _, custom := range overlay.CustomRules {
 		config.CustomRules = append(config.CustomRules, custom)
@@ -762,7 +783,7 @@ func configWithOverlay(path string, overlay OverlayIntent) (localconfig.Config, 
 			return localconfig.Config{}, err
 		}
 		base = localconfig.Config{
-			Version:     1,
+			Version:     localconfig.ConfigSchemaVersion,
 			ProxyGroups: map[string]localconfig.ProxyGroup{},
 		}
 	}
@@ -771,7 +792,7 @@ func configWithOverlay(path string, overlay OverlayIntent) (localconfig.Config, 
 
 func mergeOverlayConfig(base localconfig.Config, overlay localconfig.Config) localconfig.Config {
 	if base.Version == 0 {
-		base.Version = 1
+		base.Version = localconfig.ConfigSchemaVersion
 	}
 	if base.ProxyGroups == nil {
 		base.ProxyGroups = map[string]localconfig.ProxyGroup{}
@@ -785,6 +806,9 @@ func mergeOverlayConfig(base localconfig.Config, overlay localconfig.Config) loc
 	for id, group := range overlay.PolicyGroups {
 		base.PolicyGroups[id] = group
 	}
+	if strings.TrimSpace(overlay.FallbackTarget) != "" {
+		base.FallbackTarget = overlay.FallbackTarget
+	}
 	base.Packs = mergePacks(base.Packs, overlay.Packs)
 	base.CustomRules = mergeCustomRules(base.CustomRules, overlay.CustomRules)
 	base.EnabledRulePacks = mergeRulePacks(base.EnabledRulePacks, overlay.EnabledRulePacks)
@@ -792,8 +816,8 @@ func mergeOverlayConfig(base localconfig.Config, overlay localconfig.Config) loc
 	if overlay.Version > base.Version {
 		base.Version = overlay.Version
 	}
-	if len(base.PolicyGroups) > 0 && base.Version < 2 {
-		base.Version = 2
+	if base.Version < localconfig.ConfigSchemaVersion {
+		base.Version = localconfig.ConfigSchemaVersion
 	}
 	return base
 }
@@ -820,15 +844,15 @@ func mergePacks(base []localconfig.Pack, overlay []localconfig.Pack) []localconf
 	merged := append([]localconfig.Pack{}, base...)
 	index := map[string]int{}
 	for i, item := range merged {
-		index[strings.TrimSpace(item.ID)] = i
+		index[rules.PackKey(item.Source, item.Pack)] = i
 	}
 	for _, item := range overlay {
-		id := strings.TrimSpace(item.ID)
-		if i, ok := index[id]; ok {
+		key := rules.PackKey(item.Source, item.Pack)
+		if i, ok := index[key]; ok {
 			merged[i] = item
 			continue
 		}
-		index[id] = len(merged)
+		index[key] = len(merged)
 		merged = append(merged, item)
 	}
 	return merged
@@ -892,7 +916,7 @@ func overlaySummaryFromResolved(resolved localconfig.Resolved) OverlaySummary {
 		PolicyGroups:     make([]OverlayPolicyGroupSummary, 0, len(resolved.PolicyGroups)),
 	}
 	for _, pack := range resolved.Packs {
-		summary.Packs = append(summary.Packs, OverlayPackSummary{ID: pack.ID, Type: pack.Type, Target: pack.Target, Reason: pack.Reason})
+		summary.Packs = append(summary.Packs, OverlayPackSummary{Source: pack.Source, Pack: pack.Pack, Type: pack.Type, Target: pack.Target, Reason: pack.Reason})
 	}
 	for _, custom := range resolved.CustomRules {
 		summary.CustomRules = append(summary.CustomRules, OverlayCustomRuleSummary{
@@ -961,28 +985,28 @@ func requestedOverlaySummary(resolved localconfig.Resolved, overlay OverlayInten
 		ProxyGroups:      make([]OverlayProxyGroupSummary, 0, len(overlay.ProxyGroups)),
 		PolicyGroups:     make([]OverlayPolicyGroupSummary, 0, len(overlay.PolicyGroups)),
 	}
-	packsByID := map[string]OverlayPackSummary{}
+	packsByKey := map[string]OverlayPackSummary{}
 	for _, item := range full.Packs {
-		packsByID[item.ID] = item
+		packsByKey[rules.PackKey(item.Source, item.Pack)] = item
 	}
 	var packIndex *rules.PackIndex
 	if len(overlay.Packs) > 0 {
 		packIndex, _ = rules.LoadPackIndex(rules.PackIndexPath(rulesCache))
 	}
 	for _, item := range overlay.Packs {
-		id := strings.TrimSpace(item.ID)
-		if found, ok := packsByID[id]; ok {
+		key := rules.PackKey(item.Source, item.Pack)
+		if found, ok := packsByKey[key]; ok {
 			summary.Packs = append(summary.Packs, found)
 			continue
 		}
 		if packIndex != nil {
-			ref, err := packIndex.ResolvePackRef(id)
+			ref, err := packIndex.ResolvePackRef(item.Source, item.Pack)
 			if err == nil {
-				summary.Packs = append(summary.Packs, OverlayPackSummary{ID: ref.ID, Type: ref.Type, Target: item.Target, Reason: item.Reason})
+				summary.Packs = append(summary.Packs, OverlayPackSummary{Source: ref.Source, Pack: ref.Pack, Type: ref.Type, Target: item.Target, Reason: item.Reason})
 				continue
 			}
 		}
-		summary.Packs = append(summary.Packs, OverlayPackSummary{ID: item.ID, Type: item.Type, Target: item.Target, Reason: item.Reason})
+		summary.Packs = append(summary.Packs, OverlayPackSummary{Source: item.Source, Pack: item.Pack, Type: item.Type, Target: item.Target, Reason: item.Reason})
 	}
 
 	customRulesByID := map[string]OverlayCustomRuleSummary{}
@@ -1091,19 +1115,20 @@ func buildSelection(opts Options, proxyNames []string) (rules.Selection, Overlay
 		}
 	}
 	for _, pack := range opts.Overlay.Packs {
-		ref, err := packIndex.ResolvePackRef(pack.ID)
+		ref, err := packIndex.ResolvePackRef(pack.Source, pack.Pack)
 		if err != nil {
 			return rules.Selection{}, OverlaySummary{}, nil, err
 		}
-		if err := assertOverlayPackType(pack.ID, pack.Type, ref.Type); err != nil {
+		label := rules.PackKey(pack.Source, pack.Pack)
+		if err := assertOverlayPackType(label, pack.Type, ref.Type); err != nil {
 			return rules.Selection{}, OverlaySummary{}, nil, err
 		}
 		target := strings.TrimSpace(pack.Target)
 		if target == "" {
-			return rules.Selection{}, OverlaySummary{}, nil, fmt.Errorf("pack %q target is required", pack.ID)
+			return rules.Selection{}, OverlaySummary{}, nil, fmt.Errorf("pack %q target is required", label)
 		}
 		selected = append(selected, rules.SelectedPack{Source: ref.Source, Pack: ref.Pack, Target: target})
-		overlayPacks = append(overlayPacks, OverlayPackSummary{ID: ref.ID, Type: ref.Type, Target: target})
+		overlayPacks = append(overlayPacks, OverlayPackSummary{Source: ref.Source, Pack: ref.Pack, Type: ref.Type, Target: target})
 	}
 
 	proxyGroups := map[string]rules.ProxyGroup{}
@@ -1348,7 +1373,7 @@ func intentFromSummary(summary OverlaySummary) OverlayIntent {
 		PolicyGroups:     make([]OverlayPolicyGroupIntent, 0, len(summary.PolicyGroups)),
 	}
 	for _, pack := range summary.Packs {
-		intent.Packs = append(intent.Packs, OverlayPackIntent{ID: pack.ID, Type: pack.Type, Target: pack.Target, Reason: pack.Reason})
+		intent.Packs = append(intent.Packs, OverlayPackIntent{Source: pack.Source, Pack: pack.Pack, Type: pack.Type, Target: pack.Target, Reason: pack.Reason})
 	}
 	for _, custom := range summary.CustomRules {
 		intent.CustomRules = append(intent.CustomRules, localconfig.CustomRule{

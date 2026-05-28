@@ -2,34 +2,39 @@
   "id": "default.direct-baseline.v1",
   "description": "Add reject, private, tracker, download, and China direct baseline packs.",
   "config": {
-    "version": 2,
+    "version": 3,
     "packs": [
       {
-        "id": "v2fly_dlc_category_ads_all",
+        "source": "v2fly-dlc",
+        "pack": "category-ads-all",
         "type": "geosite",
         "target": "REJECT",
         "reason": "Reject common advertising and tracking domains."
       },
       {
-        "id": "v2fly_dlc_private",
+        "source": "v2fly-dlc",
+        "pack": "private",
         "type": "geosite",
         "target": "DIRECT",
         "reason": "Keep private domains direct before broader proxy categories."
       },
       {
-        "id": "v2fly_dlc_category_public_tracker",
+        "source": "v2fly-dlc",
+        "pack": "category-public-tracker",
         "type": "geosite",
         "target": "DIRECT",
         "reason": "Keep public tracker domains direct for router-friendly download behavior."
       },
       {
-        "id": "v2fly_dlc_category_game_platforms_download",
+        "source": "v2fly-dlc",
+        "pack": "category-game-platforms-download",
         "type": "geosite",
         "target": "DIRECT",
         "reason": "Keep game platform download traffic direct."
       },
       {
-        "id": "v2fly_dlc_category_games@cn",
+        "source": "v2fly-dlc",
+        "pack": "category-games@cn",
         "type": "geosite",
         "target": "DIRECT",
         "reason": "Keep China game service attributes direct."

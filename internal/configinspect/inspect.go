@@ -154,7 +154,8 @@ type IntentRuleProvider struct {
 }
 
 type IntentPack struct {
-	ID     string `json:"id"`
+	Source string `json:"source"`
+	Pack   string `json:"pack"`
 	Type   string `json:"type,omitempty"`
 	Target string `json:"target"`
 	Reason string `json:"reason,omitempty"`
@@ -272,7 +273,7 @@ func InspectIntent(opts IntentOptions) (IntentResult, error) {
 		return result, nil
 	}
 	if config.Version == 0 {
-		config.Version = 1
+		config.Version = localconfig.ConfigSchemaVersion
 	}
 	result.Exists = true
 	result.Valid = true
@@ -550,9 +551,9 @@ func ruleProviderIntents(providers []localconfig.ExternalRuleProvider, resolved 
 }
 
 func packIntents(packs []localconfig.Pack, resolved []localconfig.PackResult, limit int) []IntentPack {
-	resolvedByID := map[string]localconfig.PackResult{}
+	resolvedByKey := map[string]localconfig.PackResult{}
 	for _, pack := range resolved {
-		resolvedByID[pack.ID] = pack
+		resolvedByKey[packKey(pack.Source, pack.Pack)] = pack
 	}
 	if len(packs) > limit {
 		packs = packs[:limit]
@@ -560,12 +561,16 @@ func packIntents(packs []localconfig.Pack, resolved []localconfig.PackResult, li
 	out := make([]IntentPack, 0, len(packs))
 	for _, pack := range packs {
 		status := "configured"
-		if _, ok := resolvedByID[pack.ID]; ok {
+		if _, ok := resolvedByKey[packKey(pack.Source, pack.Pack)]; ok {
 			status = "resolved"
 		}
-		out = append(out, IntentPack{ID: pack.ID, Type: pack.Type, Target: pack.Target, Reason: pack.Reason, Status: status})
+		out = append(out, IntentPack{Source: pack.Source, Pack: pack.Pack, Type: pack.Type, Target: pack.Target, Reason: pack.Reason, Status: status})
 	}
 	return out
+}
+
+func packKey(source, pack string) string {
+	return strings.TrimSpace(source) + "/" + strings.TrimSpace(pack)
 }
 
 func fileExists(path string) bool {

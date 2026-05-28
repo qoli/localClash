@@ -24,8 +24,8 @@ type OverlayMetadata struct {
 }
 
 type OverlayPack struct {
-	ID     string `yaml:"id" json:"id"`
 	Source string `yaml:"source" json:"source"`
+	Pack   string `yaml:"pack" json:"pack"`
 	Type   string `yaml:"type" json:"type"`
 	Target string `yaml:"target" json:"target"`
 }

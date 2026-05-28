@@ -3,8 +3,9 @@
   "name": "Minimal",
   "description": "Use the localClash safety baseline plus the compact minimal graph for advanced manual customization.",
   "config": {
-    "version": 1,
+    "version": 3,
     "policy_template": "minimal",
+    "fallback_target": "DIRECT",
     "proxy_groups": {
       "🎯 手动选择": {
         "mode": "manual",

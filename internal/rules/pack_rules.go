@@ -19,17 +19,23 @@ type PackRulesReadOptions struct {
 	SourcesDir    string
 	CacheDir      string
 	ProviderCache string
-	ID            string
+	Source        string
+	Pack          string
 	Component     string
 	Limit         int
 	Refresh       bool
+}
+
+type PackSelector struct {
+	Source string `json:"source"`
+	Pack   string `json:"pack"`
 }
 
 type PackRulesPrefetchOptions struct {
 	SourcesDir    string
 	CacheDir      string
 	ProviderCache string
-	IDs           []string
+	Packs         []PackSelector
 	Source        string
 	Name          string
 	Target        string
@@ -74,8 +80,8 @@ type PackRulesQueryResult struct {
 }
 
 type PackRulePackSummary struct {
-	ID                 string `json:"id"`
 	Source             string `json:"source"`
+	Pack               string `json:"pack"`
 	Name               string `json:"name"`
 	Type               string `json:"type"`
 	RenderStrategy     string `json:"render_strategy"`
@@ -123,9 +129,9 @@ type PackRuleComponent struct {
 }
 
 type PackRuleMatch struct {
-	PackID         string `json:"pack_id"`
-	PackName       string `json:"pack_name"`
 	Source         string `json:"source"`
+	Pack           string `json:"pack"`
+	PackName       string `json:"pack_name"`
 	Type           string `json:"type"`
 	RenderStrategy string `json:"render_strategy"`
 	Component      string `json:"component"`
@@ -147,23 +153,32 @@ func ReadPackRules(ctx context.Context, opts PackRulesReadOptions) (PackRulesRea
 	if err != nil {
 		return PackRulesReadResult{}, err
 	}
-	detail, ok := catalog.Details[strings.TrimSpace(opts.ID)]
+	source := strings.TrimSpace(opts.Source)
+	pack := strings.TrimSpace(opts.Pack)
+	if source == "" {
+		return PackRulesReadResult{}, fmt.Errorf("pack source is required")
+	}
+	if pack == "" {
+		return PackRulesReadResult{}, fmt.Errorf("pack name is required")
+	}
+	detail, ok := catalog.Details[PackKey(source, pack)]
 	if !ok {
-		return PackRulesReadResult{}, fmt.Errorf("pack %q not found in pack cache", opts.ID)
+		return PackRulesReadResult{}, fmt.Errorf("pack %q/%q not found in pack cache", source, pack)
 	}
 	if !packRulesQueryable(detail) {
 		return PackRulesReadResult{Pack: packRuleSummary(detail), Backend: detail.Backend, NextActions: []string{"choose a renderable pack from packs_list"}}, nil
 	}
 	components := make([]PackRuleComponent, 0, len(detail.Providers))
 	for _, provider := range detail.Providers {
-		if opts.Component != "" && providerComponentID(detail.Source, detail.ID, provider.Name) != opts.Component {
+		componentID := provider.Component
+		if opts.Component != "" && componentID != opts.Component {
 			continue
 		}
-		component := readProviderRules(ctx, detail, provider, providerComponentID(detail.Source, detail.ID, provider.Name), opts.ProviderCache, limit, opts.Refresh)
+		component := readProviderRules(ctx, detail, provider, componentID, opts.ProviderCache, limit, opts.Refresh)
 		components = append(components, component)
 	}
 	if opts.Component != "" && len(components) == 0 {
-		return PackRulesReadResult{}, fmt.Errorf("component %q not found in pack %q", opts.Component, detail.ID)
+		return PackRulesReadResult{}, fmt.Errorf("component %q not found in pack %q/%q", opts.Component, detail.Source, detail.Pack)
 	}
 	return PackRulesReadResult{
 		Pack:       packRuleSummary(detail),
@@ -182,7 +197,7 @@ func PrefetchPackRules(ctx context.Context, opts PackRulesPrefetchOptions) (Pack
 	if err != nil {
 		return PackRulesPrefetchResult{}, err
 	}
-	details, err := selectPackDetails(catalog, opts.IDs, opts.Source, opts.Name, opts.Target, limit, false)
+	details, err := selectPackDetails(catalog, opts.Packs, opts.Source, opts.Name, opts.Target, limit, false)
 	if err != nil {
 		return PackRulesPrefetchResult{}, err
 	}
@@ -193,7 +208,7 @@ func PrefetchPackRules(ctx context.Context, opts PackRulesPrefetchOptions) (Pack
 			continue
 		}
 		for _, provider := range detail.Providers {
-			component := readProviderRules(ctx, detail, provider, providerComponentID(detail.Source, detail.ID, provider.Name), opts.ProviderCache, 0, opts.Refresh)
+			component := readProviderRules(ctx, detail, provider, provider.Component, opts.ProviderCache, 0, opts.Refresh)
 			result.Components = append(result.Components, component)
 		}
 	}
@@ -232,7 +247,7 @@ func QueryPackRules(ctx context.Context, opts PackRulesQueryOptions) (PackRulesQ
 		packCached := false
 		packComplete := true
 		for _, provider := range detail.Providers {
-			componentID := providerComponentID(detail.Source, detail.ID, provider.Name)
+			componentID := provider.Component
 			cachePath := providerCachePath(opts.ProviderCache, detail.Source, packLocalID(detail), componentID, provider.Format)
 			data, err := os.ReadFile(cachePath)
 			if err != nil {
@@ -250,9 +265,9 @@ func QueryPackRules(ctx context.Context, opts PackRulesQueryOptions) (PackRulesQ
 					continue
 				}
 				result.Matches = append(result.Matches, PackRuleMatch{
-					PackID:         detail.ID,
-					PackName:       detail.Name,
 					Source:         detail.Source,
+					Pack:           detail.Pack,
+					PackName:       detail.Name,
 					Type:           detail.Type,
 					RenderStrategy: detail.RenderStrategy,
 					Component:      componentID,
@@ -274,7 +289,7 @@ func QueryPackRules(ctx context.Context, opts PackRulesQueryOptions) (PackRulesQ
 	if !result.CacheComplete {
 		result.NextActions = []string{
 			"Use packs_list with a semantic keyword such as ai, openai, google, steam, netflix, game, or the service name to find candidate packs.",
-			"Call pack_rules_prefetch with those candidate pack ids.",
+			"Call pack_rules_prefetch with those candidate source/pack pairs.",
 			"Call pack_rules_query again.",
 		}
 	}
@@ -292,23 +307,28 @@ func ensurePackRulesCatalog(ctx context.Context, sourcesDir, cacheDir string) (P
 	return LoadPackCatalog(cacheDir)
 }
 
-func selectPackDetails(catalog PackCatalog, ids []string, source, name, target string, limit int, allowAll bool) ([]PackDetail, error) {
-	if !allowAll && len(ids) == 0 && source == "" && name == "" && target == "" {
-		return nil, fmt.Errorf("select packs by ids, source, name, or target; refusing implicit all-pack prefetch")
+func selectPackDetails(catalog PackCatalog, packs []PackSelector, source, name, target string, limit int, allowAll bool) ([]PackDetail, error) {
+	if !allowAll && len(packs) == 0 && source == "" && name == "" && target == "" {
+		return nil, fmt.Errorf("select packs by source/pack, source, name, or target; refusing implicit all-pack prefetch")
 	}
 	var details []PackDetail
-	if len(ids) > 0 {
+	if len(packs) > 0 {
 		seen := map[string]bool{}
-		for _, id := range ids {
-			id = strings.TrimSpace(id)
-			if id == "" || seen[id] {
+		for _, selector := range packs {
+			source := strings.TrimSpace(selector.Source)
+			pack := strings.TrimSpace(selector.Pack)
+			if source == "" || pack == "" {
+				return nil, fmt.Errorf("pack source and pack are required")
+			}
+			key := PackKey(source, pack)
+			if seen[key] {
 				continue
 			}
-			detail, ok := catalog.Details[id]
+			detail, ok := catalog.Details[key]
 			if !ok {
-				return nil, fmt.Errorf("pack %q not found in pack cache", id)
+				return nil, fmt.Errorf("pack %q/%q not found in pack cache", source, pack)
 			}
-			seen[id] = true
+			seen[key] = true
 			details = append(details, detail)
 		}
 		return details, nil
@@ -321,10 +341,10 @@ func selectPackDetails(catalog PackCatalog, ids []string, source, name, target s
 		if target != "" && summary.Target != target {
 			continue
 		}
-		if nameFilter != "" && !strings.Contains(strings.ToLower(summary.ID), nameFilter) && !strings.Contains(strings.ToLower(summary.Name), nameFilter) {
+		if nameFilter != "" && !strings.Contains(strings.ToLower(summary.Pack), nameFilter) && !strings.Contains(strings.ToLower(summary.Name), nameFilter) {
 			continue
 		}
-		details = append(details, catalog.Details[summary.ID])
+		details = append(details, catalog.Details[PackKey(summary.Source, summary.Pack)])
 		if limit > 0 && len(details) >= limit {
 			break
 		}
@@ -606,8 +626,8 @@ func summarizeComponents(components []PackRuleComponent) PackRulesSummary {
 
 func packRuleSummary(detail PackDetail) PackRulePackSummary {
 	return PackRulePackSummary{
-		ID:                 detail.ID,
 		Source:             detail.Source,
+		Pack:               detail.Pack,
 		Name:               detail.Name,
 		Type:               detail.Type,
 		RenderStrategy:     detail.RenderStrategy,
@@ -648,27 +668,8 @@ func providerCachePath(cacheDir, source, packID, componentID, format string) str
 	return filepath.Join(cacheDir, safePathSegment(source), safePathSegment(packID), safePathSegment(componentID)+ext)
 }
 
-func providerComponentID(source, packID, providerNameValue string) string {
-	localID := packLocalID(PackDetail{ID: packID, Source: source})
-	prefix := providerName(source, localID, "") + "_"
-	if strings.HasPrefix(providerNameValue, prefix) {
-		return strings.TrimPrefix(providerNameValue, prefix)
-	}
-	prefix = source + "_" + packLocalID(PackDetail{ID: packID, Source: source}) + "_"
-	if strings.HasPrefix(providerNameValue, prefix) {
-		return strings.TrimPrefix(providerNameValue, prefix)
-	}
-	prefix = source + "_" + strings.TrimPrefix(packID, source+"_") + "_"
-	if strings.HasPrefix(providerNameValue, prefix) {
-		return strings.TrimPrefix(providerNameValue, prefix)
-	}
-	return strings.TrimSpace(providerNameValue)
-}
-
 func packLocalID(detail PackDetail) string {
-	id := strings.TrimPrefix(detail.ID, detail.Source+"_")
-	safeSource := strings.ReplaceAll(detail.Source, "-", "_")
-	return strings.TrimPrefix(id, safeSource+"_")
+	return detail.Pack
 }
 
 func safePathSegment(value string) string {

@@ -2,7 +2,7 @@
   "id": "default.communication-social.v1",
   "description": "Add communication and social media business groups.",
   "config": {
-    "version": 2,
+    "version": 3,
     "policy_groups": {
       "💬 通信服务": {
         "mode": "manual",
@@ -39,19 +39,22 @@
     },
     "packs": [
       {
-        "id": "v2fly_dlc_telegram",
+        "source": "v2fly-dlc",
+        "pack": "telegram",
         "type": "geosite",
         "target": "💬 通信服务",
         "reason": "Route Telegram through the communication business-layer selector."
       },
       {
-        "id": "v2fly_dlc_category_communication",
+        "source": "v2fly-dlc",
+        "pack": "category-communication",
         "type": "geosite",
         "target": "💬 通信服务",
         "reason": "Route communication services through a business-layer selector."
       },
       {
-        "id": "v2fly_dlc_category_social_media__cn",
+        "source": "v2fly-dlc",
+        "pack": "category-social-media-!cn",
         "type": "geosite",
         "target": "👥 社交媒体",
         "reason": "Route non-China social media through a business-layer selector."

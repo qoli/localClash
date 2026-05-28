@@ -18,11 +18,11 @@ type PackListOptions struct {
 type PackGetOptions struct {
 	CacheDir   string
 	RuntimeDir string
-	ID         string
+	Source     string
+	Pack       string
 }
 
 type PackRef struct {
-	ID                 string
 	Source             string
 	Pack               string
 	Name               string
@@ -41,8 +41,8 @@ type PackListResult struct {
 }
 
 type PackSummary struct {
-	ID                 string `json:"id"`
 	Source             string `json:"source"`
+	Pack               string `json:"pack"`
 	Name               string `json:"name"`
 	Type               string `json:"type"`
 	RenderStrategy     string `json:"render_strategy"`
@@ -64,8 +64,8 @@ type PackCatalog struct {
 }
 
 type PackDetail struct {
-	ID                 string            `json:"id"`
 	Source             string            `json:"source"`
+	Pack               string            `json:"pack"`
 	Name               string            `json:"name"`
 	Type               string            `json:"type"`
 	RenderStrategy     string            `json:"render_strategy"`
@@ -82,12 +82,13 @@ type PackDetail struct {
 }
 
 type ProviderSummary struct {
-	Name     string `json:"name"`
-	Type     string `json:"type"`
-	Behavior string `json:"behavior"`
-	Format   string `json:"format"`
-	URL      string `json:"-"`
-	Path     string `json:"path,omitempty"`
+	Name      string `json:"name"`
+	Component string `json:"component"`
+	Type      string `json:"type"`
+	Behavior  string `json:"behavior"`
+	Format    string `json:"format"`
+	URL       string `json:"-"`
+	Path      string `json:"path,omitempty"`
 }
 
 type catalogEntry struct {
@@ -110,7 +111,7 @@ func ListPacks(opts PackListOptions) (PackListResult, error) {
 		if opts.Target != "" && pack.Target != opts.Target {
 			continue
 		}
-		if nameFilter != "" && !strings.Contains(strings.ToLower(pack.Name), nameFilter) && !strings.Contains(strings.ToLower(pack.ID), nameFilter) {
+		if nameFilter != "" && !strings.Contains(strings.ToLower(pack.Name), nameFilter) && !strings.Contains(strings.ToLower(pack.Pack), nameFilter) {
 			continue
 		}
 		packs = append(packs, pack)
@@ -126,24 +127,28 @@ func ListPacks(opts PackListOptions) (PackListResult, error) {
 }
 
 func GetPack(opts PackGetOptions) (PackGetResult, error) {
-	id := strings.TrimSpace(opts.ID)
-	if id == "" {
-		return PackGetResult{}, fmt.Errorf("pack id is required")
+	source := strings.TrimSpace(opts.Source)
+	pack := strings.TrimSpace(opts.Pack)
+	if source == "" {
+		return PackGetResult{}, fmt.Errorf("pack source is required")
+	}
+	if pack == "" {
+		return PackGetResult{}, fmt.Errorf("pack name is required")
 	}
 	catalog, err := LoadPackCatalog(opts.CacheDir)
 	if err != nil {
 		return PackGetResult{}, err
 	}
-	if detail, ok := catalog.Details[id]; ok {
+	if detail, ok := catalog.Details[PackKey(source, pack)]; ok {
 		return PackGetResult{Pack: AnnotatePackRuntime(detail, opts.RuntimeDir), NextActions: packRuleNextActions()}, nil
 	}
-	return PackGetResult{}, fmt.Errorf("pack %q not found in pack cache", id)
+	return PackGetResult{}, fmt.Errorf("pack %q/%q not found in pack cache", source, pack)
 }
 
 func packRuleNextActions() []string {
 	return []string{
-		"Use pack_rules_read with this pack id to inspect provider rule contents.",
-		"Use pack_rules_prefetch with candidate pack ids before pack_rules_query when local provider-cache coverage is incomplete.",
+		"Use pack_rules_read with this exact source and pack to inspect provider rule contents.",
+		"Use pack_rules_prefetch with candidate source/pack pairs before pack_rules_query when local provider-cache coverage is incomplete.",
 	}
 }
 
@@ -157,7 +162,7 @@ func PackListGuidance() []string {
 
 func PackListNextActions() []string {
 	return []string{
-		"Use packs_get or pack_rules_read on candidate pack ids before choosing packs.",
+		"Use packs_get or pack_rules_read on candidate source/pack pairs before choosing packs.",
 		"To change routing, call config_status first, then config_patch_create with the full desired retained config plus new pack targets.",
 		"Apply only the exact patch_id returned by config_patch_create, then call config_status to verify.",
 	}
@@ -212,8 +217,8 @@ func sortPacksByDisplay(packs []Pack) {
 func packSummary(entry catalogEntry) PackSummary {
 	backend := packBackend(entry.Cache.Source, entry.Pack, "<target>")
 	return PackSummary{
-		ID:                 catalogPackID(entry.Cache.Source, entry.Pack.ID),
 		Source:             entry.Cache.Source,
+		Pack:               entry.Pack.ID,
 		Name:               packDisplayName(entry.Pack),
 		Type:               backend.Type,
 		RenderStrategy:     backend.RenderStrategy,
@@ -228,7 +233,6 @@ func packSummary(entry catalogEntry) PackSummary {
 func packRef(entry catalogEntry) PackRef {
 	backend := packBackend(entry.Cache.Source, entry.Pack, "<target>")
 	return PackRef{
-		ID:                 catalogPackID(entry.Cache.Source, entry.Pack.ID),
 		Source:             entry.Cache.Source,
 		Pack:               entry.Pack.ID,
 		Name:               packDisplayName(entry.Pack),
@@ -249,12 +253,13 @@ func packDetail(entry catalogEntry) PackDetail {
 	for _, component := range entry.Pack.Components {
 		name := providerName(entry.Cache.Source, entry.Pack.ID, component.ID)
 		providers = append(providers, ProviderSummary{
-			Name:     name,
-			Type:     "http",
-			Behavior: component.Behavior,
-			Format:   component.Format,
-			URL:      component.URL,
-			Path:     component.Path,
+			Name:      name,
+			Component: component.ID,
+			Type:      "http",
+			Behavior:  component.Behavior,
+			Format:    component.Format,
+			URL:       component.URL,
+			Path:      component.Path,
 		})
 		if strings.EqualFold(component.Behavior, "v2fly-dlc") {
 			rules = append(rules, fmt.Sprintf("GEOSITE,%s,%s", entry.Pack.ID, target))
@@ -268,8 +273,8 @@ func packDetail(entry catalogEntry) PackDetail {
 		reason = "v2fly domain-list-community raw data is queryable here and renders as a Mihomo GEOSITE rule; runtime geosite.dat must contain the same tag"
 	}
 	return PackDetail{
-		ID:                 catalogPackID(entry.Cache.Source, entry.Pack.ID),
 		Source:             entry.Cache.Source,
+		Pack:               entry.Pack.ID,
 		Name:               packDisplayName(entry.Pack),
 		Type:               backend.Type,
 		RenderStrategy:     backend.RenderStrategy,
@@ -294,7 +299,7 @@ func packBackend(source string, pack Pack, target string) PackBackend {
 			RenderStrategy:     RenderStrategyGeoSite,
 			RenderRuleTemplate: fmt.Sprintf("GEOSITE,%s,%s", pack.ID, target),
 			DataFile:           GeoSiteDataFileDLC,
-			Note:               "This pack renders as Mihomo GEOSITE. Keep using config_patch_create with this pack id; localClash will render GEOSITE instead of RULE-SET.",
+			Note:               "This pack renders as Mihomo GEOSITE. Keep using config_patch_create with this exact source and pack; localClash will render GEOSITE instead of RULE-SET.",
 		}
 	}
 	providerID := "<provider>"
@@ -335,36 +340,6 @@ func resolveProviderRuntimePath(runtimeDir, providerPath string) string {
 		return cleanProvider
 	}
 	return filepath.ToSlash(filepath.Clean(filepath.Join(runtimeDir, providerPath)))
-}
-
-func catalogPackID(source, packID string) string {
-	return providerName(source, packID, "")
-}
-
-func validateGeoSiteAttr(attr string) error {
-	if strings.TrimSpace(attr) == "" || strings.ContainsAny(attr, ", \t\r\n") {
-		return fmt.Errorf("invalid geosite attribute %q", attr)
-	}
-	return nil
-}
-
-func packIDLookupEqual(left, right string) bool {
-	if left == right {
-		return true
-	}
-	return normalizePackLookupID(left) == normalizePackLookupID(right)
-}
-
-func normalizePackLookupID(id string) string {
-	normalized := unsafeProviderChars.ReplaceAllString(strings.ReplaceAll(id, "-", "_"), "_")
-	for strings.Contains(normalized, "__") {
-		normalized = strings.ReplaceAll(normalized, "__", "_")
-	}
-	return strings.Trim(normalized, "_")
-}
-
-func PackCatalogID(source, packID string) string {
-	return catalogPackID(source, packID)
 }
 
 func packDisplayName(pack Pack) string {
