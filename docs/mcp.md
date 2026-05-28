@@ -23,12 +23,17 @@
 **3. 規則包與規則證據**
 
 - `packs_list`：查有哪些可用規則包。
-- `packs_get`：看單個規則包詳情。
+- `packs_get`：用 `{source, pack}` 看單個規則包詳情。
 - `pack_rules_prefetch`：下載 provider rules 到本地 cache。
-- `pack_rules_read`：讀某個 pack 的規則，必要時下載。
+- `pack_rules_read`：用 `{source, pack}` 讀某個 pack 的規則，必要時下載。
 - `pack_rules_query`：在本地 cache 搜 domain/keyword，回答「某個域名應該落在哪類規則」。
 
 服務場景：Agent 不憑空猜 Telegram、Steam、AI、Apple，而是查 rule pack 的實際規則證據。
+這組工具的 pack selector 只接受 `{source, pack}`，例如
+`{"source":"sukkaw","pack":"ai"}`；`packs_list` / `packs_get` 會返回可直接複製
+的 `tool_args`。`sukkaw_ai`、`syncnext_SyncnextProxy` 這類 composite provider
+或 renderer 名稱不是 MCP selector，只能出現在明確讀取 generated config/file 的
+原始 Mihomo 內容裡。
 
 **4. 配置狀態、構建與 Patch 工作流**
 
@@ -67,7 +72,7 @@
 
 1. `tools_list` + `environment_inspect`
 2. `subscriptions_status` / `config_status` / `runtime_status`
-3. 需要規則證據時走 `packs_list` / `pack_rules_prefetch` / `pack_rules_query`
+3. 需要規則證據時走 `packs_list` / `pack_rules_prefetch` / `pack_rules_query`，pack 參數使用 `{source, pack}`
 4. 需要修改配置時走 `proxy_group_build` / `policy_group_build` / `custom_rules_build`
 5. 用 `config_patch_create` 產生 patch
 6. 用 `config_patch_apply` 套用

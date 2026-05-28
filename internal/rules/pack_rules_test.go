@@ -2,6 +2,7 @@ package rules
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -37,6 +38,10 @@ func TestReadPackRulesFetchesProviderAndReturnsSamples(t *testing.T) {
 	if len(component.DomainsSample) != 2 || component.DomainsSample[0] != "openai.com" {
 		t.Fatalf("domains sample = %+v, want openai.com", component.DomainsSample)
 	}
+	if result.Pack.ToolArgs.PackRulesRead.Source != "sukkaw" || result.Pack.ToolArgs.PackRulesRead.Pack != "ai" {
+		t.Fatalf("tool args = %+v, want copyable source/pack args", result.Pack.ToolArgs)
+	}
+	assertPackRulesJSONExcludes(t, result, "render_rule_template", "RULE-SET,", "sukkaw_ai")
 }
 
 func TestPrefetchAndQueryPackRulesUseLocalProviderCache(t *testing.T) {
@@ -84,6 +89,10 @@ func TestPrefetchAndQueryPackRulesUseLocalProviderCache(t *testing.T) {
 	if !after.CacheComplete || after.SearchedCachedPacks != 1 {
 		t.Fatalf("after query cache = %+v, want complete local cache", after)
 	}
+	if after.Matches[0].ToolArgs.PackRulesRead.Source != "sukkaw" || after.Matches[0].ToolArgs.PackRulesRead.Pack != "ai" {
+		t.Fatalf("match tool args = %+v, want copyable source/pack args", after.Matches[0].ToolArgs)
+	}
+	assertPackRulesJSONExcludes(t, after, "render_rule_template", "RULE-SET,", "sukkaw_ai")
 }
 
 func TestV2FlyDLCPackRulesAreQueryableWithoutBeingRenderable(t *testing.T) {
@@ -181,6 +190,23 @@ func TestQueryPackRulesRejectsApproximateSource(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), `did you mean "v2fly-dlc"`) {
 		t.Fatalf("err = %v, want exact source hint", err)
+	}
+}
+
+func assertPackRulesJSONExcludes(t *testing.T, value any, forbidden ...string) {
+	t.Helper()
+	data, err := json.Marshal(value)
+	if err != nil {
+		t.Fatalf("pack rules JSON is not serializable: %v", err)
+	}
+	text := string(data)
+	if !strings.Contains(text, `"tool_args"`) {
+		t.Fatalf("pack rules JSON = %s, want tool_args", text)
+	}
+	for _, needle := range forbidden {
+		if strings.Contains(text, needle) {
+			t.Fatalf("pack rules JSON contains %q: %s", needle, text)
+		}
 	}
 }
 

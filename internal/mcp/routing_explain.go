@@ -55,16 +55,15 @@ type routingExplainMatch struct {
 }
 
 type routingExplainRoute struct {
-	SourceKind      string                `json:"source_kind"`
-	ID              string                `json:"id"`
-	Target          string                `json:"target"`
-	TargetKind      string                `json:"target_kind"`
-	Reason          string                `json:"reason,omitempty"`
-	Pack            *routingExplainPack   `json:"pack,omitempty"`
-	PolicyGroup     *routingExplainPolicy `json:"policy_group,omitempty"`
-	ProxyGroup      *routingExplainProxy  `json:"proxy_group,omitempty"`
-	Exits           []routingExplainExit  `json:"exits,omitempty"`
-	RenderedBackend map[string]string     `json:"rendered_backend,omitempty"`
+	SourceKind  string                `json:"source_kind"`
+	ID          string                `json:"id"`
+	Target      string                `json:"target"`
+	TargetKind  string                `json:"target_kind"`
+	Reason      string                `json:"reason,omitempty"`
+	Pack        *routingExplainPack   `json:"pack,omitempty"`
+	PolicyGroup *routingExplainPolicy `json:"policy_group,omitempty"`
+	ProxyGroup  *routingExplainProxy  `json:"proxy_group,omitempty"`
+	Exits       []routingExplainExit  `json:"exits,omitempty"`
 }
 
 type routingExplainPack struct {
@@ -73,7 +72,6 @@ type routingExplainPack struct {
 	Name           string `json:"name,omitempty"`
 	Type           string `json:"type,omitempty"`
 	RenderStrategy string `json:"render_strategy,omitempty"`
-	RuleTemplate   string `json:"rule_template,omitempty"`
 }
 
 type routingExplainPolicy struct {
@@ -404,15 +402,8 @@ func routeForSource(sourceKind, id, target, reason string, index routingIndex) r
 	}
 	if sourceKind == "pack" {
 		detail := index.PackDetails[id]
-		pack := routingExplainPack{Source: detail.Source, Pack: detail.Pack, Name: detail.Name, Type: detail.Type, RenderStrategy: detail.RenderStrategy, RuleTemplate: detail.RenderRuleTemplate}
+		pack := routingExplainPack{Source: detail.Source, Pack: detail.Pack, Name: detail.Name, Type: detail.Type, RenderStrategy: detail.RenderStrategy}
 		route.Pack = &pack
-		if detail.RenderStrategy != "" || detail.RenderRuleTemplate != "" {
-			route.RenderedBackend = map[string]string{
-				"type":          detail.Type,
-				"strategy":      detail.RenderStrategy,
-				"rule_template": strings.ReplaceAll(detail.RenderRuleTemplate, "<target>", target),
-			}
-		}
 	}
 	if sourceKind == "local_rule_pack" {
 		route.Pack = &routingExplainPack{Pack: id, Type: "local_rule_pack"}

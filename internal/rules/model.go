@@ -75,7 +75,7 @@ type PackBackend struct {
 	Type               string `json:"type"`
 	QuerySource        string `json:"query_source"`
 	RenderStrategy     string `json:"render_strategy"`
-	RenderRuleTemplate string `json:"render_rule_template"`
+	RenderRuleTemplate string `json:"-"`
 	DataFile           string `json:"data_file,omitempty"`
 	Note               string `json:"note,omitempty"`
 }
