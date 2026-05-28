@@ -265,7 +265,7 @@ func startResetFakeRuntime(t *testing.T, dir string) *exec.Cmd {
 	config := filepath.Join("generated", "mihomo.yaml")
 	core := filepath.Join("bin", "linux-"+runtime.GOARCH, "mihomo-meta")
 	writeResetFile(t, config, "external-controller: 127.0.0.1:9090\n")
-	writeResetFile(t, core, "#!/bin/sh\nsleep 30\n")
+	writeResetFile(t, core, "#!/bin/sh\ntrap 'exit 0' TERM INT\nwhile :; do sleep 1; done\n")
 	if err := os.Chmod(core, 0o755); err != nil {
 		t.Fatal(err)
 	}
