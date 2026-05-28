@@ -75,7 +75,7 @@ func Build(dir, id string) (localconfig.Config, Summary, error) {
 			return localconfig.Config{}, Summary{}, err
 		}
 		if config.Version == 0 {
-			config.Version = 1
+			config.Version = localconfig.ConfigSchemaVersion
 		}
 		if strings.TrimSpace(config.PolicyTemplate) == "" {
 			config.PolicyTemplate = template.ID
@@ -131,7 +131,7 @@ func loadPatchFile(template File, ref PatchRef) (PatchFile, error) {
 
 func mergeConfig(base localconfig.Config, patch localconfig.Config) localconfig.Config {
 	if base.Version == 0 {
-		base.Version = 1
+		base.Version = localconfig.ConfigSchemaVersion
 	}
 	if patch.Version > base.Version {
 		base.Version = patch.Version
@@ -154,8 +154,11 @@ func mergeConfig(base localconfig.Config, patch localconfig.Config) localconfig.
 	base.CustomRules = mergeCustomRules(base.CustomRules, patch.CustomRules)
 	base.RuleProviders = mergeRuleProviders(base.RuleProviders, patch.RuleProviders)
 	base.Packs = mergePacks(base.Packs, patch.Packs)
-	if len(base.PolicyGroups) > 0 && base.Version < 2 {
-		base.Version = 2
+	if strings.TrimSpace(patch.FallbackTarget) != "" {
+		base.FallbackTarget = patch.FallbackTarget
+	}
+	if base.Version < localconfig.ConfigSchemaVersion {
+		base.Version = localconfig.ConfigSchemaVersion
 	}
 	return base
 }
@@ -164,18 +167,22 @@ func mergePacks(base []localconfig.Pack, patch []localconfig.Pack) []localconfig
 	merged := append([]localconfig.Pack{}, base...)
 	index := map[string]int{}
 	for i, item := range merged {
-		index[strings.TrimSpace(item.ID)] = i
+		index[packKey(item.Source, item.Pack)] = i
 	}
 	for _, item := range patch {
-		id := strings.TrimSpace(item.ID)
-		if i, ok := index[id]; ok {
+		key := packKey(item.Source, item.Pack)
+		if i, ok := index[key]; ok {
 			merged[i] = item
 			continue
 		}
-		index[id] = len(merged)
+		index[key] = len(merged)
 		merged = append(merged, item)
 	}
 	return merged
+}
+
+func packKey(source, pack string) string {
+	return strings.TrimSpace(source) + "/" + strings.TrimSpace(pack)
 }
 
 func mergeCustomRules(base []localconfig.CustomRule, patch []localconfig.CustomRule) []localconfig.CustomRule {
@@ -277,7 +284,7 @@ func validate(template File, path string) error {
 		len(template.Config.CustomRules) > 0 ||
 		len(template.Config.RuleProviders) > 0
 	if template.Config.Version == 0 {
-		template.Config.Version = 1
+		template.Config.Version = localconfig.ConfigSchemaVersion
 	}
 	if strings.TrimSpace(template.Config.PolicyTemplate) != "" && template.Config.PolicyTemplate != template.ID {
 		return fmt.Errorf("%s: config.policy_template must be empty or match id %q", path, template.ID)

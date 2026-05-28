@@ -2,7 +2,7 @@
   "id": "default.region-exits.v1",
   "description": "Add direct and regional exit proxy groups.",
   "config": {
-    "version": 2,
+    "version": 3,
     "proxy_groups": {
       "🎯 手动选择": {
         "mode": "manual",

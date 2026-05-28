@@ -259,8 +259,8 @@ Current code still does not yet have:
 
 That is enough for a careful Agent to discover that `localclash-default` is a
 business -> exit -> node model created by default patches, for example
-`default.steam.v1` contributing `v2fly_dlc_steam` targeting `🎮 Steam`, whose
-exits include direct, manual, automatic, and regional groups.
+`default.steam.v1` contributing `source: v2fly-dlc` / `pack: steam` targeting
+`🎮 Steam`, whose exits include direct, manual, automatic, and regional groups.
 
 Agents should not infer active default rules from
 `generated_summary.rules_sample` alone because that sample is intentionally

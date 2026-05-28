@@ -78,7 +78,7 @@ func TestWithLocalDNSPolicy(t *testing.T) {
 
 func TestBuildOrderedRulesUsesLocalBaselineFragmentAndDirectFallback(t *testing.T) {
 	fragment := &rules.Fragment{Rules: []string{"DOMAIN-SUFFIX,example.com,⚡ 自动选择"}}
-	got, err := buildOrderedRules(fragment)
+	got, err := buildOrderedRules(fragment, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,6 +90,16 @@ func TestBuildOrderedRulesUsesLocalBaselineFragmentAndDirectFallback(t *testing.
 	}
 	if got[len(got)-1] != "MATCH,DIRECT" {
 		t.Fatalf("last rule = %q, want DIRECT fallback", got[len(got)-1])
+	}
+}
+
+func TestBuildOrderedRulesUsesConfiguredFallback(t *testing.T) {
+	got, err := buildOrderedRules(nil, "🧭 漏网之鱼")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got[len(got)-1] != "MATCH,🧭 漏网之鱼" {
+		t.Fatalf("last rule = %q, want configured fallback", got[len(got)-1])
 	}
 }
 
@@ -186,6 +196,39 @@ func TestRenderWithPacksSelectionIncludesProxyGroupFragment(t *testing.T) {
 		t.Fatalf("proxy group mode = %v, want manual", got)
 	}
 	assertNoSensitiveConfigMetadata(t, metadata)
+}
+
+func TestRenderUsesSelectionFallbackTarget(t *testing.T) {
+	paths := writeRenderFixture(t)
+	writeFile(t, paths.selection, `version: 1
+proxy_groups:
+  "🧭 漏网之鱼":
+    nodes: ["🇯🇵日本01 | JP"]
+    manual: true
+fallback_target: "🧭 漏网之鱼"
+required_targets: ["🧭 漏网之鱼"]
+enabled_packs: []
+`)
+
+	result, err := Render(Options{
+		SourcePath:         paths.subscription,
+		OutputPath:         filepath.Join(paths.dir, "fallback.yaml"),
+		PacksSelectionPath: paths.selection,
+		RulesCacheDir:      paths.cacheDir,
+		RuntimeProfilePath: filepath.Join(paths.dir, "localclash-runtime.json"),
+		Force:              true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	config := readTestYAML(t, result.OutputPath)
+	rules := testStringSlice(config["rules"])
+	if got := rules[len(rules)-1]; got != "MATCH,🧭 漏网之鱼" {
+		t.Fatalf("last rule = %q, want configured fallback", got)
+	}
+	if !proxyGroupNamesFromConfig(config)["🧭 漏网之鱼"] {
+		t.Fatal("missing fallback proxy group")
+	}
 }
 
 func TestRenderDefaultOverlayUsesBaseManualAutoSelectors(t *testing.T) {

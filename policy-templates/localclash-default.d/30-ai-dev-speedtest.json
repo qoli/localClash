@@ -2,7 +2,7 @@
   "id": "default.ai-dev-speedtest.v1",
   "description": "Add ChatGPT, AI, GitHub, and speed-test business groups.",
   "config": {
-    "version": 2,
+    "version": 3,
     "policy_groups": {
       "🤖 ChatGPT": {
         "mode": "manual",
@@ -69,25 +69,29 @@
     },
     "packs": [
       {
-        "id": "v2fly_dlc_openai",
+        "source": "v2fly-dlc",
+        "pack": "openai",
         "type": "geosite",
         "target": "🤖 ChatGPT",
         "reason": "Route OpenAI domains through ChatGPT selector."
       },
       {
-        "id": "v2fly_dlc_category_ai__cn",
+        "source": "v2fly-dlc",
+        "pack": "category-ai-!cn",
         "type": "geosite",
         "target": "🧠 AI",
         "reason": "Route non-China AI service categories through AI selector."
       },
       {
-        "id": "v2fly_dlc_github",
+        "source": "v2fly-dlc",
+        "pack": "github",
         "type": "geosite",
         "target": "💻 GitHub",
         "reason": "Route GitHub domains through GitHub selector."
       },
       {
-        "id": "v2fly_dlc_category_speedtest",
+        "source": "v2fly-dlc",
+        "pack": "category-speedtest",
         "type": "geosite",
         "target": "📊 测速服务",
         "reason": "Route speed test domains through speed-test selector."

@@ -9,7 +9,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 	"unicode"
@@ -90,6 +89,7 @@ type Selection struct {
 	RuleProviders   []ExternalRuleProvider  `json:"rule_providers,omitempty"`
 	EnabledPack     []SelectedPack          `json:"enabled_packs"`
 	RequiredTargets []string                `json:"required_targets,omitempty"`
+	FallbackTarget  string                  `json:"fallback_target,omitempty"`
 }
 
 type ProxyGroup struct {
@@ -467,11 +467,7 @@ func RenderFragment(selection Selection, caches map[string]PackCache, proxyNames
 		if !ok {
 			return Fragment{}, fmt.Errorf("source %q has no pack cache; run rules adapt first", enabled.Source)
 		}
-		packID := enabled.Pack
-		if base, _, ok := strings.Cut(enabled.Pack, "@"); ok {
-			packID = base
-		}
-		pack, ok := findPack(cache.Packs, packID)
+		pack, ok := findPack(cache.Packs, enabled.Pack)
 		if !ok {
 			return Fragment{}, fmt.Errorf("pack %q not found in source %q", enabled.Pack, enabled.Source)
 		}
@@ -902,15 +898,11 @@ func appendUniqueString(values []string, value string) []string {
 	return append(values, value)
 }
 
-var unsafeProviderChars = regexp.MustCompile(`[^A-Za-z0-9_]+`)
-
 func providerName(source, pack, component string) string {
-	raw := source + "_" + pack
+	raw := strings.TrimSpace(source) + "_" + strings.TrimSpace(pack)
 	if component != "" && component != pack {
-		raw += "_" + component
+		raw += "_" + strings.TrimSpace(component)
 	}
-	raw = strings.ReplaceAll(raw, "-", "_")
-	raw = unsafeProviderChars.ReplaceAllString(raw, "_")
 	return strings.Trim(raw, "_")
 }
 

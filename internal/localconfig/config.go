@@ -15,9 +15,12 @@ import (
 	"localclash/internal/rules"
 )
 
+const ConfigSchemaVersion = 3
+
 type Config struct {
 	Version          int                    `json:"version" yaml:"version"`
 	PolicyTemplate   string                 `json:"policy_template,omitempty" yaml:"policy_template,omitempty"`
+	FallbackTarget   string                 `json:"fallback_target,omitempty" yaml:"fallback_target,omitempty"`
 	ProxyGroups      map[string]ProxyGroup  `json:"proxy_groups" yaml:"proxy_groups,omitempty"`
 	PolicyGroups     map[string]PolicyGroup `json:"policy_groups,omitempty" yaml:"policy_groups,omitempty"`
 	CustomRules      []CustomRule           `json:"custom_rules,omitempty" yaml:"custom_rules,omitempty"`
@@ -53,10 +56,30 @@ type Match struct {
 }
 
 type Pack struct {
-	ID     string `json:"id" yaml:"id"`
+	Source string `json:"source" yaml:"source"`
+	Pack   string `json:"pack" yaml:"pack"`
 	Type   string `json:"type,omitempty" yaml:"type,omitempty"`
 	Target string `json:"target" yaml:"target"`
 	Reason string `json:"reason,omitempty" yaml:"reason,omitempty"`
+}
+
+func (pack *Pack) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		ID     *json.RawMessage `json:"id"`
+		Source string           `json:"source"`
+		Pack   string           `json:"pack"`
+		Type   string           `json:"type"`
+		Target string           `json:"target"`
+		Reason string           `json:"reason"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw.ID != nil {
+		return fmt.Errorf("packs[].id is no longer supported; use packs[].source and packs[].pack")
+	}
+	*pack = Pack{Source: raw.Source, Pack: raw.Pack, Type: raw.Type, Target: raw.Target, Reason: raw.Reason}
+	return nil
 }
 
 type CustomRule struct {
@@ -185,7 +208,8 @@ type PolicyGroupResult struct {
 }
 
 type PackResult struct {
-	ID     string `json:"id"`
+	Source string `json:"source"`
+	Pack   string `json:"pack"`
 	Type   string `json:"type"`
 	Target string `json:"target"`
 	Reason string `json:"reason,omitempty"`
@@ -263,7 +287,7 @@ func Load(path string) (Config, error) {
 
 func Write(path string, config Config) error {
 	if config.Version == 0 {
-		config.Version = 1
+		config.Version = ConfigSchemaVersion
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
@@ -283,7 +307,7 @@ func Resolve(opts ResolveOptions) (Resolved, error) {
 	opts = normalizeResolveOptions(opts)
 	stage := localConfigStageEmitter(opts.OnStage)
 	if opts.Config.Version == 0 {
-		opts.Config.Version = 1
+		opts.Config.Version = ConfigSchemaVersion
 	}
 	finish := stage("load_subscription_nodes", map[string]any{
 		"subscription":         opts.SubscriptionPath,
@@ -443,6 +467,17 @@ func Resolve(opts ResolveOptions) (Resolved, error) {
 		})
 	}
 	finish(nil, map[string]any{"resolved_policy_groups": len(policyResults)})
+	fallbackTarget := strings.TrimSpace(resolvedConfig.FallbackTarget)
+	if fallbackTarget == "" {
+		fallbackTarget = rules.TerminalDirect
+	}
+	if !isKnownTarget(fallbackTarget, selection.ProxyGroups, selection.PolicyGroups) {
+		err := fmt.Errorf("fallback_target %q requires a matching proxy group or policy group", fallbackTarget)
+		stage("resolve_fallback_target", map[string]any{"fallback_target": fallbackTarget})(err, nil)
+		return Resolved{}, err
+	}
+	resolvedConfig.FallbackTarget = fallbackTarget
+	selection.FallbackTarget = fallbackTarget
 	resolvedPacks := make([]Pack, 0, len(resolvedConfig.Packs))
 	packResults := make([]PackResult, 0, len(resolvedConfig.Packs))
 	finish = stage("resolve_packs", map[string]any{"pack_count": len(resolvedConfig.Packs), "rules_cache": opts.RulesCache})
@@ -458,21 +493,24 @@ func Resolve(opts ResolveOptions) (Resolved, error) {
 		finishIndex(nil, map[string]any{"pack_count": len(packIndex.Catalog.Packs), "ref_count": len(packIndex.Refs)})
 	}
 	for _, pack := range resolvedConfig.Packs {
-		finishPack := stage("resolve_pack", map[string]any{"pack_id": pack.ID, "target": pack.Target, "declared_type": pack.Type})
-		ref, err := packIndex.ResolvePackRef(pack.ID)
+		source := strings.TrimSpace(pack.Source)
+		packName := strings.TrimSpace(pack.Pack)
+		label := rules.PackKey(source, packName)
+		finishPack := stage("resolve_pack", map[string]any{"source": source, "pack": packName, "target": pack.Target, "declared_type": pack.Type})
+		ref, err := packIndex.ResolvePackRef(source, packName)
 		if err != nil {
 			finishPack(err, nil)
 			finish(err, nil)
 			return Resolved{}, err
 		}
-		if err := assertPackType(pack.ID, pack.Type, ref.Type); err != nil {
+		if err := assertPackType(label, pack.Type, ref.Type); err != nil {
 			finishPack(err, map[string]any{"resolved_type": ref.Type})
 			finish(err, nil)
 			return Resolved{}, err
 		}
 		target := strings.TrimSpace(pack.Target)
 		if target == "" {
-			err := fmt.Errorf("pack %q target is required", pack.ID)
+			err := fmt.Errorf("pack %q target is required", label)
 			finishPack(err, map[string]any{"resolved_type": ref.Type})
 			finish(err, nil)
 			return Resolved{}, err
@@ -484,9 +522,9 @@ func Resolve(opts ResolveOptions) (Resolved, error) {
 			return Resolved{}, err
 		}
 		selection.EnabledPack = append(selection.EnabledPack, rules.SelectedPack{Source: ref.Source, Pack: ref.Pack, Target: target})
-		resolvedPacks = append(resolvedPacks, Pack{ID: ref.ID, Type: ref.Type, Target: target, Reason: pack.Reason})
-		packResults = append(packResults, PackResult{ID: ref.ID, Type: ref.Type, Target: target, Reason: pack.Reason})
-		finishPack(nil, map[string]any{"resolved_id": ref.ID, "resolved_type": ref.Type, "source": ref.Source, "pack": ref.Pack})
+		resolvedPacks = append(resolvedPacks, Pack{Source: ref.Source, Pack: ref.Pack, Type: ref.Type, Target: target, Reason: pack.Reason})
+		packResults = append(packResults, PackResult{Source: ref.Source, Pack: ref.Pack, Type: ref.Type, Target: target, Reason: pack.Reason})
+		finishPack(nil, map[string]any{"resolved_type": ref.Type, "source": ref.Source, "pack": ref.Pack})
 	}
 	finish(nil, map[string]any{"resolved_packs": len(packResults)})
 	resolvedConfig.Packs = resolvedPacks

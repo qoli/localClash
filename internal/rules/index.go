@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	PackIndexSchemaVersion = 1
+	PackIndexSchemaVersion = 2
 	PackIndexFilename      = "index.gob"
 )
 
@@ -43,11 +43,8 @@ func BuildPackIndex(caches map[string]PackCache) (PackIndex, error) {
 		detail := packDetail(entry)
 		ref := packRef(entry)
 		index.Catalog.Packs = append(index.Catalog.Packs, summary)
-		index.Catalog.Details[summary.ID] = detail
-		index.addPackRef(summary.ID, ref)
-		for _, component := range entry.Pack.Components {
-			index.addPackRef(providerName(entry.Cache.Source, entry.Pack.ID, component.ID), ref)
-		}
+		index.Catalog.Details[PackKey(summary.Source, summary.Pack)] = detail
+		index.addPackRef(ref)
 	}
 	return index, nil
 }
@@ -111,49 +108,34 @@ func LoadPackIndex(path string) (*PackIndex, error) {
 	return &index, nil
 }
 
-func (index *PackIndex) ResolvePackRef(id string) (PackRef, error) {
+func (index *PackIndex) ResolvePackRef(source, pack string) (PackRef, error) {
 	if index == nil {
 		return PackRef{}, fmt.Errorf("pack index not found: run localclash rules adapt")
 	}
-	trimmed := strings.TrimSpace(id)
-	if trimmed == "" {
-		return PackRef{}, fmt.Errorf("pack id is required")
+	source = strings.TrimSpace(source)
+	pack = strings.TrimSpace(pack)
+	if source == "" {
+		return PackRef{}, fmt.Errorf("pack source is required")
 	}
-	lookupID := trimmed
-	attr := ""
-	if base, suffix, ok := strings.Cut(trimmed, "@"); ok {
-		lookupID = base
-		attr = suffix
-		if err := validateGeoSiteAttr(attr); err != nil {
-			return PackRef{}, err
-		}
+	if pack == "" {
+		return PackRef{}, fmt.Errorf("pack name is required")
 	}
-	ref, ok := index.Refs[lookupKey(lookupID)]
+	ref, ok := index.Refs[PackKey(source, pack)]
 	if !ok {
-		return PackRef{}, fmt.Errorf("pack %q not found in pack cache", trimmed)
+		return PackRef{}, fmt.Errorf("pack %q/%q not found in pack cache", source, pack)
 	}
-	if attr == "" {
-		return ref, nil
-	}
-	if ref.Type != PackTypeGeoSite {
-		return PackRef{}, fmt.Errorf("pack %q does not support geosite attribute %q", lookupID, attr)
-	}
-	ref.ID = trimmed
-	ref.Pack = ref.Pack + "@" + attr
-	ref.Name = ref.Pack
-	ref.RenderRuleTemplate = fmt.Sprintf("GEOSITE,%s,<target>", ref.Pack)
 	return ref, nil
 }
 
-func (index *PackIndex) addPackRef(id string, ref PackRef) {
+func (index *PackIndex) addPackRef(ref PackRef) {
 	if index.Refs == nil {
 		index.Refs = map[string]PackRef{}
 	}
-	index.Refs[lookupKey(id)] = ref
+	index.Refs[PackKey(ref.Source, ref.Pack)] = ref
 }
 
-func lookupKey(id string) string {
-	return normalizePackLookupID(strings.TrimSpace(id))
+func PackKey(source, pack string) string {
+	return strings.TrimSpace(source) + "/" + strings.TrimSpace(pack)
 }
 
 func PackIndexPath(dir string) string {

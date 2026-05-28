@@ -155,7 +155,11 @@ func Render(opts Options) (Result, error) {
 	}
 
 	finish = stage("build_runtime_config", nil)
-	rendered, err := buildRuntimeConfig(source, proxies, fragment)
+	fallbackTarget := rulespkg.TerminalDirect
+	if selection != nil && strings.TrimSpace(selection.FallbackTarget) != "" {
+		fallbackTarget = strings.TrimSpace(selection.FallbackTarget)
+	}
+	rendered, err := buildRuntimeConfig(source, proxies, fragment, fallbackTarget)
 	if err != nil {
 		finish(err, nil)
 		return Result{}, err
@@ -365,7 +369,7 @@ func buildLocalClashMetadata(selection *rulespkg.Selection, fragment *rulespkg.F
 			PolicyGroups:  []configmeta.OverlayPolicyGroup{},
 			RuleProviders: []configmeta.OverlayRuleProvider{},
 			Rules:         []configmeta.OverlayRule{},
-			Insertion:     "after local safety baseline, before DIRECT fallback",
+			Insertion:     "after local safety baseline, before configured fallback",
 		},
 	}
 	if selection != nil {
@@ -388,8 +392,8 @@ func buildLocalClashMetadata(selection *rulespkg.Selection, fragment *rulespkg.F
 		}
 		for _, enabled := range selection.EnabledPack {
 			metadata.Overlay.Packs = append(metadata.Overlay.Packs, configmeta.OverlayPack{
-				ID:     rulespkg.PackCatalogID(enabled.Source, enabled.Pack),
 				Source: enabled.Source,
+				Pack:   enabled.Pack,
 				Type:   packTypeFromFragment(fragment, enabled),
 				Target: enabled.Target,
 			})
@@ -397,8 +401,8 @@ func buildLocalClashMetadata(selection *rulespkg.Selection, fragment *rulespkg.F
 		}
 		for _, enabled := range selection.LocalRulePacks {
 			metadata.Overlay.Packs = append(metadata.Overlay.Packs, configmeta.OverlayPack{
-				ID:     enabled.ID,
 				Source: "local",
+				Pack:   enabled.ID,
 				Type:   "local_rule_pack",
 				Target: enabled.Target,
 			})
@@ -617,7 +621,7 @@ func proxyNames(proxies []any) ([]string, error) {
 	return names, nil
 }
 
-func buildRuntimeConfig(source map[string]any, proxies []any, fragment *rulespkg.Fragment) (map[string]any, error) {
+func buildRuntimeConfig(source map[string]any, proxies []any, fragment *rulespkg.Fragment, fallbackTarget string) (map[string]any, error) {
 	config := map[string]any{
 		"mixed-port":          7890,
 		"allow-lan":           false,
@@ -643,7 +647,7 @@ func buildRuntimeConfig(source map[string]any, proxies []any, fragment *rulespkg
 	}
 	config["rule-providers"] = ruleProviders
 
-	rules, err := buildOrderedRules(fragment)
+	rules, err := buildOrderedRules(fragment, fallbackTarget)
 	if err != nil {
 		return nil, err
 	}
@@ -755,17 +759,21 @@ func setDefaultAny(values map[string]any, key string, value any) {
 	}
 }
 
-func buildOrderedRules(fragment *rulespkg.Fragment) ([]string, error) {
+func buildOrderedRules(fragment *rulespkg.Fragment, fallbackTarget string) ([]string, error) {
 	baseline, err := renderRuleSpecs(localBaselineRules)
 	if err != nil {
 		return nil, err
+	}
+	fallbackTarget = strings.TrimSpace(fallbackTarget)
+	if fallbackTarget == "" {
+		fallbackTarget = rulespkg.TerminalDirect
 	}
 	rules := make([]string, 0, len(baseline)+1)
 	rules = append(rules, baseline...)
 	if fragment != nil {
 		rules = append(rules, fragment.Rules...)
 	}
-	rules = append(rules, "MATCH,DIRECT")
+	rules = append(rules, "MATCH,"+fallbackTarget)
 	return rules, nil
 }
 

@@ -32,8 +32,8 @@ func TestLoadPackIndexSchemaMismatchHardFails(t *testing.T) {
 				Packs:  []Pack{{ID: "OpenAI", Name: "OpenAI", Renderable: true}},
 			},
 		},
-		Catalog: PackCatalog{Packs: []PackSummary{{ID: "blackmatrix7_OpenAI"}}, Details: map[string]PackDetail{}},
-		Refs:    map[string]PackRef{"blackmatrix7_openai": {ID: "blackmatrix7_OpenAI"}},
+		Catalog: PackCatalog{Packs: []PackSummary{{Source: "blackmatrix7", Pack: "OpenAI"}}, Details: map[string]PackDetail{}},
+		Refs:    map[string]PackRef{PackKey("blackmatrix7", "OpenAI"): {Source: "blackmatrix7", Pack: "OpenAI"}},
 	})
 	closeErr := file.Close()
 	if encodeErr != nil {
@@ -46,7 +46,7 @@ func TestLoadPackIndexSchemaMismatchHardFails(t *testing.T) {
 	_, err = LoadPackIndex(path)
 	if err == nil ||
 		!strings.Contains(err.Error(), "pack index schema version mismatch") ||
-		!strings.Contains(err.Error(), "expected 1, got 2") ||
+		!strings.Contains(err.Error(), "expected 2, got 3") ||
 		!strings.Contains(err.Error(), "run localclash rules adapt") {
 		t.Fatalf("err = %v, want schema mismatch hard fail", err)
 	}

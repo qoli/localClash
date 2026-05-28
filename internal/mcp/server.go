@@ -1569,12 +1569,17 @@ func (s *Server) callPacksList(args json.RawMessage) (toolResult, error) {
 
 func (s *Server) callPacksGet(args json.RawMessage) (toolResult, error) {
 	var in struct {
-		ID         string `json:"id"`
-		Cache      string `json:"cache"`
-		RuntimeDir string `json:"runtime_dir"`
+		ID         *string `json:"id"`
+		Source     string  `json:"source"`
+		Pack       string  `json:"pack"`
+		Cache      string  `json:"cache"`
+		RuntimeDir string  `json:"runtime_dir"`
 	}
 	if err := decodeToolInput(args, &in); err != nil {
 		return toolResult{}, err
+	}
+	if in.ID != nil {
+		return toolResult{}, fmt.Errorf("pack id is no longer supported; use source and pack")
 	}
 	if s.state != nil {
 		if in.Cache == "" {
@@ -1584,7 +1589,7 @@ func (s *Server) callPacksGet(args json.RawMessage) (toolResult, error) {
 			in.RuntimeDir = s.state.Paths.MihomoRuntimeDir
 		}
 	}
-	result, err := rules.GetPack(rules.PackGetOptions{CacheDir: in.Cache, RuntimeDir: in.RuntimeDir, ID: in.ID})
+	result, err := rules.GetPack(rules.PackGetOptions{CacheDir: in.Cache, RuntimeDir: in.RuntimeDir, Source: in.Source, Pack: in.Pack})
 	if err != nil {
 		return toolResult{}, err
 	}
@@ -1593,16 +1598,21 @@ func (s *Server) callPacksGet(args json.RawMessage) (toolResult, error) {
 
 func (s *Server) callPackRulesRead(ctx context.Context, args json.RawMessage) (toolResult, error) {
 	var in struct {
-		ID            string `json:"id"`
-		Component     string `json:"component"`
-		Limit         int    `json:"limit"`
-		Refresh       bool   `json:"refresh"`
-		Cache         string `json:"cache"`
-		Sources       string `json:"sources"`
-		ProviderCache string `json:"provider_cache"`
+		ID            *string `json:"id"`
+		Source        string  `json:"source"`
+		Pack          string  `json:"pack"`
+		Component     string  `json:"component"`
+		Limit         int     `json:"limit"`
+		Refresh       bool    `json:"refresh"`
+		Cache         string  `json:"cache"`
+		Sources       string  `json:"sources"`
+		ProviderCache string  `json:"provider_cache"`
 	}
 	if err := decodeToolInput(args, &in); err != nil {
 		return toolResult{}, err
+	}
+	if in.ID != nil {
+		return toolResult{}, fmt.Errorf("pack id is no longer supported; use source and pack")
 	}
 	s.applyPackRulesDefaults(&in.Cache, &in.Sources, &in.ProviderCache)
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
@@ -1611,7 +1621,8 @@ func (s *Server) callPackRulesRead(ctx context.Context, args json.RawMessage) (t
 		SourcesDir:    in.Sources,
 		CacheDir:      in.Cache,
 		ProviderCache: in.ProviderCache,
-		ID:            in.ID,
+		Source:        in.Source,
+		Pack:          in.Pack,
 		Component:     in.Component,
 		Limit:         in.Limit,
 		Refresh:       in.Refresh,
@@ -1624,18 +1635,22 @@ func (s *Server) callPackRulesRead(ctx context.Context, args json.RawMessage) (t
 
 func (s *Server) callPackRulesPrefetch(ctx context.Context, args json.RawMessage) (toolResult, error) {
 	var in struct {
-		IDs           []string `json:"ids"`
-		Source        string   `json:"source"`
-		Name          string   `json:"name"`
-		Target        string   `json:"target"`
-		Limit         int      `json:"limit"`
-		Refresh       bool     `json:"refresh"`
-		Cache         string   `json:"cache"`
-		Sources       string   `json:"sources"`
-		ProviderCache string   `json:"provider_cache"`
+		IDs           []string             `json:"ids"`
+		Packs         []rules.PackSelector `json:"packs"`
+		Source        string               `json:"source"`
+		Name          string               `json:"name"`
+		Target        string               `json:"target"`
+		Limit         int                  `json:"limit"`
+		Refresh       bool                 `json:"refresh"`
+		Cache         string               `json:"cache"`
+		Sources       string               `json:"sources"`
+		ProviderCache string               `json:"provider_cache"`
 	}
 	if err := decodeToolInput(args, &in); err != nil {
 		return toolResult{}, err
+	}
+	if len(in.IDs) > 0 {
+		return toolResult{}, fmt.Errorf("pack ids are no longer supported; use packs[].source and packs[].pack")
 	}
 	s.applyPackRulesDefaults(&in.Cache, &in.Sources, &in.ProviderCache)
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
@@ -1644,7 +1659,7 @@ func (s *Server) callPackRulesPrefetch(ctx context.Context, args json.RawMessage
 		SourcesDir:    in.Sources,
 		CacheDir:      in.Cache,
 		ProviderCache: in.ProviderCache,
-		IDs:           in.IDs,
+		Packs:         in.Packs,
 		Source:        in.Source,
 		Name:          in.Name,
 		Target:        in.Target,
@@ -2756,12 +2771,12 @@ func validatePolicyTemplateConfig(config localconfig.Config, rulesCache string) 
 		}
 	}
 	for _, pack := range config.Packs {
-		ref, err := packIndex.ResolvePackRef(pack.ID)
+		ref, err := packIndex.ResolvePackRef(pack.Source, pack.Pack)
 		if err != nil {
-			return fmt.Errorf("policy_template references unavailable pack %q: %w", pack.ID, err)
+			return fmt.Errorf("policy_template references unavailable pack %q: %w", rules.PackKey(pack.Source, pack.Pack), err)
 		}
 		if strings.TrimSpace(pack.Type) != "" && ref.Type != pack.Type {
-			return fmt.Errorf("policy_template pack %q is type %q, want %q", pack.ID, ref.Type, pack.Type)
+			return fmt.Errorf("policy_template pack %q is type %q, want %q", rules.PackKey(pack.Source, pack.Pack), ref.Type, pack.Type)
 		}
 	}
 	return nil

@@ -16,8 +16,8 @@ func TestListPacksReturnsSummaries(t *testing.T) {
 	if result.Total != 3 || result.Returned != 3 {
 		t.Fatalf("counts = %d/%d, want 3/3", result.Returned, result.Total)
 	}
-	if result.Packs[0].ID != "blackmatrix7_GitHub" {
-		t.Fatalf("first pack id = %q, want blackmatrix7_GitHub", result.Packs[0].ID)
+	if result.Packs[0].Source != "blackmatrix7" || result.Packs[0].Pack != "GitHub" {
+		t.Fatalf("first pack = %s/%s, want blackmatrix7/GitHub", result.Packs[0].Source, result.Packs[0].Pack)
 	}
 	if result.Packs[0].ProviderCount != 1 || result.Packs[0].RuleCount != 1 {
 		t.Fatalf("counts = %+v, want provider/rule count 1", result.Packs[0])
@@ -43,8 +43,8 @@ func TestListPacksFiltersNameCaseInsensitive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Total != 1 || result.Packs[0].ID != "blackmatrix7_OpenAI" {
-		t.Fatalf("result = %+v, want blackmatrix7_OpenAI", result)
+	if result.Total != 1 || result.Packs[0].Source != "blackmatrix7" || result.Packs[0].Pack != "OpenAI" {
+		t.Fatalf("result = %+v, want blackmatrix7/OpenAI", result)
 	}
 }
 
@@ -67,7 +67,7 @@ func TestListPacksFiltersTargetExact(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Total != 1 || result.Packs[0].ID != "blackmatrix7_OpenAI" {
+	if result.Total != 1 || result.Packs[0].Source != "blackmatrix7" || result.Packs[0].Pack != "OpenAI" {
 		t.Fatalf("result = %+v, want AI OpenAI pack", result)
 	}
 }
@@ -87,12 +87,12 @@ func TestListPacksLimit(t *testing.T) {
 func TestGetPackReturnsDetail(t *testing.T) {
 	cacheDir := writeCatalogTestCaches(t)
 
-	result, err := GetPack(PackGetOptions{CacheDir: cacheDir, ID: "blackmatrix7_OpenAI"})
+	result, err := GetPack(PackGetOptions{CacheDir: cacheDir, Source: "blackmatrix7", Pack: "OpenAI"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	pack := result.Pack
-	if pack.ID != "blackmatrix7_OpenAI" || pack.Target != "AI" {
+	if pack.Source != "blackmatrix7" || pack.Pack != "OpenAI" || pack.Target != "AI" {
 		t.Fatalf("pack = %+v, want OpenAI target AI", pack)
 	}
 	if pack.TargetMeaning == "" {
@@ -139,7 +139,7 @@ func TestGetPackReturnsGeoSiteBackend(t *testing.T) {
 		},
 	})
 
-	result, err := GetPack(PackGetOptions{CacheDir: cacheDir, ID: "v2fly_dlc_google"})
+	result, err := GetPack(PackGetOptions{CacheDir: cacheDir, Source: "v2fly-dlc", Pack: "google"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,7 +158,7 @@ func TestGetPackReturnsGeoSiteBackend(t *testing.T) {
 	}
 }
 
-func TestResolvePackRefAcceptsGeoSiteAttribute(t *testing.T) {
+func TestResolvePackRefAcceptsExactPackWithAtSign(t *testing.T) {
 	cacheDir := filepath.Join(t.TempDir(), "packs")
 	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
 		t.Fatal(err)
@@ -170,15 +170,15 @@ func TestResolvePackRefAcceptsGeoSiteAttribute(t *testing.T) {
 		Renderable: false,
 		Packs: []Pack{
 			{
-				ID:         "category-games",
-				Name:       "category-games",
+				ID:         "category-games@cn",
+				Name:       "category-games@cn",
 				Renderable: true,
 				Components: []Component{{
 					ID:       "domain",
 					Behavior: "v2fly-dlc",
 					Format:   "text",
-					URL:      "https://example.com/category-games",
-					Path:     "./rule-packs/v2fly-dlc/category-games.txt",
+					URL:      "https://example.com/category-games@cn",
+					Path:     "./rule-packs/v2fly-dlc/category-games@cn.txt",
 				}},
 			},
 		},
@@ -188,31 +188,31 @@ func TestResolvePackRefAcceptsGeoSiteAttribute(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ref, err := index.ResolvePackRef("v2fly_dlc_category_games@cn")
+	ref, err := index.ResolvePackRef("v2fly-dlc", "category-games@cn")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if ref.Pack != "category-games@cn" || ref.RenderRuleTemplate != "GEOSITE,category-games@cn,<target>" {
-		t.Fatalf("ref = %+v, want geosite attribute ref", ref)
+		t.Fatalf("ref = %+v, want exact geosite ref", ref)
 	}
 }
 
-func TestGetPackUnknownIDReturnsError(t *testing.T) {
+func TestGetPackUnknownExactPackReturnsError(t *testing.T) {
 	cacheDir := writeCatalogTestCaches(t)
 
-	if _, err := GetPack(PackGetOptions{CacheDir: cacheDir, ID: "missing_pack"}); err == nil {
+	if _, err := GetPack(PackGetOptions{CacheDir: cacheDir, Source: "blackmatrix7", Pack: "missing_pack"}); err == nil {
 		t.Fatal("expected unknown pack error")
 	}
 }
 
-func TestResolvePackRefAcceptsCatalogAndProviderIDs(t *testing.T) {
+func TestResolvePackRefAcceptsExactSourcePackOnly(t *testing.T) {
 	cacheDir := writeCatalogTestCaches(t)
 
 	index, err := LoadPackIndex(PackIndexPath(cacheDir))
 	if err != nil {
 		t.Fatal(err)
 	}
-	ref, err := index.ResolvePackRef("blackmatrix7_OpenAI")
+	ref, err := index.ResolvePackRef("blackmatrix7", "OpenAI")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -248,12 +248,51 @@ func TestResolvePackRefAcceptsCatalogAndProviderIDs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ref, err = index.ResolvePackRef("sukkaw_ai_non_ip")
+	ref, err = index.ResolvePackRef("sukkaw", "ai")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ref.ID != "sukkaw_ai" || ref.Pack != "ai" {
+	if ref.Source != "sukkaw" || ref.Pack != "ai" {
 		t.Fatalf("ref = %+v, want source pack ref for sukkaw ai", ref)
+	}
+	if _, err := index.ResolvePackRef("sukkaw", "ai_non_ip"); err == nil {
+		t.Fatal("expected provider component alias to be rejected")
+	}
+}
+
+func TestResolvePackRefKeepsBangCNSeparateFromCN(t *testing.T) {
+	cacheDir := filepath.Join(t.TempDir(), "packs")
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	pairs := []string{
+		"geolocation-!cn", "geolocation-cn",
+		"category-ai-!cn", "category-ai-cn",
+		"category-social-media-!cn", "category-social-media-cn",
+	}
+	cache := PackCache{Version: 1, Source: "v2fly-dlc", Adapter: "v2fly-dlc", Renderable: true}
+	for _, pack := range pairs {
+		cache.Packs = append(cache.Packs, Pack{
+			ID:         pack,
+			Name:       pack,
+			Renderable: true,
+			Components: []Component{{ID: "domain", Behavior: "v2fly-dlc", Format: "text", URL: "https://example.com/" + pack, Path: "./rule-packs/v2fly-dlc/" + pack + ".txt"}},
+		})
+	}
+	writeCatalogTestCache(t, cacheDir, cache)
+
+	index, err := LoadPackIndex(PackIndexPath(cacheDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, pack := range pairs {
+		ref, err := index.ResolvePackRef("v2fly-dlc", pack)
+		if err != nil {
+			t.Fatalf("ResolvePackRef(%q) returned error: %v", pack, err)
+		}
+		if ref.Pack != pack {
+			t.Fatalf("ResolvePackRef(%q) = %+v, want exact pack", pack, ref)
+		}
 	}
 }
 

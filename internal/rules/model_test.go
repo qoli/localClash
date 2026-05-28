@@ -103,6 +103,38 @@ func TestRenderFragmentRendersV2FlyDLCGeoSiteAttribute(t *testing.T) {
 			Source: "v2fly-dlc",
 			Packs: []Pack{
 				{
+					ID:         "category-games@cn",
+					Renderable: true,
+					Components: []Component{{
+						ID:       "domain",
+						Behavior: "v2fly-dlc",
+						Format:   "text",
+						URL:      "https://example.com/category-games@cn",
+						Path:     "./rule-packs/v2fly-dlc/category-games@cn.txt",
+					}},
+				},
+			},
+		},
+	}
+
+	fragment, err := RenderFragment(selection, caches)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := fragment.Rules[0]; got != "GEOSITE,category-games@cn,DIRECT" {
+		t.Fatalf("rule = %q, want GEOSITE attribute rule", got)
+	}
+}
+
+func TestRenderFragmentRejectsMissingExactV2FlyDLCGeoSiteAttribute(t *testing.T) {
+	selection := Selection{EnabledPack: []SelectedPack{
+		{Source: "v2fly-dlc", Pack: "category-games@cn", Target: "DIRECT"},
+	}}
+	caches := map[string]PackCache{
+		"v2fly-dlc": {
+			Source: "v2fly-dlc",
+			Packs: []Pack{
+				{
 					ID:         "category-games",
 					Renderable: true,
 					Components: []Component{{
@@ -117,12 +149,9 @@ func TestRenderFragmentRendersV2FlyDLCGeoSiteAttribute(t *testing.T) {
 		},
 	}
 
-	fragment, err := RenderFragment(selection, caches)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := fragment.Rules[0]; got != "GEOSITE,category-games@cn,DIRECT" {
-		t.Fatalf("rule = %q, want GEOSITE attribute rule", got)
+	_, err := RenderFragment(selection, caches)
+	if err == nil || !strings.Contains(err.Error(), `pack "category-games@cn" not found`) {
+		t.Fatalf("error = %v, want missing exact pack", err)
 	}
 }
 

@@ -32,8 +32,8 @@ func TestRenderBuiltInTargetPlanWritesArtifacts(t *testing.T) {
 		Now:          fixedPlanTime(),
 		Overlay: OverlayIntent{
 			Packs: []OverlayPackIntent{
-				{ID: "blackmatrix7_Steam", Target: "DIRECT"},
-				{ID: "blackmatrix7_Epic", Target: "DIRECT"},
+				{Source: "blackmatrix7", Pack: "Steam", Target: "DIRECT"},
+				{Source: "blackmatrix7", Pack: "Epic", Target: "DIRECT"},
 			},
 		},
 	})
@@ -85,7 +85,7 @@ func TestRenderPlanIDDoesNotOverwriteExistingPlan(t *testing.T) {
 		Now:          fixedPlanTime(),
 		Overlay: OverlayIntent{
 			Packs: []OverlayPackIntent{
-				{ID: "blackmatrix7_Steam", Target: "DIRECT"},
+				{Source: "blackmatrix7", Pack: "Steam", Target: "DIRECT"},
 			},
 		},
 	})
@@ -170,8 +170,8 @@ func TestRenderProxyGroupPlan(t *testing.T) {
 		Now:          fixedPlanTime(),
 		Overlay: OverlayIntent{
 			Packs: []OverlayPackIntent{
-				{ID: "blackmatrix7_OpenAI", Target: "AI"},
-				{ID: "sukkaw_ai_non_ip", Target: "AI"},
+				{Source: "blackmatrix7", Pack: "OpenAI", Target: "AI"},
+				{Source: "sukkaw", Pack: "ai", Target: "AI"},
 			},
 			ProxyGroups: []OverlayProxyGroupIntent{
 				{ID: "AI", Nodes: []string{"SG 01", "JP Tokyo 01", "US 01"}, Mode: "manual"},
@@ -215,7 +215,7 @@ func TestRenderPolicyGroupPlan(t *testing.T) {
 		Now:          fixedPlanTime(),
 		Overlay: OverlayIntent{
 			Packs: []OverlayPackIntent{
-				{ID: "blackmatrix7_Steam", Target: "Steam"},
+				{Source: "blackmatrix7", Pack: "Steam", Target: "Steam"},
 			},
 			ProxyGroups: []OverlayProxyGroupIntent{
 				{ID: "SG", Nodes: []string{"SG 01"}, Mode: "manual"},
@@ -253,8 +253,8 @@ func TestRenderPolicyGroupPlan(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if candidate.Version != 2 {
-		t.Fatalf("candidate localclash version = %d, want 2", candidate.Version)
+	if candidate.Version != localconfig.ConfigSchemaVersion {
+		t.Fatalf("candidate localclash version = %d, want current schema", candidate.Version)
 	}
 }
 
@@ -277,7 +277,8 @@ proxy_groups:
     nodes:
       - US 01
 packs:
-  - id: blackmatrix7_Epic
+  - source: blackmatrix7
+    pack: Epic
     target: DIRECT
 `)
 
@@ -331,7 +332,7 @@ packs:
 	if _, exists := candidate.PolicyGroups["Steam"]; !exists {
 		t.Fatalf("candidate policy groups = %+v, want Steam", candidate.PolicyGroups)
 	}
-	if len(candidate.Packs) != 1 || candidate.Packs[0].ID != "blackmatrix7_Epic" {
+	if len(candidate.Packs) != 1 || candidate.Packs[0].Source != "blackmatrix7" || candidate.Packs[0].Pack != "Epic" {
 		t.Fatalf("candidate packs = %+v, want preserved Epic pack", candidate.Packs)
 	}
 	config := readFile(t, result.Output)
@@ -416,7 +417,7 @@ func TestRenderMihomoTestUsesRuntimeProfileCore(t *testing.T) {
 		Test:               true,
 		Now:                fixedPlanTime(),
 		Overlay: OverlayIntent{
-			Packs: []OverlayPackIntent{{ID: "blackmatrix7_Steam", Target: "DIRECT"}},
+			Packs: []OverlayPackIntent{{Source: "blackmatrix7", Pack: "Steam", Target: "DIRECT"}},
 		},
 	})
 	if err != nil {
@@ -532,7 +533,7 @@ func TestRenderProxyGroupMatchPlanWritesCandidateLocalClashConfig(t *testing.T) 
 		Test:         false,
 		Now:          fixedPlanTime(),
 		Overlay: OverlayIntent{
-			Packs: []OverlayPackIntent{{ID: "blackmatrix7_OpenAI", Target: "AI", Reason: "Route AI rules to selected Singapore-labelled nodes."}},
+			Packs: []OverlayPackIntent{{Source: "blackmatrix7", Pack: "OpenAI", Target: "AI", Reason: "Route AI rules to selected Singapore-labelled nodes."}},
 			ProxyGroups: []OverlayProxyGroupIntent{
 				{
 					ID:       "AI",
@@ -580,7 +581,7 @@ func TestApplyPlanWritesSelectionAndGeneratedConfig(t *testing.T) {
 		Test:         false,
 		Now:          fixedPlanTime(),
 		Overlay: OverlayIntent{
-			Packs: []OverlayPackIntent{{ID: "blackmatrix7_OpenAI", Target: "AI"}},
+			Packs: []OverlayPackIntent{{Source: "blackmatrix7", Pack: "OpenAI", Target: "AI"}},
 			ProxyGroups: []OverlayProxyGroupIntent{
 				{ID: "AI", Nodes: []string{"SG 01"}, Mode: "manual"},
 			},
@@ -658,7 +659,7 @@ enabled_packs: []
 		Test:         false,
 		Now:          fixedPlanTime(),
 		Overlay: OverlayIntent{
-			Packs: []OverlayPackIntent{{ID: "blackmatrix7_OpenAI", Target: "AI"}},
+			Packs: []OverlayPackIntent{{Source: "blackmatrix7", Pack: "OpenAI", Target: "AI"}},
 			ProxyGroups: []OverlayProxyGroupIntent{
 				{ID: "AI", Nodes: []string{"SG 01"}, Mode: "manual"},
 			},
@@ -732,7 +733,7 @@ func TestApplyPlanReturnsStructuredResultWhenBackupFails(t *testing.T) {
 		Test:         false,
 		Now:          fixedPlanTime(),
 		Overlay: OverlayIntent{
-			Packs: []OverlayPackIntent{{ID: "blackmatrix7_OpenAI", Target: "AI"}},
+			Packs: []OverlayPackIntent{{Source: "blackmatrix7", Pack: "OpenAI", Target: "AI"}},
 			ProxyGroups: []OverlayProxyGroupIntent{
 				{ID: "AI", Nodes: []string{"SG 01"}, Mode: "manual"},
 			},
@@ -782,7 +783,7 @@ func TestApplyPlanRunsMihomoTestEvenWhenCreateSkippedIt(t *testing.T) {
 		Test:         false,
 		Now:          fixedPlanTime(),
 		Overlay: OverlayIntent{
-			Packs: []OverlayPackIntent{{ID: "blackmatrix7_OpenAI", Target: "AI"}},
+			Packs: []OverlayPackIntent{{Source: "blackmatrix7", Pack: "OpenAI", Target: "AI"}},
 			ProxyGroups: []OverlayProxyGroupIntent{
 				{ID: "AI", Nodes: []string{"SG 01"}, Mode: "manual"},
 			},
@@ -826,11 +827,19 @@ func TestRenderUnknownPackIDReturnsError(t *testing.T) {
 		OutputDir:    paths.planDir,
 		Test:         false,
 		Overlay: OverlayIntent{
-			Packs: []OverlayPackIntent{{ID: "missing_pack", Target: "DIRECT"}},
+			Packs: []OverlayPackIntent{{Source: "blackmatrix7", Pack: "missing_pack", Target: "DIRECT"}},
 		},
 	})
 	if err == nil || !strings.Contains(err.Error(), "missing_pack") {
 		t.Fatalf("error = %v, want missing pack error", err)
+	}
+}
+
+func TestOverlayPackIntentRejectsLegacyPackID(t *testing.T) {
+	var pack OverlayPackIntent
+	err := json.Unmarshal([]byte(`{"id":"v2fly_dlc_geolocation__cn","target":"DIRECT"}`), &pack)
+	if err == nil || !strings.Contains(err.Error(), "packs[].id is no longer supported; use packs[].source and packs[].pack") {
+		t.Fatalf("error = %v, want legacy pack id rejection", err)
 	}
 }
 
@@ -843,7 +852,7 @@ func TestRenderRejectsMismatchedPackType(t *testing.T) {
 		OutputDir:    paths.planDir,
 		Test:         false,
 		Overlay: OverlayIntent{
-			Packs: []OverlayPackIntent{{ID: "blackmatrix7_OpenAI", Type: rules.PackTypeGeoSite, Target: "DIRECT"}},
+			Packs: []OverlayPackIntent{{Source: "blackmatrix7", Pack: "OpenAI", Type: rules.PackTypeGeoSite, Target: "DIRECT"}},
 		},
 	})
 	if err == nil || !strings.Contains(err.Error(), `is type "rule_provider"`) || !strings.Contains(err.Error(), `declared "geosite"`) {
@@ -860,7 +869,7 @@ func TestRenderMissingProxyGroupReturnsError(t *testing.T) {
 		OutputDir:    paths.planDir,
 		Test:         false,
 		Overlay: OverlayIntent{
-			Packs: []OverlayPackIntent{{ID: "blackmatrix7_OpenAI", Target: "AI"}},
+			Packs: []OverlayPackIntent{{Source: "blackmatrix7", Pack: "OpenAI", Target: "AI"}},
 		},
 	})
 	if err == nil || !strings.Contains(err.Error(), "requires a matching proxy group") {
@@ -877,7 +886,7 @@ func TestRenderUnknownProxyGroupNodeReturnsError(t *testing.T) {
 		OutputDir:    paths.planDir,
 		Test:         false,
 		Overlay: OverlayIntent{
-			Packs: []OverlayPackIntent{{ID: "blackmatrix7_OpenAI", Target: "AI"}},
+			Packs: []OverlayPackIntent{{Source: "blackmatrix7", Pack: "OpenAI", Target: "AI"}},
 			ProxyGroups: []OverlayProxyGroupIntent{
 				{ID: "AI", Nodes: []string{"MISSING"}, Mode: "manual"},
 			},
@@ -897,7 +906,7 @@ func TestRenderDuplicateProxyGroupNodesAreDeduplicated(t *testing.T) {
 		OutputDir:    paths.planDir,
 		Test:         false,
 		Overlay: OverlayIntent{
-			Packs: []OverlayPackIntent{{ID: "blackmatrix7_OpenAI", Target: "AI"}},
+			Packs: []OverlayPackIntent{{Source: "blackmatrix7", Pack: "OpenAI", Target: "AI"}},
 			ProxyGroups: []OverlayProxyGroupIntent{
 				{ID: "AI", Nodes: []string{"SG 01", "SG 01"}, Mode: "manual"},
 			},

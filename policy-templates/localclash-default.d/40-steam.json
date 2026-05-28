@@ -2,7 +2,7 @@
   "id": "default.steam.v1",
   "description": "Add Steam business routing.",
   "config": {
-    "version": 2,
+    "version": 3,
     "policy_groups": {
       "🎮 Steam": {
         "mode": "manual",
@@ -23,7 +23,8 @@
     },
     "packs": [
       {
-        "id": "v2fly_dlc_steam",
+        "source": "v2fly-dlc",
+        "pack": "steam",
         "type": "geosite",
         "target": "🎮 Steam",
         "reason": "Route Steam store and community domains through Steam selector."

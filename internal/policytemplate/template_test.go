@@ -38,14 +38,14 @@ func TestBuildLocalClashDefaultTemplate(t *testing.T) {
 	if len(config.ProxyGroups) == 0 || len(config.Packs) == 0 {
 		t.Fatalf("default config = %+v, want proxy groups and packs", config)
 	}
-	if config.Packs[0].ID != "v2fly_dlc_category_ads_all" || config.Packs[0].Target != "REJECT" {
+	if config.Packs[0].Source != "v2fly-dlc" || config.Packs[0].Pack != "category-ads-all" || config.Packs[0].Target != "REJECT" {
 		t.Fatalf("first pack = %+v, want ads reject first", config.Packs[0])
 	}
 	group := config.ProxyGroups["AI"]
 	if group.Mode != "auto" || group.Match == nil || group.Match.Pattern != ".*" {
 		t.Fatalf("AI group = %+v, want auto all-nodes selector", group)
 	}
-	if got := packTarget(config.Packs, "v2fly_dlc_openai"); got != "AI" {
+	if got := packTarget(config.Packs, "v2fly-dlc", "openai"); got != "AI" {
 		t.Fatalf("openai pack target = %q, want AI", got)
 	}
 }
@@ -88,10 +88,12 @@ config:
       exits:
         - AI
   packs:
-    - id: v2fly_dlc_category_ads_all
+    - source: v2fly-dlc
+      pack: category-ads-all
       type: geosite
       target: REJECT
-    - id: v2fly_dlc_openai
+    - source: v2fly-dlc
+      pack: openai
       type: geosite
       target: ChatGPT
 `)
@@ -105,7 +107,8 @@ config:
         - SG 01
       reason: override definition
   packs:
-    - id: v2fly_dlc_openai
+    - source: v2fly-dlc
+      pack: openai
       type: geosite
       target: AI
 `)
@@ -117,8 +120,8 @@ config:
 	if summary.ID != TemplateLocalClashDefault || config.PolicyTemplate != TemplateLocalClashDefault {
 		t.Fatalf("template = %+v config = %+v, want localclash default", summary, config)
 	}
-	if config.Version != 2 {
-		t.Fatalf("version = %d, want v2 from patches", config.Version)
+	if config.Version != localconfig.ConfigSchemaVersion {
+		t.Fatalf("version = %d, want current config schema", config.Version)
 	}
 	group := config.ProxyGroups["AI"]
 	if group.Mode != "manual" || len(group.Nodes) != 1 || group.Nodes[0] != "SG 01" {
@@ -127,7 +130,7 @@ config:
 	if len(config.Packs) != 2 {
 		t.Fatalf("packs = %+v, want ads plus deduped openai", config.Packs)
 	}
-	if config.Packs[0].ID != "v2fly_dlc_category_ads_all" || config.Packs[1].ID != "v2fly_dlc_openai" {
+	if config.Packs[0].Pack != "category-ads-all" || config.Packs[1].Pack != "openai" {
 		t.Fatalf("pack order = %+v, want manifest order with replacement in place", config.Packs)
 	}
 	if config.Packs[1].Target != "AI" {
@@ -174,8 +177,8 @@ func TestRealLocalClashDefaultTemplateIsLayered(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if summary.ID != TemplateLocalClashDefault || config.Version != 2 {
-		t.Fatalf("template = %+v config version = %d, want v2 localclash default", summary, config.Version)
+	if summary.ID != TemplateLocalClashDefault || config.Version != localconfig.ConfigSchemaVersion {
+		t.Fatalf("template = %+v config version = %d, want current localclash default", summary, config.Version)
 	}
 	if len(config.ProxyGroups) != 9 || len(config.PolicyGroups) != 26 || len(config.Packs) != 32 || len(config.CustomRules) != 1 {
 		t.Fatalf("default template counts: proxy_groups=%d policy_groups=%d packs=%d custom_rules=%d, want 9/26/32/1", len(config.ProxyGroups), len(config.PolicyGroups), len(config.Packs), len(config.CustomRules))
@@ -215,14 +218,31 @@ func TestRealLocalClashDefaultTemplateIsLayered(t *testing.T) {
 			t.Fatalf("policy group %q exits = %#v, want %#v", id, group.Exits, wantExits)
 		}
 	}
-	if config.Packs[0].ID != "v2fly_dlc_category_ads_all" || config.Packs[0].Target != "REJECT" {
+	if config.Packs[0].Source != "v2fly-dlc" || config.Packs[0].Pack != "category-ads-all" || config.Packs[0].Target != "REJECT" {
 		t.Fatalf("first pack = %+v, want ads reject first", config.Packs[0])
 	}
-	if got := packTarget(config.Packs, "v2fly_dlc_category_games"); got != "🎮 游戏平台" {
+	if got := packTarget(config.Packs, "v2fly-dlc", "category-games"); got != "🎮 游戏平台" {
 		t.Fatalf("game category target = %q, want 🎮 游戏平台", got)
 	}
-	if got := packTarget(config.Packs, "v2fly_dlc_telegram"); got != "💬 通信服务" {
+	if got := packTarget(config.Packs, "v2fly-dlc", "telegram"); got != "💬 通信服务" {
 		t.Fatalf("telegram target = %q, want 💬 通信服务", got)
+	}
+	wantExactPacks := map[string]string{
+		"category-social-media-!cn": "👥 社交媒体",
+		"category-ai-!cn":           "🧠 AI",
+		"geolocation-!cn":           "🧭 漏网之鱼",
+		"category-games@cn":         "DIRECT",
+		"cn":                        "DIRECT",
+	}
+	for pack, target := range wantExactPacks {
+		if got := packTarget(config.Packs, "v2fly-dlc", pack); got != target {
+			t.Fatalf("pack %q target = %q, want %q", pack, got, target)
+		}
+	}
+	for _, pack := range []string{"category-social-media-cn", "category-ai-cn", "geolocation-cn"} {
+		if hasPack(config.Packs, "v2fly-dlc", pack) {
+			t.Fatalf("default template should not include collapsed pack %q", pack)
+		}
 	}
 	if got := customRuleTarget(config.CustomRules, "telegram-ip-ranges"); got != "💬 通信服务" {
 		t.Fatalf("telegram IP custom rule target = %q, want 💬 通信服务", got)
@@ -232,6 +252,12 @@ func TestRealLocalClashDefaultTemplateIsLayered(t *testing.T) {
 	}
 	if got := config.Packs[len(config.Packs)-2].Target; got != "🧭 漏网之鱼" {
 		t.Fatalf("geolocation fallback target = %q, want 🧭 漏网之鱼", got)
+	}
+	if got := config.Packs[len(config.Packs)-2].Pack; got != "geolocation-!cn" {
+		t.Fatalf("geolocation fallback pack = %q, want geolocation-!cn", got)
+	}
+	if config.FallbackTarget != "🧭 漏网之鱼" {
+		t.Fatalf("fallback_target = %q, want 🧭 漏网之鱼", config.FallbackTarget)
 	}
 }
 
@@ -283,10 +309,12 @@ config:
         pattern: .*
         min: 1
   packs:
-    - id: v2fly_dlc_category_ads_all
+    - source: v2fly-dlc
+      pack: category-ads-all
       type: geosite
       target: REJECT
-    - id: v2fly_dlc_openai
+    - source: v2fly-dlc
+      pack: openai
       type: geosite
       target: AI
 `)
@@ -311,13 +339,22 @@ func writePolicyTemplateTestFile(t *testing.T, path string, content string) {
 	}
 }
 
-func packTarget(packs []localconfig.Pack, id string) string {
+func packTarget(packs []localconfig.Pack, source, name string) string {
 	for _, pack := range packs {
-		if pack.ID == id {
+		if pack.Source == source && pack.Pack == name {
 			return pack.Target
 		}
 	}
 	return ""
+}
+
+func hasPack(packs []localconfig.Pack, source, name string) bool {
+	for _, pack := range packs {
+		if pack.Source == source && pack.Pack == name {
+			return true
+		}
+	}
+	return false
 }
 
 func customRuleTarget(customRules []localconfig.CustomRule, id string) string {

@@ -20,13 +20,14 @@ func TestReadPackRulesFetchesProviderAndReturnsSamples(t *testing.T) {
 	result, err := ReadPackRules(context.Background(), PackRulesReadOptions{
 		CacheDir:      cacheDir,
 		ProviderCache: providerCache,
-		ID:            "sukkaw_ai",
+		Source:        "sukkaw",
+		Pack:          "ai",
 		Limit:         2,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Pack.ID != "sukkaw_ai" || result.Summary.RuleCount != 3 || result.Summary.DomainSuffixCount != 2 || result.Summary.IPCIDRCount != 1 {
+	if result.Pack.Source != "sukkaw" || result.Pack.Pack != "ai" || result.Summary.RuleCount != 3 || result.Summary.DomainSuffixCount != 2 || result.Summary.IPCIDRCount != 1 {
 		t.Fatalf("result = %+v, want parsed sukkaw_ai summary", result)
 	}
 	component := result.Components[0]
@@ -60,7 +61,7 @@ func TestPrefetchAndQueryPackRulesUseLocalProviderCache(t *testing.T) {
 	prefetch, err := PrefetchPackRules(context.Background(), PackRulesPrefetchOptions{
 		CacheDir:      cacheDir,
 		ProviderCache: providerCache,
-		IDs:           []string{"sukkaw_ai"},
+		Packs:         []PackSelector{{Source: "sukkaw", Pack: "ai"}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -77,7 +78,7 @@ func TestPrefetchAndQueryPackRulesUseLocalProviderCache(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(after.Matches) != 1 || after.Matches[0].PackID != "sukkaw_ai" || after.Matches[0].Kind != "domain_suffix" {
+	if len(after.Matches) != 1 || after.Matches[0].Source != "sukkaw" || after.Matches[0].Pack != "ai" || after.Matches[0].Kind != "domain_suffix" {
 		t.Fatalf("after query = %+v, want huggingface suffix match", after)
 	}
 	if !after.CacheComplete || after.SearchedCachedPacks != 1 {
@@ -108,7 +109,8 @@ full:o33249.ingest.sentry.io @ads
 	read, err := ReadPackRules(context.Background(), PackRulesReadOptions{
 		CacheDir:      cacheDir,
 		ProviderCache: providerCache,
-		ID:            "v2fly_dlc_openai",
+		Source:        "v2fly-dlc",
+		Pack:          "openai",
 		Limit:         10,
 	})
 	if err != nil {
@@ -136,7 +138,7 @@ full:o33249.ingest.sentry.io @ads
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(query.Matches) != 1 || query.Matches[0].PackID != "v2fly_dlc_openai" || query.Matches[0].Kind != "domain_suffix" {
+	if len(query.Matches) != 1 || query.Matches[0].Source != "v2fly-dlc" || query.Matches[0].Pack != "openai" || query.Matches[0].Kind != "domain_suffix" {
 		t.Fatalf("query = %+v, want openai suffix match", query)
 	}
 	if query.Backend.Type != PackTypeGeoSite || query.Backend.RenderStrategy != RenderStrategyGeoSite {
@@ -164,7 +166,7 @@ func TestPrefetchPackRulesRequiresExplicitScope(t *testing.T) {
 	cacheDir, providerCache := writePackRulesCache(t, "https://example.com")
 
 	if _, err := PrefetchPackRules(context.Background(), PackRulesPrefetchOptions{CacheDir: cacheDir, ProviderCache: providerCache}); err == nil {
-		t.Fatal("expected prefetch without ids or filters to fail")
+		t.Fatal("expected prefetch without packs or filters to fail")
 	}
 }
 
