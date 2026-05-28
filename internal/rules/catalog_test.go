@@ -3,6 +3,7 @@ package rules
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -158,7 +159,7 @@ func TestGetPackReturnsGeoSiteBackend(t *testing.T) {
 	}
 }
 
-func TestResolvePackRefAcceptsExactPackWithAtSign(t *testing.T) {
+func TestResolvePackRefAcceptsGeoSiteSelectorWhenBasePackExists(t *testing.T) {
 	cacheDir := filepath.Join(t.TempDir(), "packs")
 	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
 		t.Fatal(err)
@@ -170,15 +171,15 @@ func TestResolvePackRefAcceptsExactPackWithAtSign(t *testing.T) {
 		Renderable: false,
 		Packs: []Pack{
 			{
-				ID:         "category-games@cn",
-				Name:       "category-games@cn",
+				ID:         "category-games",
+				Name:       "category-games",
 				Renderable: true,
 				Components: []Component{{
 					ID:       "domain",
 					Behavior: "v2fly-dlc",
 					Format:   "text",
-					URL:      "https://example.com/category-games@cn",
-					Path:     "./rule-packs/v2fly-dlc/category-games@cn.txt",
+					URL:      "https://example.com/category-games",
+					Path:     "./rule-packs/v2fly-dlc/category-games.txt",
 				}},
 			},
 		},
@@ -193,7 +194,27 @@ func TestResolvePackRefAcceptsExactPackWithAtSign(t *testing.T) {
 		t.Fatal(err)
 	}
 	if ref.Pack != "category-games@cn" || ref.RenderRuleTemplate != "GEOSITE,category-games@cn,<target>" {
-		t.Fatalf("ref = %+v, want exact geosite ref", ref)
+		t.Fatalf("ref = %+v, want selector geosite ref", ref)
+	}
+	result, err := GetPack(PackGetOptions{CacheDir: cacheDir, Source: "v2fly-dlc", Pack: "category-games@cn"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Pack.Pack != "category-games@cn" || result.Pack.RenderRuleTemplate != "GEOSITE,category-games@cn,<target>" {
+		t.Fatalf("pack detail = %+v, want selector geosite detail", result.Pack)
+	}
+}
+
+func TestResolvePackRefRejectsGeoSiteSelectorForRuleProviderBase(t *testing.T) {
+	cacheDir := writeCatalogTestCaches(t)
+
+	index, err := LoadPackIndex(PackIndexPath(cacheDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = index.ResolvePackRef("blackmatrix7", "OpenAI@cn")
+	if err == nil || !strings.Contains(err.Error(), `base pack "OpenAI" is type "rule_provider"`) {
+		t.Fatalf("error = %v, want non-geosite selector rejection", err)
 	}
 }
 

@@ -103,14 +103,14 @@ func TestRenderFragmentRendersV2FlyDLCGeoSiteAttribute(t *testing.T) {
 			Source: "v2fly-dlc",
 			Packs: []Pack{
 				{
-					ID:         "category-games@cn",
+					ID:         "category-games",
 					Renderable: true,
 					Components: []Component{{
 						ID:       "domain",
 						Behavior: "v2fly-dlc",
 						Format:   "text",
-						URL:      "https://example.com/category-games@cn",
-						Path:     "./rule-packs/v2fly-dlc/category-games@cn.txt",
+						URL:      "https://example.com/category-games",
+						Path:     "./rule-packs/v2fly-dlc/category-games.txt",
 					}},
 				},
 			},
@@ -126,7 +126,7 @@ func TestRenderFragmentRendersV2FlyDLCGeoSiteAttribute(t *testing.T) {
 	}
 }
 
-func TestRenderFragmentRejectsMissingExactV2FlyDLCGeoSiteAttribute(t *testing.T) {
+func TestRenderFragmentRejectsMissingV2FlyDLCGeoSiteSelectorBase(t *testing.T) {
 	selection := Selection{EnabledPack: []SelectedPack{
 		{Source: "v2fly-dlc", Pack: "category-games@cn", Target: "DIRECT"},
 	}}
@@ -135,14 +135,14 @@ func TestRenderFragmentRejectsMissingExactV2FlyDLCGeoSiteAttribute(t *testing.T)
 			Source: "v2fly-dlc",
 			Packs: []Pack{
 				{
-					ID:         "category-games",
+					ID:         "category-social-media",
 					Renderable: true,
 					Components: []Component{{
 						ID:       "domain",
 						Behavior: "v2fly-dlc",
 						Format:   "text",
-						URL:      "https://example.com/category-games",
-						Path:     "./rule-packs/v2fly-dlc/category-games.txt",
+						URL:      "https://example.com/category-social-media",
+						Path:     "./rule-packs/v2fly-dlc/category-social-media.txt",
 					}},
 				},
 			},

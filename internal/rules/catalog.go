@@ -139,10 +139,48 @@ func GetPack(opts PackGetOptions) (PackGetResult, error) {
 	if err != nil {
 		return PackGetResult{}, err
 	}
-	if detail, ok := catalog.Details[PackKey(source, pack)]; ok {
+	detail, ok, err := resolvePackDetail(catalog, source, pack)
+	if err != nil {
+		return PackGetResult{}, err
+	}
+	if ok {
 		return PackGetResult{Pack: AnnotatePackRuntime(detail, opts.RuntimeDir), NextActions: packRuleNextActions()}, nil
 	}
 	return PackGetResult{}, fmt.Errorf("pack %q/%q not found in pack cache", source, pack)
+}
+
+func resolvePackDetail(catalog PackCatalog, source, pack string) (PackDetail, bool, error) {
+	if detail, ok := catalog.Details[PackKey(source, pack)]; ok {
+		return detail, true, nil
+	}
+	base, ok := splitGeoSiteSelector(pack)
+	if !ok {
+		return PackDetail{}, false, nil
+	}
+	detail, ok := catalog.Details[PackKey(source, base)]
+	if !ok {
+		return PackDetail{}, false, nil
+	}
+	if !packDetailIsGeoSite(detail) {
+		return PackDetail{}, true, fmt.Errorf("pack %q/%q is a GEOSITE selector, but base pack %q is type %q", source, pack, base, detail.Type)
+	}
+	return selectorPackDetail(detail, pack), true, nil
+}
+
+func selectorPackDetail(detail PackDetail, selector string) PackDetail {
+	detail.Pack = selector
+	detail.Name = selector
+	detail.Type = PackTypeGeoSite
+	detail.RenderStrategy = RenderStrategyGeoSite
+	detail.RenderRuleTemplate = fmt.Sprintf("GEOSITE,%s,<target>", selector)
+	detail.Backend.Type = PackTypeGeoSite
+	detail.Backend.RenderStrategy = RenderStrategyGeoSite
+	detail.Backend.RenderRuleTemplate = fmt.Sprintf("GEOSITE,%s,<target>", selector)
+	return detail
+}
+
+func packDetailIsGeoSite(detail PackDetail) bool {
+	return detail.Type == PackTypeGeoSite || detail.RenderStrategy == RenderStrategyGeoSite || detail.Backend.RenderStrategy == RenderStrategyGeoSite
 }
 
 func packRuleNextActions() []string {

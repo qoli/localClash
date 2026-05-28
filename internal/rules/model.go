@@ -467,7 +467,7 @@ func RenderFragment(selection Selection, caches map[string]PackCache, proxyNames
 		if !ok {
 			return Fragment{}, fmt.Errorf("source %q has no pack cache; run rules adapt first", enabled.Source)
 		}
-		pack, ok := findPack(cache.Packs, enabled.Pack)
+		pack, ok := findPackForSelector(cache.Packs, enabled.Pack)
 		if !ok {
 			return Fragment{}, fmt.Errorf("pack %q not found in source %q", enabled.Pack, enabled.Source)
 		}
@@ -602,6 +602,21 @@ func findPack(packs []Pack, id string) (Pack, bool) {
 		}
 	}
 	return Pack{}, false
+}
+
+func findPackForSelector(packs []Pack, selector string) (Pack, bool) {
+	if pack, ok := findPack(packs, selector); ok {
+		return pack, true
+	}
+	base, ok := splitGeoSiteSelector(selector)
+	if !ok {
+		return Pack{}, false
+	}
+	pack, ok := findPack(packs, base)
+	if !ok || !packIsGeoSite(pack) {
+		return Pack{}, false
+	}
+	return pack, true
 }
 
 type preparedTargets struct {

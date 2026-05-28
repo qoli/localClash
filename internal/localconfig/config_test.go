@@ -96,6 +96,40 @@ func TestResolveFallbackTarget(t *testing.T) {
 	}
 }
 
+func TestResolveV2FlyDLCGeoSiteSelectorUsesBasePack(t *testing.T) {
+	dir := t.TempDir()
+	rulesCache := filepath.Join(dir, "rules")
+	writeTestPackCache(t, rulesCache, "v2fly-dlc", "v2fly-dlc", rules.Pack{
+		ID:         "category-games",
+		Renderable: true,
+		Components: []rules.Component{{
+			ID:       "domain",
+			Behavior: "v2fly-dlc",
+			Format:   "text",
+			URL:      "https://example.com/category-games",
+			Path:     "./rule-packs/v2fly-dlc/category-games.txt",
+		}},
+	})
+
+	resolved, err := Resolve(ResolveOptions{
+		Config: Config{
+			Packs: []Pack{{Source: "v2fly-dlc", Pack: "category-games@cn", Type: rules.PackTypeGeoSite, Target: rules.TerminalDirect}},
+		},
+		SubscriptionNodes: []SubscriptionNode{{Name: "HK 01"}},
+		RulesCache:        rulesCache,
+	})
+	if err != nil {
+		t.Fatalf("Resolve returned error: %v", err)
+	}
+	if len(resolved.Selection.EnabledPack) != 1 {
+		t.Fatalf("enabled packs = %+v, want one selector pack", resolved.Selection.EnabledPack)
+	}
+	got := resolved.Selection.EnabledPack[0]
+	if got.Source != "v2fly-dlc" || got.Pack != "category-games@cn" || got.Target != rules.TerminalDirect {
+		t.Fatalf("enabled pack = %+v, want selector preserved", got)
+	}
+}
+
 func TestLoadSubscriptionNodesDoesNotFallbackWhenConfiguredSourceArtifactIsMissing(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "localclash-subscriptions.json")
