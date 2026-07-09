@@ -18,8 +18,40 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
-| localClash Core | [v0.1.43](https://github.com/qoli/localClash/releases/tag/v0.1.43) | 2026-06-04 22:09 UTC+8 |
+| localClash Core | [v0.1.44](https://github.com/qoli/localClash/releases/tag/v0.1.44) | 2026-07-09 21:35 UTC+8 |
 | localclash-luci | [v0.1.0-37](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-37) | 2026-06-04 21:13 UTC+8 |
+
+## 2026-07-09
+
+### localClash Core v0.1.44
+
+Changes:
+
+- MCP server 新增 watchdog，會定期檢查 Mihomo runtime log；當
+  `mihomo.log` 超過預設 10 MiB 時會截斷並寫入 `watchdog.jsonl`，避免長
+  時間運行後 log 無限制膨脹。
+- 自動健康檢查預設間隔調整為 60 秒，讓預設策略組的節點檢測更快收斂。
+- 新增代理伺服器 DNS 策略文檔，釐清 `proxy-server-nameserver-policy` 的適用情境，方便排查私有代理伺服器網域解析問題。
+
+Release:
+
+- [qoli/localClash v0.1.44](https://github.com/qoli/localClash/releases/tag/v0.1.44)
+
+Release assets:
+
+- `localclash-linux-amd64`
+- `localclash-linux-arm64`
+- `localclash-base-assets.tar.gz`
+- `localclash-release-manifest.json`
+- 對應的 `.sha256` checksum 文件
+
+Verification:
+
+- GitHub Release `v0.1.44` 已包含 linux amd64/arm64、base assets、
+  release manifest 和 checksum assets。
+- Release workflow `29021835403` 已完成，`test` 與 `build-release` job
+  均成功。
+- 本地驗證通過 `rtk go test ./...`。
 
 ## 2026-06-04
 
