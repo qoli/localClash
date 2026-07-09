@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -216,9 +217,14 @@ func ListenAndServeHTTPWithState(ctx context.Context, state appinit.RuntimeState
 		Handler:           mcpServer.HTTPHandler(opts.Path),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
+	listener, err := net.Listen("tcp", opts.Addr)
+	if err != nil {
+		return err
+	}
+	mcpServer.startWatchdog()
 	errCh := make(chan error, 1)
 	go func() {
-		err := srv.ListenAndServe()
+		err := srv.Serve(listener)
 		if errors.Is(err, http.ErrServerClosed) {
 			err = nil
 		}
