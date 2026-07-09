@@ -19,7 +19,43 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
 | localClash Core | [v0.1.44](https://github.com/qoli/localClash/releases/tag/v0.1.44) | 2026-07-09 21:35 UTC+8 |
-| localclash-luci | [v0.1.0-37](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-37) | 2026-06-04 21:13 UTC+8 |
+| localclash-luci | [v0.1.0-38](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-38) | 2026-07-10 07:35 UTC+8 |
+
+## 2026-07-10
+
+### localclash-luci v0.1.0-38
+
+Changes:
+
+- 新版 helper 同 PID 接棒：LuCI package 更新後，同一個任務 PID 會重新載入
+  磁碟上的新版 helper，驗證 lock 與狀態後才繼續更新 Core。
+- Core 替換後強制 service restart：完成原子替換後立即透過 procd 啟用新版，
+  並同時驗證 `mcp` instance 與 HTTP health；不再用 PID、進程名稱或
+  runtime checksum 猜測是否需要重啟。
+- 服務生命週期失敗顯式化：service wrapper 改為原子寫入，獨立 LuCI 更新
+  與一鍵更新各自只有一個明確的 restart owner；寫入、重啟或 readiness
+  失敗都會顯式中止。
+- 舊版首次升級需兩步：從 `v0.1.0-37` 或更舊版本升級時，請先執行「檢查
+  LuCI 更新」、刷新頁面，再執行一次「一鍵更新」；後續版本會自動完成
+  helper 交接。
+
+Release:
+
+- [qoli/localclash-luci v0.1.0-38](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-38)
+
+Release assets:
+
+- `luci-app-localclash_0.1.0-38_all.ipk`
+- `luci-app-localclash_0.1.0-38_all.ipk.sha256`
+- `luci-app-localclash-0.1.0-r38.apk`
+- `luci-app-localclash-0.1.0-r38.apk.sha256`
+
+Verification:
+
+- GitHub Release `v0.1.0-38` 已標記為 Latest，tag 指向 merge commit
+  `0fd5498`，4 個遠端資產 digest 全部與本地建置一致。
+- 13 個 rpcd 測試、LuCI JavaScript `node --check`、helper `sh -n`、
+  BusyBox ash syntax、IPK/APK build 與 checksum 驗證均通過。
 
 ## 2026-07-09
 

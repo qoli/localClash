@@ -197,6 +197,16 @@ def items_from_change(channel: str, change: str) -> list[ChangeItem]:
             ),
             ChangeItem(channel, "amd64 資產保守化", "Mihomo core 改用更保守的 amd64-v1 資產，降低老設備兼容風險。", "yellow"),
         ]
+    if channel == "luci" and any(
+        marker in text
+        for marker in [
+            "新版 helper 同 PID 接棒",
+            "Core 替換後強制 service restart",
+            "服務生命週期失敗顯式化",
+            "舊版首次升級需兩步",
+        ]
+    ):
+        return [fallback_item(channel, text)]
     if channel == "luci" and "概覽頁" in text:
         return [
             ChangeItem(channel, "概覽頁更新檢查", "概覽頁重做為摘要表格，背景檢查 LuCI / Core 更新；進階頁保留組件級維護。", "blue")
@@ -582,15 +592,23 @@ def render_png(html_path: Path, output: Path, cdp_url: str) -> None:
     try:
         with sync_playwright() as p:
             browser = p.chromium.connect_over_cdp(cdp_url)
-            context = browser.contexts[0] if browser.contexts else browser.new_context(
+            # Arc's persistent context may inherit a Retina device scale or a
+            # user page zoom. Render in an isolated 1x context so the fixed
+            # 1600 x 2000 CSS canvas maps exactly to the PNG dimensions.
+            context = browser.new_context(
                 viewport={"width": CARD_WIDTH, "height": CARD_HEIGHT},
                 device_scale_factor=1,
             )
             page = context.new_page()
             page.set_viewport_size({"width": CARD_WIDTH, "height": CARD_HEIGHT})
             page.goto(html_path.resolve().as_uri(), wait_until="networkidle")
+            page.evaluate("() => document.fonts.ready")
+            page.evaluate(
+                "() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))"
+            )
             page.screenshot(path=str(output), full_page=False)
             page.close()
+            context.close()
             browser.close()
     except Exception as exc:
         raise ScriptError(f"Failed to render X.com PNG via Arc CDP at {cdp_url}: {exc}") from exc
