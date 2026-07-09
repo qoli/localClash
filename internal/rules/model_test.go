@@ -55,6 +55,39 @@ func TestRenderFragmentUsesSelectionAndPackCache(t *testing.T) {
 	}
 }
 
+func TestRenderFragmentAutoGroupsUseDefaultHealthCheckInterval(t *testing.T) {
+	selection := Selection{
+		ProxyGroups: map[string]ProxyGroup{
+			"ExitAuto": {Nodes: []string{"JP 01"}, Auto: true},
+		},
+		PolicyGroups: map[string]PolicyGroup{
+			"AI": {Exits: []string{"ExitAuto", TerminalDirect}, Auto: true},
+		},
+		EnabledPack: []SelectedPack{
+			{Source: "sukkaw", Pack: "ai", Target: "AI"},
+		},
+	}
+
+	fragment, err := RenderFragment(selection, testPackCaches(), []string{"JP 01"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	groups := map[string]map[string]any{}
+	for _, group := range fragment.ProxyGroups {
+		groups[group["name"].(string)] = group
+	}
+	for _, name := range []string{"AI", "ExitAuto"} {
+		group := groups[name]
+		if group == nil {
+			t.Fatalf("missing auto group %q in %+v", name, fragment.ProxyGroups)
+		}
+		if group["type"] != "url-test" || group["url"] != "http://www.gstatic.com/generate_204" || group["interval"] != 60 {
+			t.Fatalf("%s health check defaults = %+v, want url-test generate_204 interval 60", name, group)
+		}
+	}
+}
+
 func TestRenderFragmentRendersV2FlyDLCAsGeoSite(t *testing.T) {
 	selection := Selection{
 		ProxyGroups: map[string]ProxyGroup{

@@ -345,6 +345,10 @@ func defaultCores() map[string]Core {
 	}
 }
 
+// defaultSmartOptions applies only when a smart group lacks these fields.
+// Built-in auto groups already carry the auto health-check defaults before they
+// are converted to smart groups for the Smart core, so this interval does not
+// control the default-template auto-group cadence.
 func defaultSmartOptions() SmartOptions {
 	return SmartOptions{
 		UseLightGBM: true,

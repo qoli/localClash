@@ -614,7 +614,7 @@ enabled_packs:
 			t.Fatalf("%s type = %v, want smart", name, group["type"])
 		}
 		wantURL := "http://www.gstatic.com/generate_204"
-		wantInterval := 300
+		wantInterval := 60
 		if name == "SmartOnly" {
 			wantURL = "https://cp.cloudflare.com/generate_204"
 			wantInterval = 600

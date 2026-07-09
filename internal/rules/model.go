@@ -60,6 +60,8 @@ const (
 	GeoSiteDataFileDLC       = "dlc.dat"
 	TerminalDirect           = "DIRECT"
 	TerminalReject           = "REJECT"
+
+	defaultAutoHealthCheckIntervalSeconds = 60
 )
 
 func IsTerminalAction(target string) bool {
@@ -817,7 +819,7 @@ func materializeProxyGroups(used map[string]bool, targets preparedTargets) ([]ma
 				"type":     "url-test",
 				"proxies":  candidates,
 				"url":      "http://www.gstatic.com/generate_204",
-				"interval": 300,
+				"interval": defaultAutoHealthCheckIntervalSeconds,
 			})
 			continue
 		}
@@ -870,7 +872,7 @@ func materializePolicyGroups(used map[string]bool, targets preparedTargets) ([]m
 				"type":     "url-test",
 				"proxies":  candidates,
 				"url":      "http://www.gstatic.com/generate_204",
-				"interval": 300,
+				"interval": defaultAutoHealthCheckIntervalSeconds,
 			})
 			continue
 		}
