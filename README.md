@@ -682,6 +682,11 @@ alternate runtime selector. For MCP-managed routing changes, prefer
 `config_patch_draft` followed by `config_patch_apply`; for plain MCP rebuilds,
 use `config_render`.
 
+The proposed opt-in mode that transfers OpenWrt TUN routing and redirect
+ownership to Mihomo is tracked in the
+[Mihomo TUN Auto-Routing Ownership Plan](docs/mihomo-tun-auto-routing-plan.md).
+The current built-in `router` profile still uses localClash-owned takeover.
+
 The rule model is documented in `docs/rule-model.md`. In short, localClash
 renders a fixed local safety baseline first, then user overrides, optional rule
 packs, selected policy-template patches, and finally fallback.
