@@ -19,7 +19,41 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
 | localClash Core | [v0.1.44](https://github.com/qoli/localClash/releases/tag/v0.1.44) | 2026-07-09 21:35 UTC+8 |
-| localclash-luci | [v0.1.0-38](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-38) | 2026-07-10 07:35 UTC+8 |
+| localclash-luci | [v0.1.0-39](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-39) | 2026-07-14 14:13 UTC+8 |
+
+## 2026-07-14
+
+### localclash-luci v0.1.0-39
+
+Changes:
+
+- WAN 的 `ifup` / `ifupdate` 連續觸發 fw4 reload 時，接管恢復現在以最後一個
+  hotplug event 為準；較早的延遲工作會自行退出，避免過早重新套用接管後又被
+  後續 fw4 reload 清除。
+- 恢復延遲採用明確的事件 token，只有最後一個事件會執行；
+  `LOCALCLASH_RESTORE_DELAY` 若不是非負整數會立即失敗，不會靜默改用其他值。
+- localClash Core 已驗證接管重新生效後，rpcd helper 會留下成功日誌，讓 WAN
+  波動後的恢復完成狀態可追蹤。
+- 新增集中 WAN event 的回歸測試，確認只會在最後事件後執行一次恢復。
+
+Release:
+
+- [qoli/localclash-luci v0.1.0-39](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-39)
+
+Release assets:
+
+- `luci-app-localclash_0.1.0-39_all.ipk`
+- `luci-app-localclash_0.1.0-39_all.ipk.sha256`
+- `luci-app-localclash-0.1.0-r39.apk`
+- `luci-app-localclash-0.1.0-r39.apk.sha256`
+
+Verification:
+
+- LuCI JavaScript `node --check`、hotplug/rpcd helper shell syntax、
+  `scripts/test-rpcd-takeover-restore.sh` 與
+  `scripts/test-hotplug-takeover-restore.sh` 均通過。
+- IPK/APK 已完成建置與 SHA-256 校驗；GitHub Release `v0.1.0-39` 已標記為
+  Latest，tag 指向 package release commit `f81d263`，並包含 4 個資產。
 
 ## 2026-07-10
 
