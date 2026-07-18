@@ -11,6 +11,7 @@ import (
 
 	"localclash/internal/configplan"
 	"localclash/internal/localconfig"
+	"localclash/internal/policytemplate"
 	"localclash/internal/rules"
 )
 
@@ -53,6 +54,33 @@ func TestImportPolicyTemplateWritesCanonicalPatchesAndCompiledIntent(t *testing.
 	}
 	if _, ok := config.ProxyGroups["DIRECT-ONLY"]; !ok {
 		t.Fatalf("compiled proxy groups = %+v, want DIRECT-ONLY", config.ProxyGroups)
+	}
+}
+
+func TestDefaultSyncnextAppMaintenancePatchPrecedesTailFallback(t *testing.T) {
+	sources, _, err := policytemplate.PatchSources(filepath.Join("..", "..", "policy-templates"), policytemplate.TemplateLocalClashDefault)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var syncnext, tail policytemplate.PatchSource
+	for _, source := range sources {
+		switch source.ID {
+		case "default.syncnext-app-maintenance.v1":
+			syncnext = source
+		case "default.tail-fallback.v1":
+			tail = source
+		}
+	}
+	if syncnext.ID == "" || tail.ID == "" {
+		t.Fatalf("template sources = %+v, want Syncnext maintenance and tail fallback patches", sources)
+	}
+	syncnextPatch := patchFromTemplateSource(policytemplate.TemplateLocalClashDefault, syncnext)
+	tailPatch := patchFromTemplateSource(policytemplate.TemplateLocalClashDefault, tail)
+	if syncnextPatch.OrderID != "0750.000000" || tailPatch.OrderID != "0800.000000" {
+		t.Fatalf("patch orders = %q/%q, want Syncnext before tail fallback", syncnextPatch.OrderID, tailPatch.OrderID)
+	}
+	if len(syncnextPatch.Overlay.Packs) != 2 || syncnextPatch.Overlay.Packs[0].Pack != "SyncnextUnbreak" || syncnextPatch.Overlay.Packs[1].Pack != "SyncnextProxy" {
+		t.Fatalf("Syncnext maintenance packs = %+v, want Unbreak then Proxy", syncnextPatch.Overlay.Packs)
 	}
 }
 

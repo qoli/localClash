@@ -180,8 +180,8 @@ func TestRealLocalClashDefaultTemplateIsLayered(t *testing.T) {
 	if summary.ID != TemplateLocalClashDefault || config.Version != localconfig.ConfigSchemaVersion {
 		t.Fatalf("template = %+v config version = %d, want current localclash default", summary, config.Version)
 	}
-	if len(config.ProxyGroups) != 9 || len(config.PolicyGroups) != 28 || len(config.Packs) != 33 || len(config.TransportRules) != 1 || len(config.CustomRules) != 1 {
-		t.Fatalf("default template counts: proxy_groups=%d policy_groups=%d packs=%d transport_rules=%d custom_rules=%d, want 9/28/33/1/1", len(config.ProxyGroups), len(config.PolicyGroups), len(config.Packs), len(config.TransportRules), len(config.CustomRules))
+	if len(config.ProxyGroups) != 9 || len(config.PolicyGroups) != 28 || len(config.Packs) != 35 || len(config.TransportRules) != 1 || len(config.CustomRules) != 1 {
+		t.Fatalf("default template counts: proxy_groups=%d policy_groups=%d packs=%d transport_rules=%d custom_rules=%d, want 9/28/35/1/1", len(config.ProxyGroups), len(config.PolicyGroups), len(config.Packs), len(config.TransportRules), len(config.CustomRules))
 	}
 	if got := packTarget(config.Packs, "v2fly-dlc", "category-pt"); got != "🧲 BT/PT 下载" {
 		t.Fatalf("default template category-pt target = %q, want 🧲 BT/PT 下载", got)
@@ -270,6 +270,15 @@ func TestRealLocalClashDefaultTemplateIsLayered(t *testing.T) {
 		if hasPack(config.Packs, "v2fly-dlc", pack) {
 			t.Fatalf("default template should not include collapsed pack %q", pack)
 		}
+	}
+	if got := packTarget(config.Packs, "syncnext", "SyncnextUnbreak"); got != "DIRECT" {
+		t.Fatalf("SyncnextUnbreak target = %q, want DIRECT", got)
+	}
+	if got := packTarget(config.Packs, "syncnext", "SyncnextProxy"); got != "⚡ 自动选择" {
+		t.Fatalf("SyncnextProxy target = %q, want ⚡ 自动选择", got)
+	}
+	if syncnextProxy, chinaDirect := packIndex(config.Packs, "syncnext", "SyncnextProxy"), packIndex(config.Packs, "v2fly-dlc", "cn"); syncnextProxy < 0 || chinaDirect < 0 || syncnextProxy >= chinaDirect {
+		t.Fatalf("SyncnextProxy index=%d and cn index=%d, want SyncnextProxy before broad China direct routing", syncnextProxy, chinaDirect)
 	}
 	telegramRule := customRuleByID(config.CustomRules, "telegram-geoip")
 	if telegramRule == nil || telegramRule.Target != "💬 通信服务" {
@@ -383,6 +392,15 @@ func hasPack(packs []localconfig.Pack, source, name string) bool {
 		}
 	}
 	return false
+}
+
+func packIndex(packs []localconfig.Pack, source, name string) int {
+	for i, pack := range packs {
+		if pack.Source == source && pack.Pack == name {
+			return i
+		}
+	}
+	return -1
 }
 
 func customRuleByID(customRules []localconfig.CustomRule, id string) *localconfig.CustomRule {

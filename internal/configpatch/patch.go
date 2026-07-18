@@ -1711,6 +1711,8 @@ func templateOrderID(id string, index int) string {
 		return "0600.000000"
 	case "default.games.v1":
 		return "0700.000000"
+	case "default.syncnext-app-maintenance.v1":
+		return "0750.000000"
 	case "default.tail-fallback.v1":
 		return "0800.000000"
 	default:

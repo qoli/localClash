@@ -45,6 +45,11 @@
       "description": "Add Bahamut and generic game-platform routing."
     },
     {
+      "id": "default.syncnext-app-maintenance.v1",
+      "path": "localclash-default.d/65-syncnext-app-maintenance.json",
+      "description": "Add Syncnext app-maintenance rules before broad China-domain direct routing."
+    },
+    {
       "id": "default.tail-fallback.v1",
       "path": "localclash-default.d/70-tail-fallback.json",
       "description": "Add entertainment, ecommerce, fallback, and China direct tail routing."
