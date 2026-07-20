@@ -37,6 +37,9 @@ cherry-latest.jsonl
 __pycache__/
 *.pyc
 
+# Codex desktop workspace environment is machine-local.
+/.codex/environments/environment.toml
+
 # Telegram channel update working files. Keep generated announcements,
 # local tokens, and send receipts out of Git history.
 /telegram/changelog.md
