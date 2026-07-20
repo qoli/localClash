@@ -334,6 +334,25 @@ def render_change(item: ChangeItem, number: int) -> str:
 def render_html(data: CardData) -> str:
     core_html = "\n".join(render_change(item, idx + 1) for idx, item in enumerate(data.core_items))
     luci_html = "\n".join(render_change(item, idx + 1 + len(data.core_items)) for idx, item in enumerate(data.luci_items))
+    core_section = ""
+    if core_html:
+        core_section = f"""
+      <section class=\"section\">
+        <div class=\"section-label\">Core Changes</div>
+        <div class=\"changes\">{core_html}
+        </div>
+      </section>"""
+    luci_section = ""
+    if luci_html:
+        luci_section = f"""
+      <section class=\"section\">
+        <div class=\"section-label\">LuCI Changes</div>
+        <div class=\"changes\">{luci_html}
+        </div>
+      </section>"""
+    released_channels = " + ".join(
+        label for label, items in (("Core", data.core_items), ("LuCI", data.luci_items)) if items
+    )
     return f"""<!DOCTYPE html>
 <html lang=\"zh-Hant\">
 <head>
@@ -537,7 +556,7 @@ def render_html(data: CardData) -> str:
         <div class=\"eyebrow\"><span class=\"dot\"></span>Release Notes</div>
         <div class=\"title-row\">
           <h1>Localclash <span>更新日志</span></h1>
-          <div class=\"right-tag\">(Core + LuCI)</div>
+          <div class=\"right-tag\">({html.escape(released_channels)})</div>
         </div>
         <p class=\"summary\">{emph(data.summary)}</p>
       </header>
@@ -565,17 +584,8 @@ def render_html(data: CardData) -> str:
         </div>
       </section>
 
-      <section class=\"section\">
-        <div class=\"section-label\">Core Changes</div>
-        <div class=\"changes\">{core_html}
-        </div>
-      </section>
-
-      <section class=\"section\">
-        <div class=\"section-label\">LuCI Changes</div>
-        <div class=\"changes\">{luci_html}
-        </div>
-      </section>
+{core_section}
+{luci_section}
     </article>
   </main>
 </body>

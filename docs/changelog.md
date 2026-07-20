@@ -18,8 +18,52 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
-| localClash Core | [v0.1.44](https://github.com/qoli/localClash/releases/tag/v0.1.44) | 2026-07-09 21:35 UTC+8 |
+| localClash Core | [v0.1.46](https://github.com/qoli/localClash/releases/tag/v0.1.46) | 2026-07-20 16:08 UTC+8 |
 | localclash-luci | [v0.1.0-39](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-39) | 2026-07-14 14:13 UTC+8 |
+
+## 2026-07-20
+
+### localClash Core v0.1.46
+
+Changes:
+
+- Core watchdog 現在會在同一次開機內，對意外退出的 Mihomo 進行最多三次
+  有界恢復；每次只會啟動已驗證的同一核心與設定，並在 Controller
+  `/version` 恢復健康後才確認成功。
+- 恢復採用立即、10 秒、30 秒退避；連續耗盡額度會進入
+  `latched_failed`，避免崩潰循環。人工 `runtime start/restart` 可解除鎖定，
+  持續健康 10 分鐘會重置事故額度。
+- boot、core/config hash、驗證證明或程序身分不符時一律停止恢復；既有程序
+  Controller 不健康時只記錄，不會由 watchdog 殺死或替換。監督狀態與所有
+  決策分別保存在 `runtime-supervision.json` 與 `watchdog.jsonl`。
+- 預設路由新增 Syncnext 維護的直連與代理規則，並安排在寬泛中國網域直連
+  規則之前，避免已知應用網域被較粗的分類提前攔截。
+- 新啟動的 Mihomo 若未能通過 Controller 健康檢查，Core 會清理該次生成的
+  PID 並把監督狀態落回 `stopped`，避免留下未受管程序。
+
+Release:
+
+- [qoli/localClash v0.1.46](https://github.com/qoli/localClash/releases/tag/v0.1.46)
+
+Release assets:
+
+- `localclash-linux-amd64`
+- `localclash-linux-arm64`
+- `localclash-base-assets.tar.gz`
+- `localclash-release-manifest.json`
+- 對應的 `.sha256` checksum 文件
+
+Verification:
+
+- GitHub Release workflow
+  [29726751405](https://github.com/qoli/localClash/actions/runs/29726751405)
+  的原生 Linux tests 與 release asset build 均成功。
+- 遠端 amd64、arm64 與 base assets checksum 全部通過；manifest 宣告
+  `v0.1.46`，並指向同版本的 7 個正式資產。
+- 本地 429 項全測試、137 項 race 測試與 `go vet` 通過；隔離 Docker
+  OpenWrt 已驗證意外退出恢復、三次額度鎖定及人工 start 解除鎖定。
+- `v0.1.45` 僅留下失敗的公開 tag，未建立 GitHub Release；實際發布版本為
+  `v0.1.46`，沒有移動或覆寫既有 tag。
 
 ## 2026-07-14
 
