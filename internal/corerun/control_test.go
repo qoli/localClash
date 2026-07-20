@@ -86,6 +86,58 @@ func TestStatusSkipsConfigTestProcess(t *testing.T) {
 	}
 }
 
+func TestStatusSkipsCoreVersionProcess(t *testing.T) {
+	dir := t.TempDir()
+	workDir := filepath.Join(dir, "runtime")
+	if err := os.MkdirAll(workDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	table := stubProcessTable(t)
+	cmd := exec.Command("sleep", "30")
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer killProcess(cmd.Process.Pid)
+	go func() { _ = cmd.Wait() }()
+	table.add(cmd.Process.Pid, "lc-mihomo-meta", []string{"lc-mihomo-meta", "-v"})
+
+	result := Status(StatusOptions{WorkDir: workDir})
+	if result.Running || result.PID != 0 {
+		t.Fatalf("status = %+v, want core version process skipped", result)
+	}
+}
+
+func TestManagedRuntimeIdentityRecordsExplicitLauncherWrapper(t *testing.T) {
+	dir := t.TempDir()
+	core := filepath.Join(dir, "lc-mihomo-meta")
+	writeStartExecutable(t, core, "#!/bin/sh\nexit 0\n")
+	config := writeStartConfig(t, dir)
+	workDir := filepath.Join(dir, "runtime")
+	if err := os.MkdirAll(workDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	table := stubProcessTable(t)
+	cmd := exec.Command("sleep", "30")
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer killProcess(cmd.Process.Pid)
+	go func() { _ = cmd.Wait() }()
+	table.add(cmd.Process.Pid, "lc-mihomo-meta", []string{core, core, "-d", workDir, "-f", config})
+	table.executables[cmd.Process.Pid] = "/opt/emulation/qemu-x86_64"
+
+	launcher, err := InspectManagedRuntimeProcess(cmd.Process.Pid, core, config, workDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if launcher != "/opt/emulation/qemu-x86_64" {
+		t.Fatalf("launcher = %q", launcher)
+	}
+	if err := ValidateManagedRuntimeProcess(cmd.Process.Pid, core, config, workDir, launcher); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestStopTerminatesRunningRuntime(t *testing.T) {
 	dir := t.TempDir()
 	workDir := filepath.Join(dir, "runtime")
@@ -192,7 +244,7 @@ sleep 30
 	config := writeStartConfig(t, dir)
 	table.add(cmd.Process.Pid, "lc-mihomo-meta", []string{"lc-mihomo-meta", "-d", workDir, "-f", config})
 	stubAfterProcessStart(t, func(started *exec.Cmd) {
-		table.add(started.Process.Pid, "lc-mihomo-meta", []string{"lc-mihomo-meta", "-d", workDir, "-f", config})
+		table.add(started.Process.Pid, "lc-mihomo-meta", []string{core, "-d", workDir, "-f", config})
 	})
 
 	result, err := Restart(context.Background(), RestartOptions{
@@ -239,7 +291,7 @@ sleep 30
 	cache := filepath.Join(dir, "validation-cache.json")
 	table := stubProcessTable(t)
 	stubAfterProcessStart(t, func(started *exec.Cmd) {
-		table.add(started.Process.Pid, "lc-mihomo-meta", []string{"lc-mihomo-meta", "-d", workDir, "-f", config})
+		table.add(started.Process.Pid, "lc-mihomo-meta", []string{core, "-d", workDir, "-f", config})
 	})
 
 	first, err := Restart(context.Background(), RestartOptions{
@@ -309,16 +361,26 @@ func stubProcessZombie(t *testing.T, pid int, zombie bool) {
 }
 
 type processTable struct {
-	names map[int]string
-	args  map[int][]string
+	names       map[int]string
+	args        map[int][]string
+	executables map[int]string
+	cwds        map[int]string
 }
 
 func stubProcessTable(t *testing.T) *processTable {
 	t.Helper()
-	table := &processTable{names: map[int]string{}, args: map[int][]string{}}
+	stubSupervisionRuntime(t)
+	table := &processTable{
+		names:       map[int]string{},
+		args:        map[int][]string{},
+		executables: map[int]string{},
+		cwds:        map[int]string{},
+	}
 	originalList := listProcessIDs
 	originalComm := readProcessComm
 	originalCommandLine := readProcessCommandLine
+	originalExecutable := readProcessExecutable
+	originalCWD := readProcessCWD
 	listProcessIDs = func() []int {
 		pids := make([]int, 0, len(table.names))
 		for pid := range table.names {
@@ -338,17 +400,56 @@ func stubProcessTable(t *testing.T) *processTable {
 		}
 		return originalCommandLine(candidate)
 	}
+	readProcessExecutable = func(candidate int) (string, bool, error) {
+		if executable, ok := table.executables[candidate]; ok {
+			return executable, true, nil
+		}
+		return originalExecutable(candidate)
+	}
+	readProcessCWD = func(candidate int) (string, bool, error) {
+		if cwd, ok := table.cwds[candidate]; ok {
+			return cwd, true, nil
+		}
+		return originalCWD(candidate)
+	}
 	t.Cleanup(func() {
 		listProcessIDs = originalList
 		readProcessComm = originalComm
 		readProcessCommandLine = originalCommandLine
+		readProcessExecutable = originalExecutable
+		readProcessCWD = originalCWD
 	})
 	return table
+}
+
+func stubSupervisionRuntime(t *testing.T) {
+	t.Helper()
+	originalBootID := currentBootID
+	originalHealth := probeRuntimeHealth
+	currentBootID = func() (string, error) { return "test-boot-id", nil }
+	probeRuntimeHealth = func(context.Context, string, int, time.Duration) error { return nil }
+	t.Cleanup(func() {
+		currentBootID = originalBootID
+		probeRuntimeHealth = originalHealth
+	})
 }
 
 func (table *processTable) add(pid int, name string, args []string) {
 	table.names[pid] = name
 	table.args[pid] = append([]string(nil), args...)
+	if len(args) > 0 {
+		table.executables[pid] = args[0]
+	}
+	if cwd, err := os.Getwd(); err == nil {
+		table.cwds[pid] = cwd
+	}
+}
+
+func (table *processTable) remove(pid int) {
+	delete(table.names, pid)
+	delete(table.args, pid)
+	delete(table.executables, pid)
+	delete(table.cwds, pid)
 }
 
 func stubAfterProcessStart(t *testing.T, hook func(*exec.Cmd)) {
@@ -419,7 +520,7 @@ sleep 30
 	config := writeStartConfig(t, dir)
 	table.add(old.Process.Pid, "lc-mihomo-meta", []string{"lc-mihomo-meta", "-d", workDir, "-f", config})
 	stubAfterProcessStart(t, func(started *exec.Cmd) {
-		table.add(started.Process.Pid, "lc-mihomo-meta", []string{"lc-mihomo-meta", "-d", workDir, "-f", config})
+		table.add(started.Process.Pid, "lc-mihomo-meta", []string{core, "-d", workDir, "-f", config})
 	})
 	var stages []RestartStageEvent
 

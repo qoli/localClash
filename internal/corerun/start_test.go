@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"localclash/internal/runtimesupervision"
 )
 
 func TestStartMissingConfigReturnsError(t *testing.T) {
@@ -71,7 +73,19 @@ sleep 30
 func TestStartAlreadyRunningDoesNotStartSecondRuntime(t *testing.T) {
 	dir := t.TempDir()
 	core := filepath.Join(dir, "lc-mihomo-meta")
-	writeStartExecutable(t, core, "#!/bin/sh\nexit 44\n")
+	writeStartExecutable(t, core, `#!/bin/sh
+if [ "$1" = "-v" ]; then
+  echo Mihomo Meta test
+  exit 0
+fi
+for arg in "$@"; do
+  if [ "$arg" = "-t" ]; then
+    echo configuration test is successful
+    exit 0
+  fi
+done
+exit 44
+`)
 	config := writeStartConfig(t, dir)
 	workDir := filepath.Join(dir, "runtime")
 	if err := os.MkdirAll(workDir, 0o755); err != nil {
@@ -84,7 +98,7 @@ func TestStartAlreadyRunningDoesNotStartSecondRuntime(t *testing.T) {
 	}
 	defer killProcess(current.Process.Pid)
 	go func() { _ = current.Wait() }()
-	table.add(current.Process.Pid, "lc-mihomo-meta", []string{"lc-mihomo-meta", "-d", workDir, "-f", config})
+	table.add(current.Process.Pid, "lc-mihomo-meta", []string{core, "-d", workDir, "-f", config})
 
 	result, err := Start(context.Background(), StartOptions{
 		CorePath:   core,
@@ -119,6 +133,10 @@ sleep 30
 	config := writeStartConfig(t, dir)
 	workDir := filepath.Join(dir, "runtime")
 	logPath := filepath.Join(workDir, "mihomo.log")
+	table := stubProcessTable(t)
+	stubAfterProcessStart(t, func(started *exec.Cmd) {
+		table.add(started.Process.Pid, "lc-mihomo-meta", []string{core, "-d", workDir, "-f", config})
+	})
 
 	result, err := Start(context.Background(), StartOptions{
 		CorePath:   core,
@@ -138,6 +156,20 @@ sleep 30
 	}
 	if len(result.Warnings) < 2 || !strings.Contains(result.Warnings[0], "network connectivity") {
 		t.Fatalf("warnings = %+v, want network warning", result.Warnings)
+	}
+	state, err := runtimesupervision.Read(workDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.State != runtimesupervision.StateRunning || state.PID != result.PID || state.Attempts != 0 {
+		t.Fatalf("supervision state = %+v, want running pid %d", state, result.PID)
+	}
+	info, err := os.Stat(runtimesupervision.Path(workDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("supervision state mode = %o, want 600", info.Mode().Perm())
 	}
 }
 

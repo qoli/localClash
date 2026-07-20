@@ -48,6 +48,8 @@ type Server struct {
 	configPatchDraftMu   sync.Mutex
 	configPatchDraftGen  int64
 	configPatchDraftSlot *configPatchDraftSlot
+	watchdogNoticeMu     sync.Mutex
+	watchdogNotices      map[string]time.Time
 }
 
 var routerTakeoverStatus = routertakeover.Status
@@ -74,10 +76,11 @@ func NewServerWithState(state appinit.RuntimeState) *Server {
 func newServer(state *appinit.RuntimeState) *Server {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Server{
-		state:      state,
-		startedAt:  time.Now().UTC(),
-		taskCtx:    ctx,
-		taskCancel: cancel,
+		state:           state,
+		startedAt:       time.Now().UTC(),
+		taskCtx:         ctx,
+		taskCancel:      cancel,
+		watchdogNotices: map[string]time.Time{},
 	}
 }
 

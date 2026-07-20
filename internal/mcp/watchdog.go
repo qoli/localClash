@@ -7,24 +7,33 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"localclash/internal/corerun"
+	"localclash/internal/runtimesupervision"
 )
 
 const (
-	defaultWatchdogInterval      = time.Hour
-	defaultMihomoLogMaxBytes     = int64(10 * 1024 * 1024)
-	watchdogLogName              = "watchdog.jsonl"
-	watchdogMihomoLogDefaultName = "mihomo.log"
+	defaultWatchdogInterval        = time.Hour
+	defaultRuntimeWatchdogInterval = 5 * time.Second
+	defaultMihomoLogMaxBytes       = int64(10 * 1024 * 1024)
+	watchdogMihomoLogDefaultName   = "mihomo.log"
 )
 
 type watchdogOptions struct {
-	Interval          time.Duration
-	MihomoLogMaxBytes int64
+	Interval             time.Duration
+	RuntimeInterval      time.Duration
+	RuntimeProbeTimeout  time.Duration
+	RuntimeHealthTimeout time.Duration
+	MihomoLogMaxBytes    int64
 }
 
 func defaultWatchdogOptions() watchdogOptions {
 	return watchdogOptions{
-		Interval:          taskMonitorDurationEnv("LOCALCLASH_WATCHDOG_INTERVAL_MS", defaultWatchdogInterval),
-		MihomoLogMaxBytes: int64(envInt("LOCALCLASH_MIHOMO_LOG_MAX_BYTES", int(defaultMihomoLogMaxBytes))),
+		Interval:             taskMonitorDurationEnv("LOCALCLASH_WATCHDOG_INTERVAL_MS", defaultWatchdogInterval),
+		RuntimeInterval:      taskMonitorDurationEnv("LOCALCLASH_RUNTIME_WATCHDOG_INTERVAL_MS", defaultRuntimeWatchdogInterval),
+		RuntimeProbeTimeout:  time.Second,
+		RuntimeHealthTimeout: 20 * time.Second,
+		MihomoLogMaxBytes:    int64(envInt("LOCALCLASH_MIHOMO_LOG_MAX_BYTES", int(defaultMihomoLogMaxBytes))),
 	}
 }
 
@@ -33,7 +42,7 @@ func (s *Server) startWatchdog() {
 		return
 	}
 	opts := defaultWatchdogOptions()
-	if opts.Interval <= 0 {
+	if opts.Interval <= 0 && opts.RuntimeInterval <= 0 {
 		return
 	}
 	s.taskWG.Add(1)
@@ -44,7 +53,7 @@ func (s *Server) startWatchdog() {
 }
 
 func (s *Server) watchdogLoop(ctx context.Context, opts watchdogOptions) {
-	if opts.Interval <= 0 {
+	if opts.Interval <= 0 && opts.RuntimeInterval <= 0 {
 		return
 	}
 	select {
@@ -52,21 +61,59 @@ func (s *Server) watchdogLoop(ctx context.Context, opts watchdogOptions) {
 		return
 	default:
 	}
-	s.runWatchdogChecks(opts)
-	ticker := time.NewTicker(opts.Interval)
-	defer ticker.Stop()
+	var logTicker *time.Ticker
+	var logTicks <-chan time.Time
+	if opts.Interval > 0 {
+		s.runWatchdogChecks(opts)
+		logTicker = time.NewTicker(opts.Interval)
+		logTicks = logTicker.C
+		defer logTicker.Stop()
+	}
+	var runtimeTicker *time.Ticker
+	var runtimeTicks <-chan time.Time
+	if opts.RuntimeInterval > 0 {
+		s.runRuntimeWatchdogCheck(ctx, opts)
+		runtimeTicker = time.NewTicker(opts.RuntimeInterval)
+		runtimeTicks = runtimeTicker.C
+		defer runtimeTicker.Stop()
+	}
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
+		case <-logTicks:
 			s.runWatchdogChecks(opts)
+		case <-runtimeTicks:
+			s.runRuntimeWatchdogCheck(ctx, opts)
 		}
 	}
 }
 
 func (s *Server) runWatchdogChecks(opts watchdogOptions) {
 	s.checkMihomoLogSize(opts.MihomoLogMaxBytes)
+}
+
+func (s *Server) runRuntimeWatchdogCheck(ctx context.Context, opts watchdogOptions) {
+	if s == nil || s.state == nil {
+		return
+	}
+	runtimeDir := strings.TrimSpace(s.state.Paths.MihomoRuntimeDir)
+	if runtimeDir == "" {
+		return
+	}
+	_, err := corerun.CheckSupervision(ctx, corerun.SupervisionCheckOptions{
+		WorkDir:       runtimeDir,
+		ProbeTimeout:  opts.RuntimeProbeTimeout,
+		HealthTimeout: opts.RuntimeHealthTimeout,
+	})
+	if err == nil {
+		return
+	}
+	s.appendWatchdogEventThrottled("supervision_check_error:"+err.Error(), time.Minute, map[string]any{
+		"event":  "runtime_supervision_blocked",
+		"reason": "supervision_check_error",
+		"error":  err.Error(),
+	})
 }
 
 func (s *Server) checkMihomoLogSize(maxBytes int64) {
@@ -123,9 +170,24 @@ func (s *Server) checkMihomoLogSize(maxBytes int64) {
 }
 
 func (s *Server) appendWatchdogEvent(fields map[string]any) {
-	if fields == nil {
+	if s == nil || s.state == nil || fields == nil {
 		return
 	}
-	fields["ts"] = time.Now().UTC().Format(time.RFC3339Nano)
-	appendBoundedJSONLog(s.serviceLogPath(watchdogLogName), fields, serviceLogMaxBytes())
+	_ = runtimesupervision.AppendEvent(s.state.Paths.MihomoRuntimeDir, fields)
+}
+
+func (s *Server) appendWatchdogEventThrottled(key string, interval time.Duration, fields map[string]any) {
+	now := time.Now()
+	s.watchdogNoticeMu.Lock()
+	if s.watchdogNotices == nil {
+		s.watchdogNotices = map[string]time.Time{}
+	}
+	last := s.watchdogNotices[key]
+	if !last.IsZero() && now.Before(last.Add(interval)) {
+		s.watchdogNoticeMu.Unlock()
+		return
+	}
+	s.watchdogNotices[key] = now
+	s.watchdogNoticeMu.Unlock()
+	s.appendWatchdogEvent(fields)
 }

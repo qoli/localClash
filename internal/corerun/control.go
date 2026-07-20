@@ -2,6 +2,7 @@ package corerun
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -14,6 +15,7 @@ import (
 	"localclash/internal/mihomoapi"
 	"localclash/internal/mihomotest"
 	"localclash/internal/runtimeprofile"
+	"localclash/internal/runtimesupervision"
 )
 
 const (
@@ -41,11 +43,12 @@ type StatusResult struct {
 }
 
 type StopOptions struct {
-	CorePath   string
-	ConfigPath string
-	WorkDir    string
-	Timeout    time.Duration
-	ForceKill  bool
+	CorePath                 string
+	ConfigPath               string
+	WorkDir                  string
+	Timeout                  time.Duration
+	ForceKill                bool
+	PreserveSupervisionState bool `json:"-"`
 }
 
 type RestartOptions struct {
@@ -208,15 +211,21 @@ func Restart(ctx context.Context, opts RestartOptions) (RestartResult, error) {
 		return result, nil
 	}
 	stage(RestartStageEvent{Stage: "config_test", Event: "done", DurationMS: result.Timings.ValidateMS})
+	if err := markSupervisionRestarting(runOpts, time.Now()); err != nil {
+		result.Error = "cannot mark runtime supervision as restarting: " + err.Error()
+		result.Timings.TotalMS = elapsedMS(totalStarted)
+		return result, nil
+	}
 
 	stopStarted := time.Now()
 	stage(RestartStageEvent{Stage: "stop", Event: "started"})
 	stop, err := Stop(StopOptions{
-		CorePath:   runOpts.CorePath,
-		ConfigPath: runOpts.ConfigPath,
-		WorkDir:    runOpts.WorkDir,
-		Timeout:    opts.StopTimeout,
-		ForceKill:  opts.ForceKill,
+		CorePath:                 runOpts.CorePath,
+		ConfigPath:               runOpts.ConfigPath,
+		WorkDir:                  runOpts.WorkDir,
+		Timeout:                  opts.StopTimeout,
+		ForceKill:                opts.ForceKill,
+		PreserveSupervisionState: true,
 	})
 	result.Stop = stop
 	result.Timings.StopMS = elapsedMS(stopStarted)
@@ -363,6 +372,10 @@ func hotReload(ctx context.Context, opts RestartOptions, runOpts Options, result
 		return result, nil
 	}
 	result.Reloaded = true
+	if err := updateSupervisionAfterHotReload(ctx, runOpts, validationCachePath(opts.ValidationCachePath, runOpts.WorkDir), status.PID, time.Now()); err != nil {
+		result.Warnings = append(result.Warnings, "Hot reload succeeded, but runtime supervision identity was not updated: "+err.Error())
+		markRuntimeStartFailure(runOpts.WorkDir, "hot_reload_state_update_failed", err, time.Now())
+	}
 	result.Timings.TotalMS = elapsedMS(totalStarted)
 	stage(RestartStageEvent{Stage: "hot_reload", Event: "done", DurationMS: elapsedMS(reloadStarted), PID: status.PID})
 	return result, nil
@@ -385,17 +398,37 @@ func Stop(opts StopOptions) (StopResult, error) {
 	result := StopResult{
 		RuntimeDir: normalized.WorkDir,
 	}
-
-	processes := findManagedRuntimeProcesses()
-	if len(processes) == 0 {
-		return result, nil
+	if len(findManagedRuntimeProcesses()) == 0 {
+		if _, err := os.Stat(runtimesupervision.Path(normalized.WorkDir)); errors.Is(err, os.ErrNotExist) {
+			return result, nil
+		}
 	}
-	result.PID = processes[0].PID
-	for _, process := range processes {
-		result.PIDs = appendUniquePIDs(result.PIDs, process.PID)
-		result.ProcessNames = appendUniqueStrings(result.ProcessNames, process.Name)
+	runOpts := normalizeOptions(Options{CorePath: normalized.CorePath, ConfigPath: normalized.ConfigPath, WorkDir: normalized.WorkDir, LogPath: normalized.LogPath})
+	var stopResult StopResult
+	err := runtimesupervision.WithLock(runOpts.WorkDir, func() error {
+		processes := findManagedRuntimeProcesses()
+		stopResult = result
+		if !opts.PreserveSupervisionState {
+			if err := disarmSupervisionLocked(runOpts, len(processes) > 0, time.Now()); err != nil {
+				return err
+			}
+		}
+		if len(processes) == 0 {
+			return nil
+		}
+		stopResult.PID = processes[0].PID
+		for _, process := range processes {
+			stopResult.PIDs = appendUniquePIDs(stopResult.PIDs, process.PID)
+			stopResult.ProcessNames = appendUniqueStrings(stopResult.ProcessNames, process.Name)
+		}
+		var stopErr error
+		stopResult, stopErr = stopRuntimePIDs(stopResult.PIDs, stopResult, timeout, opts.ForceKill)
+		return stopErr
+	})
+	if stopResult.RuntimeDir == "" {
+		stopResult = result
 	}
-	return stopRuntimePIDs(result.PIDs, result, timeout, opts.ForceKill)
+	return stopResult, err
 }
 
 func stopRuntimePIDs(pids []int, result StopResult, timeout time.Duration, forceKill bool) (StopResult, error) {
@@ -491,6 +524,11 @@ type runtimeProcess struct {
 	Name string
 }
 
+type ManagedRuntimeProcess struct {
+	PID  int
+	Name string
+}
+
 var managedProcessNames = map[string]bool{
 	runtimeprofile.ManagedMetaCoreName:  true,
 	runtimeprofile.ManagedSmartCoreName: true,
@@ -498,6 +536,168 @@ var managedProcessNames = map[string]bool{
 
 func findManagedRuntimeProcesses() []runtimeProcess {
 	return findRuntimeProcessesByName(managedProcessNames)
+}
+
+func ManagedRuntimeProcesses() []ManagedRuntimeProcess {
+	processes := findManagedRuntimeProcesses()
+	result := make([]ManagedRuntimeProcess, 0, len(processes))
+	for _, process := range processes {
+		result = append(result, ManagedRuntimeProcess{PID: process.PID, Name: process.Name})
+	}
+	return result
+}
+
+func ValidateManagedRuntimeProcess(pid int, corePath, configPath, workDir, launcherPath string) error {
+	observedLauncher, err := InspectManagedRuntimeProcess(pid, corePath, configPath, workDir)
+	if err != nil {
+		return err
+	}
+	launcherPath = filepath.Clean(strings.TrimSpace(launcherPath))
+	if launcherPath == "." || !filepath.IsAbs(launcherPath) {
+		return fmt.Errorf("managed runtime launcher identity must be an absolute path")
+	}
+	if observedLauncher != launcherPath {
+		return fmt.Errorf("managed runtime pid %d launcher mismatch: got %q, want %q", pid, observedLauncher, launcherPath)
+	}
+	return nil
+}
+
+func InspectManagedRuntimeProcess(pid int, corePath, configPath, workDir string) (string, error) {
+	if pid <= 0 {
+		return "", fmt.Errorf("managed runtime pid must be positive, got %d", pid)
+	}
+	expectedName := filepath.Base(strings.TrimSpace(corePath))
+	if !managedProcessNames[expectedName] {
+		return "", fmt.Errorf("core %q is not a localClash managed core", corePath)
+	}
+	name, ok, err := readProcessComm(pid)
+	if err != nil {
+		return "", fmt.Errorf("read managed runtime pid %d name: %w", pid, err)
+	}
+	if !ok {
+		return "", fmt.Errorf("managed runtime pid %d no longer exists", pid)
+	}
+	if name != expectedName {
+		return "", fmt.Errorf("managed runtime pid %d name mismatch: got %q, want %q", pid, name, expectedName)
+	}
+	executable, ok, err := readProcessExecutable(pid)
+	if err != nil {
+		return "", fmt.Errorf("read managed runtime pid %d executable: %w", pid, err)
+	}
+	if !ok {
+		return "", fmt.Errorf("managed runtime pid %d executable is unavailable", pid)
+	}
+	launcherPath := filepath.Clean(strings.TrimSpace(executable))
+	if launcherPath == "." || !filepath.IsAbs(launcherPath) {
+		return "", fmt.Errorf("managed runtime pid %d launcher is not an absolute path: %q", pid, executable)
+	}
+	args, ok, err := readProcessCommandLine(pid)
+	if err != nil {
+		return "", fmt.Errorf("read managed runtime pid %d command line: %w", pid, err)
+	}
+	if !ok {
+		return "", fmt.Errorf("managed runtime pid %d command line is unavailable", pid)
+	}
+	cwd, ok, err := readProcessCWD(pid)
+	if err != nil {
+		return "", fmt.Errorf("read managed runtime pid %d cwd: %w", pid, err)
+	}
+	if !ok {
+		return "", fmt.Errorf("managed runtime pid %d cwd is unavailable", pid)
+	}
+	containsCore, err := commandContainsExactPath(args, corePath, cwd)
+	if err != nil {
+		return "", fmt.Errorf("managed runtime pid %d core command identity: %w", pid, err)
+	}
+	if !containsCore {
+		return "", fmt.Errorf("managed runtime pid %d command line does not contain exact core path %q", pid, corePath)
+	}
+	actualWorkDir, err := exactFlagPath(args, "-d", cwd)
+	if err != nil {
+		return "", fmt.Errorf("managed runtime pid %d workdir identity: %w", pid, err)
+	}
+	expectedWorkDir, err := canonicalProcessPath(workDir, "")
+	if err != nil {
+		return "", fmt.Errorf("resolve expected managed runtime workdir: %w", err)
+	}
+	if actualWorkDir != expectedWorkDir {
+		return "", fmt.Errorf("managed runtime pid %d workdir mismatch: got %q, want %q", pid, actualWorkDir, expectedWorkDir)
+	}
+	actualConfig, err := exactFlagPath(args, "-f", cwd)
+	if err != nil {
+		return "", fmt.Errorf("managed runtime pid %d config identity: %w", pid, err)
+	}
+	expectedConfig, err := canonicalProcessPath(configPath, "")
+	if err != nil {
+		return "", fmt.Errorf("resolve expected managed runtime config: %w", err)
+	}
+	if actualConfig != expectedConfig {
+		return "", fmt.Errorf("managed runtime pid %d config mismatch: got %q, want %q", pid, actualConfig, expectedConfig)
+	}
+	return launcherPath, nil
+}
+
+func commandContainsExactPath(args []string, expected, cwd string) (bool, error) {
+	expectedPath, err := canonicalProcessPath(expected, "")
+	if err != nil {
+		return false, err
+	}
+	for _, arg := range args {
+		if strings.TrimSpace(arg) == "" {
+			continue
+		}
+		candidate, err := canonicalProcessPath(arg, cwd)
+		if err != nil {
+			continue
+		}
+		if candidate == expectedPath {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func exactFlagPath(args []string, flag, cwd string) (string, error) {
+	var value string
+	for index := 0; index < len(args); index++ {
+		if args[index] != flag {
+			continue
+		}
+		if value != "" {
+			return "", fmt.Errorf("command line contains duplicate %s flags", flag)
+		}
+		if index+1 >= len(args) || strings.TrimSpace(args[index+1]) == "" {
+			return "", fmt.Errorf("command line %s value is missing", flag)
+		}
+		value = args[index+1]
+	}
+	if value == "" {
+		return "", fmt.Errorf("command line is missing %s", flag)
+	}
+	return canonicalProcessPath(value, cwd)
+}
+
+func canonicalProcessPath(path, cwd string) (string, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return "", fmt.Errorf("path is empty")
+	}
+	if !filepath.IsAbs(path) {
+		if strings.TrimSpace(cwd) != "" {
+			path = filepath.Join(cwd, path)
+		} else {
+			absolute, err := filepath.Abs(path)
+			if err != nil {
+				return "", err
+			}
+			path = absolute
+		}
+	}
+	resolved, err := filepath.EvalSymlinks(filepath.Clean(path))
+	if err != nil {
+		return "", err
+	}
+	return resolved, nil
 }
 
 func findRuntimeProcessesByName(names map[string]bool) []runtimeProcess {
@@ -513,7 +713,7 @@ func findRuntimeProcessesByName(names map[string]bool) []runtimeProcess {
 		if err != nil || !ok || !names[name] {
 			continue
 		}
-		if processCommandHasExactArg(pid, "-t") {
+		if processCommandHasExactArg(pid, "-t") || processCommandHasExactArg(pid, "-v") {
 			continue
 		}
 		processes = append(processes, runtimeProcess{PID: pid, Name: name})
@@ -649,4 +849,26 @@ var readProcessCommandLine = func(pid int) ([]string, bool, error) {
 		return nil, true, nil
 	}
 	return fields, true, nil
+}
+
+var readProcessExecutable = func(pid int) (string, bool, error) {
+	path, err := os.Readlink(filepath.Join("/proc", strconv.Itoa(pid), "exe"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", false, nil
+		}
+		return "", false, err
+	}
+	return path, true, nil
+}
+
+var readProcessCWD = func(pid int) (string, bool, error) {
+	path, err := os.Readlink(filepath.Join("/proc", strconv.Itoa(pid), "cwd"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", false, nil
+		}
+		return "", false, err
+	}
+	return path, true, nil
 }

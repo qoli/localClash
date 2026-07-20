@@ -15,18 +15,20 @@ import (
 
 	"localclash/internal/mihomotest"
 	"localclash/internal/runtimeprofile"
+	"localclash/internal/runtimesupervision"
 )
 
 type StartOptions struct {
-	CorePath            string
-	ConfigPath          string
-	WorkDir             string
-	LogPath             string
-	Foreground          bool
-	SkipConfigTest      bool
-	ValidationCachePath string
-	ForceConfigTest     bool
-	OnStage             func(StartStageEvent) `json:"-"`
+	CorePath             string
+	ConfigPath           string
+	WorkDir              string
+	LogPath              string
+	Foreground           bool
+	SkipConfigTest       bool
+	ValidationCachePath  string
+	ForceConfigTest      bool
+	RuntimeHealthTimeout time.Duration
+	OnStage              func(StartStageEvent) `json:"-"`
 }
 
 type StartStageEvent struct {
@@ -100,56 +102,194 @@ func Start(ctx context.Context, opts StartOptions) (StartResult, error) {
 	baseResult.ExternalController = endpoints.ExternalController
 	baseResult.ExternalUIURL = externalUIURL(baseResult.ExternalController, endpoints.ExternalUI)
 
-	finish = stage("status_check", nil)
-	if processes := findManagedRuntimeProcesses(); len(processes) > 0 {
-		baseResult.AlreadyRunning = true
-		baseResult.PID = processes[0].PID
-		baseResult.Warnings = append(baseResult.Warnings, "Runtime is already running; run_runtime did not start a second process.")
-		finish(nil, processes[0].PID)
-		return baseResult, nil
-	}
-	finish(nil, 0)
+	cachePath := validationCachePath(opts.ValidationCachePath, runOpts.WorkDir)
+	var validation mihomotest.ValidationResult
 	if opts.SkipConfigTest {
 		baseResult.ConfigTestSkipped = true
+		finish := stage("config_cache_check", map[string]any{"cache": cachePath})
+		cache := mihomotest.CacheStatus(ctx, mihomotest.ValidationOptions{
+			CorePath:   runOpts.CorePath,
+			ConfigPath: runOpts.ConfigPath,
+			WorkDir:    runOpts.WorkDir,
+			CachePath:  cachePath,
+		})
+		if !cache.Present || !cache.Matched || !cache.Passed {
+			err := fmt.Errorf("skip_config_test requires an existing matched passing validation cache: %s", cache.Status)
+			finish(err, 0)
+			return baseResult, err
+		}
+		validation = validationResultFromCacheStatus(cache)
+		finish(nil, 0)
 	} else {
-		finish := stage("config_test", map[string]any{"cache": validationCachePath(opts.ValidationCachePath, runOpts.WorkDir)})
-		validation, err := validateConfig(ctx, runOpts, opts.ValidationCachePath, opts.ForceConfigTest)
-		baseResult.ConfigValidation = validation
+		finish := stage("config_test", map[string]any{"cache": cachePath})
+		var err error
+		validation, err = validateConfig(ctx, runOpts, opts.ValidationCachePath, opts.ForceConfigTest)
 		if err != nil {
 			finish(err, 0)
+			baseResult.ConfigValidation = validation
 			return baseResult, err
 		}
 		finish(nil, 0)
 	}
+	baseResult.ConfigValidation = validation
+	var result StartResult
+	err := runtimesupervision.WithLock(runOpts.WorkDir, func() error {
+		var startErr error
+		result, startErr = startValidatedLocked(ctx, opts, runOpts, cachePath, baseResult, validation, stage)
+		return startErr
+	})
+	if result.Config == "" {
+		result = baseResult
+	}
+	return result, err
+}
+
+func startValidatedLocked(ctx context.Context, opts StartOptions, runOpts Options, cachePath string, result StartResult, validation mihomotest.ValidationResult, stage func(string, map[string]any) func(error, int)) (StartResult, error) {
+	finish := stage("status_check", nil)
+	processes := findManagedRuntimeProcesses()
+	if len(processes) > 1 {
+		err := fmt.Errorf("multiple managed Mihomo runtimes are already running: %d processes", len(processes))
+		finish(err, 0)
+		markRuntimeStartFailure(runOpts.WorkDir, "multiple_processes", err, time.Now())
+		return result, err
+	}
+	if len(processes) == 1 {
+		process := processes[0]
+		if _, err := InspectManagedRuntimeProcess(process.PID, runOpts.CorePath, runOpts.ConfigPath, runOpts.WorkDir); err != nil {
+			finish(err, process.PID)
+			markRuntimeStartFailure(runOpts.WorkDir, "process_identity_mismatch", err, time.Now())
+			return result, err
+		}
+		finish(nil, process.PID)
+		finish = stage("controller_health", map[string]any{"pid": process.PID, "path": "/version"})
+		if err := probeRuntimeHealth(ctx, runOpts.ConfigPath, process.PID, opts.RuntimeHealthTimeout); err != nil {
+			finish(err, process.PID)
+			markRuntimeStartFailure(runOpts.WorkDir, "controller_health_failed", err, time.Now())
+			return result, err
+		}
+		finish(nil, process.PID)
+		state, warning, err := prepareStartingSupervisionLocked(runOpts, cachePath, validation, time.Now())
+		if err != nil {
+			markRuntimeStartFailure(runOpts.WorkDir, "state_write_failed", err, time.Now())
+			return result, err
+		}
+		if warning != "" {
+			result.Warnings = append(result.Warnings, warning)
+		}
+		if err := completeRunningSupervisionLocked(runOpts.WorkDir, state, process.PID, time.Now()); err != nil {
+			markRuntimeStartFailure(runOpts.WorkDir, "state_write_failed", err, time.Now())
+			return result, err
+		}
+		result.AlreadyRunning = true
+		result.PID = process.PID
+		result.Warnings = append(result.Warnings, "Runtime is already running; run_runtime did not start a second process.")
+		return result, nil
+	}
+	finish(nil, 0)
+
+	state, warning, err := prepareStartingSupervisionLocked(runOpts, cachePath, validation, time.Now())
+	if err != nil {
+		markRuntimeStartFailure(runOpts.WorkDir, "state_write_failed", err, time.Now())
+		return result, err
+	}
+	if warning != "" {
+		result.Warnings = append(result.Warnings, warning)
+	}
 
 	finish = stage("open_log", map[string]any{"log_file": runOpts.LogPath})
-	logFile, err := os.OpenFile(runOpts.LogPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	logFile, err := openBackgroundRuntimeLog(runOpts.LogPath)
 	if err != nil {
 		finish(err, 0)
-		return StartResult{}, err
+		markRuntimeStartFailure(runOpts.WorkDir, "log_open_failed", err, time.Now())
+		return result, err
 	}
 	finish(nil, 0)
 
 	finish = stage("start_process", map[string]any{"core": runOpts.CorePath, "config": runOpts.ConfigPath, "work_dir": runOpts.WorkDir})
+	cmd, err := startBackgroundRuntimeProcess(runOpts, logFile)
+	closeErr := logFile.Close()
+	if err != nil {
+		finish(err, 0)
+		markRuntimeStartFailure(runOpts.WorkDir, "process_start_failed", err, time.Now())
+		return result, err
+	}
+	if closeErr != nil {
+		result.Warnings = append(result.Warnings, "Runtime started, but the parent Mihomo log handle did not close cleanly: "+closeErr.Error())
+		appendRuntimeSupervisionEvent(runOpts.WorkDir, time.Now(), map[string]any{"event": "runtime_log_close_error", "error": closeErr.Error()})
+	}
+	finish(nil, cmd.Process.Pid)
+	result.Started = true
+	result.PID = cmd.Process.Pid
+
+	finish = stage("controller_health", map[string]any{"pid": cmd.Process.Pid, "path": "/version"})
+	if err := probeRuntimeHealth(ctx, runOpts.ConfigPath, cmd.Process.Pid, opts.RuntimeHealthTimeout); err != nil {
+		finish(err, cmd.Process.Pid)
+		markRuntimeStartFailure(runOpts.WorkDir, "controller_health_failed", err, time.Now())
+		return result, err
+	}
+	finish(nil, cmd.Process.Pid)
+	if err := completeRunningSupervisionLocked(runOpts.WorkDir, state, cmd.Process.Pid, time.Now()); err != nil {
+		markRuntimeStartFailure(runOpts.WorkDir, "state_write_failed", err, time.Now())
+		return result, err
+	}
+	return result, nil
+}
+
+func openBackgroundRuntimeLog(path string) (*os.File, error) {
+	return os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+}
+
+func startBackgroundRuntimeProcess(runOpts Options, logFile *os.File) (*exec.Cmd, error) {
 	cmd := exec.Command(runOpts.CorePath, "-d", runOpts.WorkDir, "-f", runOpts.ConfigPath)
 	cmd.Stdin = nil
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
 	if err := cmd.Start(); err != nil {
-		_ = logFile.Close()
-		finish(err, 0)
-		return StartResult{}, err
+		return nil, err
 	}
 	afterProcessStart(cmd)
-	finish(nil, cmd.Process.Pid)
-
-	_ = logFile.Close()
 	go func() {
 		_ = cmd.Wait()
 	}()
-	baseResult.Started = true
-	baseResult.PID = cmd.Process.Pid
-	return baseResult, nil
+	return cmd, nil
+}
+
+func spawnBackgroundRuntime(runOpts Options) (*exec.Cmd, error) {
+	logFile, err := openBackgroundRuntimeLog(runOpts.LogPath)
+	if err != nil {
+		return nil, err
+	}
+	cmd, startErr := startBackgroundRuntimeProcess(runOpts, logFile)
+	closeErr := logFile.Close()
+	if startErr != nil {
+		return nil, startErr
+	}
+	if closeErr != nil {
+		appendRuntimeSupervisionEvent(runOpts.WorkDir, time.Now(), map[string]any{"event": "runtime_log_close_error", "error": closeErr.Error()})
+	}
+	return cmd, nil
+}
+
+func validationResultFromCacheStatus(status mihomotest.CacheStatusResult) mihomotest.ValidationResult {
+	return mihomotest.ValidationResult{
+		Enabled:       true,
+		Passed:        status.Passed,
+		Cached:        true,
+		CachePath:     status.CachePath,
+		CacheHitMode:  status.MatchMode,
+		ValidatedAt:   status.ValidatedAt,
+		ConfigPath:    status.ConfigPath,
+		ConfigSHA256:  status.ConfigSHA256,
+		ConfigSize:    status.ConfigSize,
+		ConfigModTime: status.ConfigModTime,
+		CorePath:      status.CorePath,
+		CoreType:      status.CoreType,
+		CoreVersion:   status.CoreVersion,
+		CoreSHA256:    status.CoreSHA256,
+		CoreSize:      status.CoreSize,
+		CoreModTime:   status.CoreModTime,
+		DurationMS:    status.DurationMS,
+	}
 }
 
 func startStageEmitter(callback func(StartStageEvent)) func(string, map[string]any) func(error, int) {
@@ -191,6 +331,9 @@ func normalizeStartOptions(opts StartOptions) StartOptions {
 	}
 	if opts.LogPath == "" {
 		opts.LogPath = filepath.Join(opts.WorkDir, "mihomo.log")
+	}
+	if opts.RuntimeHealthTimeout <= 0 {
+		opts.RuntimeHealthTimeout = defaultRuntimeHealthTimeout
 	}
 	return opts
 }

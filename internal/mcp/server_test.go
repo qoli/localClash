@@ -2363,6 +2363,16 @@ func TestToolsCallEnvironmentInspectReturnsSerializableResult(t *testing.T) {
 
 func TestRunRuntimeToolReturnsSerializableResult(t *testing.T) {
 	dir := t.TempDir()
+	controller := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/version" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"meta":true}`)
+	}))
+	defer controller.Close()
+	controllerHost := strings.TrimPrefix(controller.URL, "http://")
 	core := filepath.Join(dir, "lc-mihomo-meta")
 	writeTestExecutable(t, core, `#!/bin/sh
 if [ "$1" = "-v" ]; then
@@ -2379,7 +2389,7 @@ echo runtime started
 sleep 30
 `)
 	config := filepath.Join(dir, "mihomo.yaml")
-	if err := os.WriteFile(config, []byte("external-controller: 127.0.0.1:9090\nexternal-ui: ui/zashboard\n"), 0o644); err != nil {
+	if err := os.WriteFile(config, []byte("external-controller: "+controllerHost+"\nexternal-ui: ui/zashboard\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	workDir := filepath.Join(dir, "runtime")
@@ -2410,7 +2420,7 @@ sleep 30
 	if content["started"] != true || content["already_running"] != false {
 		t.Fatalf("run_runtime content = %+v, want started", content)
 	}
-	if content["external_ui_url"] != "http://127.0.0.1:9090/ui" {
+	if content["external_ui_url"] != controller.URL+"/ui" {
 		t.Fatalf("external ui url = %v", content["external_ui_url"])
 	}
 	if _, err := json.Marshal(result.StructuredContent); err != nil {

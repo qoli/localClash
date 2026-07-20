@@ -5,6 +5,8 @@ import (
 	"encoding/gob"
 	"encoding/json"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -433,13 +435,22 @@ func TestExecuteDesiredConfigRefreshesCoreVersionCacheAfterRuntimeProfileSwitch(
 
 func TestRunProductRuntimeStartRefreshesCoreVersionCache(t *testing.T) {
 	dir := t.TempDir()
+	controller := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/version" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"meta":true}`)
+	}))
+	defer controller.Close()
 	t.Setenv("LOCALCLASH_WORKDIR", dir)
 	t.Chdir(dir)
 	core := filepath.Join(dir, runtimeprofile.MetaCorePath)
 	writeMainExecutableCore(t, core, "Mihomo runtime start")
 	writeMainCoreCache(t, appinit.CoreVersionCachePath(filepath.Join(dir, ".runtime")), core, "Mihomo stale")
 	config := filepath.Join(dir, ".runtime", "mihomo", "config.yaml")
-	writeMainTestFile(t, config, "mixed-port: 7890\n")
+	writeMainTestFile(t, config, "mixed-port: 7890\nexternal-controller: "+strings.TrimPrefix(controller.URL, "http://")+"\n")
 
 	output := captureStdout(t, func() error {
 		return run([]string{"runtime", "start", "--json"})

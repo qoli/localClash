@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"localclash/internal/appinit"
+	"localclash/internal/runtimesupervision"
 )
 
 func TestWatchdogTruncatesOversizedMihomoLog(t *testing.T) {
@@ -127,5 +128,59 @@ func TestWatchdogLoopRunsInitialCheckAndStops(t *testing.T) {
 	case <-done:
 	case <-time.After(2 * time.Second):
 		t.Fatal("watchdog loop did not stop")
+	}
+}
+
+func TestWatchdogRuntimeLoopThrottlesInvalidStateAndStops(t *testing.T) {
+	dir := t.TempDir()
+	runtimeDir := filepath.Join(dir, ".runtime", "mihomo")
+	if err := os.MkdirAll(runtimeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(runtimesupervision.Path(runtimeDir), []byte(`{"version":1,"state":"unknown","runtime_dir":"/tmp/runtime","updated_at":"2026-07-20T12:00:00Z"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	server := NewServerWithState(appinit.RuntimeState{Paths: appinit.RuntimePaths{MihomoRuntimeDir: runtimeDir}})
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		server.watchdogLoop(ctx, watchdogOptions{RuntimeInterval: 10 * time.Millisecond, RuntimeProbeTimeout: time.Millisecond, RuntimeHealthTimeout: time.Millisecond})
+		close(done)
+	}()
+	eventPath := runtimesupervision.EventLogPath(runtimeDir)
+	deadline := time.After(2 * time.Second)
+	for {
+		data, err := os.ReadFile(eventPath)
+		if err == nil && strings.Contains(string(data), `"reason":"supervision_check_error"`) {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("runtime watchdog did not report invalid supervision state")
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+	<-time.After(50 * time.Millisecond)
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("runtime watchdog loop did not stop")
+	}
+	data, err := os.ReadFile(eventPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count := strings.Count(string(data), `"reason":"supervision_check_error"`); count != 1 {
+		t.Fatalf("invalid-state event count = %d, want throttled single event; log=%s", count, data)
+	}
+}
+
+func TestDefaultWatchdogOptionsUseIndependentRuntimeInterval(t *testing.T) {
+	t.Setenv("LOCALCLASH_WATCHDOG_INTERVAL_MS", "3600000")
+	t.Setenv("LOCALCLASH_RUNTIME_WATCHDOG_INTERVAL_MS", "17")
+	opts := defaultWatchdogOptions()
+	if opts.Interval != time.Hour || opts.RuntimeInterval != 17*time.Millisecond {
+		t.Fatalf("watchdog options = %+v", opts)
 	}
 }
