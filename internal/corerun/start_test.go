@@ -2,11 +2,13 @@ package corerun
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"localclash/internal/runtimesupervision"
 )
@@ -170,6 +172,64 @@ sleep 30
 	}
 	if info.Mode().Perm() != 0o600 {
 		t.Fatalf("supervision state mode = %o, want 600", info.Mode().Perm())
+	}
+}
+
+func TestStartCleansUpNewProcessWhenControllerHealthFails(t *testing.T) {
+	dir := t.TempDir()
+	core := filepath.Join(dir, "lc-mihomo-meta")
+	writeStartExecutable(t, core, `#!/bin/sh
+if [ "$1" = "-v" ]; then
+  echo Mihomo Meta test
+  exit 0
+fi
+for arg in "$@"; do
+  if [ "$arg" = "-t" ]; then
+    echo configuration test is successful
+    exit 0
+  fi
+done
+exec sleep 30
+`)
+	config := writeStartConfig(t, dir)
+	workDir := filepath.Join(dir, "runtime")
+	table := stubProcessTable(t)
+	originalHealth := probeRuntimeHealth
+	probeRuntimeHealth = func(context.Context, string, int, time.Duration) error {
+		return errors.New("controller unavailable")
+	}
+	t.Cleanup(func() { probeRuntimeHealth = originalHealth })
+	stubAfterProcessStart(t, func(started *exec.Cmd) {
+		table.add(started.Process.Pid, "lc-mihomo-meta", []string{core, "-d", workDir, "-f", config})
+	})
+
+	result, err := Start(context.Background(), StartOptions{
+		CorePath:   core,
+		ConfigPath: config,
+		WorkDir:    workDir,
+	})
+	if err == nil || !strings.Contains(err.Error(), "controller unavailable") {
+		t.Fatalf("error = %v, want controller health failure", err)
+	}
+	if !result.Started || result.PID == 0 {
+		t.Fatalf("result = %+v, want attempted process pid", result)
+	}
+	if !waitForExit(result.PID, 2*time.Second) {
+		t.Fatalf("newly started pid %d remained running after health failure", result.PID)
+	}
+	state, err := runtimesupervision.Read(workDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.State != runtimesupervision.StateStopped || state.PID != 0 {
+		t.Fatalf("supervision state = %+v, want stopped without pid", state)
+	}
+	events, err := os.ReadFile(runtimesupervision.EventLogPath(workDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if text := string(events); !strings.Contains(text, `"event":"runtime_start_cleanup"`) || !strings.Contains(text, `"outcome":"stopped"`) {
+		t.Fatalf("watchdog events = %s, want successful runtime_start_cleanup", text)
 	}
 }
 

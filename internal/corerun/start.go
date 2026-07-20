@@ -222,10 +222,14 @@ func startValidatedLocked(ctx context.Context, opts StartOptions, runOpts Option
 	result.PID = cmd.Process.Pid
 
 	finish = stage("controller_health", map[string]any{"pid": cmd.Process.Pid, "path": "/version"})
-	if err := probeRuntimeHealth(ctx, runOpts.ConfigPath, cmd.Process.Pid, opts.RuntimeHealthTimeout); err != nil {
-		finish(err, cmd.Process.Pid)
-		markRuntimeStartFailure(runOpts.WorkDir, "controller_health_failed", err, time.Now())
-		return result, err
+	if healthErr := probeRuntimeHealth(ctx, runOpts.ConfigPath, cmd.Process.Pid, opts.RuntimeHealthTimeout); healthErr != nil {
+		failureErr := healthErr
+		if cleanupErr := cleanupFailedStartLocked(runOpts.WorkDir, cmd.Process.Pid, time.Now()); cleanupErr != nil {
+			failureErr = fmt.Errorf("%w; cleanup newly started runtime: %v", healthErr, cleanupErr)
+		}
+		finish(failureErr, cmd.Process.Pid)
+		markRuntimeStartFailure(runOpts.WorkDir, "controller_health_failed", failureErr, time.Now())
+		return result, failureErr
 	}
 	finish(nil, cmd.Process.Pid)
 	if err := completeRunningSupervisionLocked(runOpts.WorkDir, state, cmd.Process.Pid, time.Now()); err != nil {
@@ -233,6 +237,56 @@ func startValidatedLocked(ctx context.Context, opts StartOptions, runOpts Option
 		return result, err
 	}
 	return result, nil
+}
+
+func cleanupFailedStartLocked(workDir string, pid int, now time.Time) error {
+	fields := map[string]any{
+		"event": "runtime_start_cleanup",
+		"pid":   pid,
+	}
+	if !processRunning(pid) || processZombie(pid) {
+		fields["outcome"] = "already_exited"
+		appendRuntimeSupervisionEvent(workDir, now, fields)
+		return markFailedStartStoppedLocked(workDir, now)
+	}
+	result, err := stopRuntimePIDs([]int{pid}, StopResult{RuntimeDir: workDir, PID: pid}, 2*time.Second, true)
+	if err != nil && (!processRunning(pid) || processZombie(pid)) {
+		err = nil
+	}
+	if err == nil && result.Error != "" {
+		err = errors.New(result.Error)
+	}
+	fields["forced"] = result.Forced
+	fields["signal"] = result.Signal
+	if err != nil {
+		fields["outcome"] = "failed"
+		fields["error"] = err.Error()
+		appendRuntimeSupervisionEvent(workDir, now, fields)
+		return err
+	}
+	fields["outcome"] = "stopped"
+	appendRuntimeSupervisionEvent(workDir, now, fields)
+	return markFailedStartStoppedLocked(workDir, now)
+}
+
+func markFailedStartStoppedLocked(workDir string, now time.Time) error {
+	state, err := runtimesupervision.Read(workDir)
+	if err != nil {
+		return fmt.Errorf("read supervision after failed start: %w", err)
+	}
+	if state.State != runtimesupervision.StateStarting {
+		return fmt.Errorf("supervision state after failed start is %q, want %q", state.State, runtimesupervision.StateStarting)
+	}
+	state.State = runtimesupervision.StateStopped
+	state.PID = 0
+	state.HealthySince = ""
+	state.LastHealthyAt = ""
+	state.NextAttemptAt = ""
+	state.UpdatedAt = supervisionTimestamp(now)
+	if err := runtimesupervision.Write(workDir, state); err != nil {
+		return fmt.Errorf("write stopped supervision after failed start: %w", err)
+	}
+	return nil
 }
 
 func openBackgroundRuntimeLog(path string) (*os.File, error) {

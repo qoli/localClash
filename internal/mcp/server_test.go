@@ -2416,10 +2416,14 @@ sleep 30
 	}
 	result := marshalToolResult(t, resp.Result)
 	content := result.StructuredContent.(map[string]any)
-	defer killMCPProcess(int(content["pid"].(float64)))
 	if content["started"] != true || content["already_running"] != false {
 		t.Fatalf("run_runtime content = %+v, want started", content)
 	}
+	pidValue, ok := content["pid"].(float64)
+	if !ok || pidValue <= 0 {
+		t.Fatalf("run_runtime content = %+v, want numeric pid", content)
+	}
+	defer killMCPProcess(int(pidValue))
 	if content["external_ui_url"] != controller.URL+"/ui" {
 		t.Fatalf("external ui url = %v", content["external_ui_url"])
 	}
@@ -3013,7 +3017,17 @@ done
 sleep 30
 `)
 	config := filepath.Join(dir, "mihomo.yaml")
-	if err := os.WriteFile(config, []byte("external-controller: 127.0.0.1:9090\nexternal-ui: ui/zashboard\n"), 0o644); err != nil {
+	controller := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/version" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"version":"test"}`))
+	}))
+	t.Cleanup(controller.Close)
+	controllerAddress := strings.TrimPrefix(controller.URL, "http://")
+	if err := os.WriteFile(config, []byte(fmt.Sprintf("external-controller: %s\nexternal-ui: ui/zashboard\n", controllerAddress)), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	workDir := filepath.Join(dir, "runtime")
@@ -3040,7 +3054,14 @@ sleep 30
 	}
 	runResult := marshalToolResult(t, runResp.Result)
 	runContent := runResult.StructuredContent.(map[string]any)
-	pid := int(runContent["pid"].(float64))
+	if runContent["started"] != true {
+		t.Fatalf("run_runtime content = %+v, want started runtime", runContent)
+	}
+	pidValue, ok := runContent["pid"].(float64)
+	if !ok || pidValue <= 0 {
+		t.Fatalf("run_runtime content = %+v, want numeric pid", runContent)
+	}
+	pid := int(pidValue)
 	defer killMCPProcess(pid)
 
 	stopResp := callHandleWithServer(t, server, map[string]any{
