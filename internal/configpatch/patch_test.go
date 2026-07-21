@@ -164,6 +164,65 @@ func TestImportPolicyTemplateRefreshesOnlyPolicyTemplatePatches(t *testing.T) {
 	}
 }
 
+func TestImportPolicyTemplateResetPatchesReplacesConflictingUserPack(t *testing.T) {
+	dir := t.TempDir()
+	templatesDir := filepath.Join(dir, "policy-templates")
+	writeTestFile(t, filepath.Join(templatesDir, "localclash-default.json"), `{
+  "id": "localclash-default",
+  "name": "Default",
+  "description": "Default template.",
+  "config": {
+    "version": 4,
+    "policy_template": "localclash-default",
+    "packs": [{
+      "source": "syncnext",
+      "pack": "SyncnextUnbreak",
+      "target": "DIRECT",
+      "reason": "Latest default."
+    }]
+  }
+}`)
+	registryDir := filepath.Join(dir, "patches")
+	writePatchJSON(t, filepath.Join(registryDir, "user.syncnext_user-syncnext.json"), Patch{
+		Version: PatchVersion,
+		PatchID: "user.syncnext",
+		Title:   "Old Syncnext override",
+		Source:  SourceUser,
+		Status:  StatusEnabled,
+		OrderID: "1000.000000",
+		Overlay: configplan.OverlayIntent{Packs: []configplan.OverlayPackIntent{{
+			Source: "syncnext",
+			Pack:   "SyncnextUnbreak",
+			Target: "⚡ 自动选择",
+			Reason: "Local override.",
+		}}},
+	})
+
+	result, err := ImportPolicyTemplate(context.Background(), ImportTemplateOptions{
+		RegistryDir:        registryDir,
+		PolicyTemplatesDir: templatesDir,
+		PolicyTemplate:     "localclash-default",
+		ResetPatches:       true,
+		ConfigPath:         filepath.Join(dir, "localclash-intent.json"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.ResetPatches || result.RefreshTemplateOnly {
+		t.Fatalf("result reset=%v refresh=%v, want complete reset", result.ResetPatches, result.RefreshTemplateOnly)
+	}
+	if _, err := os.Stat(filepath.Join(registryDir, "user.syncnext_user-syncnext.json")); !os.IsNotExist(err) {
+		t.Fatalf("conflicting user patch should be removed, err=%v", err)
+	}
+	registry, err := Load(registryDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(registry.Records) != 1 || registry.Records[0].Patch.Source != SourcePolicyTemplate {
+		t.Fatalf("registry = %+v, want only imported policy-template patch", registry.Records)
+	}
+}
+
 func TestImportPolicyTemplateRefreshRejectsPatchWithoutSource(t *testing.T) {
 	dir := t.TempDir()
 	templatesDir := filepath.Join(dir, "policy-templates")
