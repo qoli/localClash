@@ -19,7 +19,33 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
 | localClash Core | [v0.1.46](https://github.com/qoli/localClash/releases/tag/v0.1.46) | 2026-07-20 16:08 UTC+8 |
-| localclash-luci | [v0.1.0-39](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-39) | 2026-07-14 14:13 UTC+8 |
+| localclash-luci | [v0.1.0-40](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-40) | 2026-07-21 UTC+8 |
+
+## 2026-07-21
+
+### localclash-luci v0.1.0-40
+
+Changes:
+
+- 「同步最新默认策略（推荐）」勾選時，現在會明確重置整套本地策略 patch，再匯入最新內建預設策略；使用者自訂策略也會被覆蓋。
+- 同一 rule pack 的本地覆寫不再會阻斷一鍵更新。取消勾選則繼續保留目前本地策略。
+- 概覽頁已說明這個選項的全量覆蓋邊界，避免將其誤認為只更新內建規則。
+
+Release:
+
+- [qoli/localclash-luci v0.1.0-40](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-40)
+
+Release assets:
+
+- `luci-app-localclash_0.1.0-40_all.ipk`
+- `luci-app-localclash_0.1.0-40_all.ipk.sha256`
+- `luci-app-localclash-0.1.0-r40.apk`
+- `luci-app-localclash-0.1.0-r40.apk.sha256`
+
+Verification:
+
+- localClash 全量測試（430 項）與「完整重置衝突策略」回歸測試通過。
+- LuCI 一鍵更新回歸測試、JavaScript 與 rpcd helper 語法檢查，以及 IPK/APK 建置與 SHA-256 校驗通過。
 
 ## 2026-07-20
 
