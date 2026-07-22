@@ -18,8 +18,39 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
-| localClash Core | [v0.1.46](https://github.com/qoli/localClash/releases/tag/v0.1.46) | 2026-07-20 16:08 UTC+8 |
+| localClash Core | [v0.1.47](https://github.com/qoli/localClash/releases/tag/v0.1.47) | 2026-07-22 UTC+8 |
 | localclash-luci | [v0.1.0-40](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-40) | 2026-07-21 UTC+8 |
+
+## 2026-07-22
+
+### localClash Core v0.1.47
+
+Changes:
+
+- 預設策略新增 Dashboard 可見的「☁️ Cloudflare」業務群組；已知
+  Cloudflare IP 範圍現在預設經「⚡ 自动选择」代理，並保留手動、直連與各地區
+  出口覆寫。
+- 規則使用 `GEOIP,cloudflare` 並置於終端 `MATCH,DIRECT` 之前，因此裸 IP
+  例如 `1.1.1.1` 不再因未知流量的黑名單預設而被強制直連。
+- 未加入 `GEOSITE,cloudflare`：Cloudflare 自有網域仍依既有網域策略和直連
+  邊界處理，避免把可直連的 Cloudflare DNS／平台服務一概送往代理。
+
+Release:
+
+- [qoli/localClash v0.1.47](https://github.com/qoli/localClash/releases/tag/v0.1.47)
+
+Release assets:
+
+- `localclash-linux-amd64`
+- `localclash-linux-arm64`
+- `localclash-base-assets.tar.gz`
+- `localclash-release-manifest.json`
+- 對應的 `.sha256` checksum 文件
+
+Verification:
+
+- 本機 `go test ./...`：430 項測試通過。
+- GitHub Release workflow 會在 tag 建立後重新執行 Linux 測試並建置上述資產。
 
 ## 2026-07-21
 
