@@ -1,6 +1,4 @@
-*Localclash-LuCI 更新公告*
-
-Localclash-LuCI 已進入可公開使用狀態。
+*Localclash 更新公告*
 
 - 小白體驗：你只需要關心下載、安裝、訂閱、啟動。
 - 內建配置：多年經驗整理的 Redir-Host + 黑名單分流，基於 v2fly / GEOData。
