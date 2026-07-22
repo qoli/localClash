@@ -1713,6 +1713,8 @@ func templateOrderID(id string, index int) string {
 		return "0700.000000"
 	case "default.syncnext-app-maintenance.v1":
 		return "0750.000000"
+	case "default.cloudflare-geoip.v1":
+		return "0775.000000"
 	case "default.tail-fallback.v1":
 		return "0800.000000"
 	default:

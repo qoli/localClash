@@ -180,8 +180,8 @@ func TestRealLocalClashDefaultTemplateIsLayered(t *testing.T) {
 	if summary.ID != TemplateLocalClashDefault || config.Version != localconfig.ConfigSchemaVersion {
 		t.Fatalf("template = %+v config version = %d, want current localclash default", summary, config.Version)
 	}
-	if len(config.ProxyGroups) != 9 || len(config.PolicyGroups) != 28 || len(config.Packs) != 35 || len(config.TransportRules) != 1 || len(config.CustomRules) != 1 {
-		t.Fatalf("default template counts: proxy_groups=%d policy_groups=%d packs=%d transport_rules=%d custom_rules=%d, want 9/28/35/1/1", len(config.ProxyGroups), len(config.PolicyGroups), len(config.Packs), len(config.TransportRules), len(config.CustomRules))
+	if len(config.ProxyGroups) != 9 || len(config.PolicyGroups) != 29 || len(config.Packs) != 35 || len(config.TransportRules) != 1 || len(config.CustomRules) != 2 {
+		t.Fatalf("default template counts: proxy_groups=%d policy_groups=%d packs=%d transport_rules=%d custom_rules=%d, want 9/29/35/1/2", len(config.ProxyGroups), len(config.PolicyGroups), len(config.Packs), len(config.TransportRules), len(config.CustomRules))
 	}
 	if got := packTarget(config.Packs, "v2fly-dlc", "category-pt"); got != "🧲 BT/PT 下载" {
 		t.Fatalf("default template category-pt target = %q, want 🧲 BT/PT 下载", got)
@@ -236,6 +236,7 @@ func TestRealLocalClashDefaultTemplateIsLayered(t *testing.T) {
 		"📺 YouTube", "📺 Apple TV", "📬 Google FCM", "🔎 Google", "🎵 TikTok",
 		"🎬 Netflix", "🏰 Disney", "🎞 HBO", "🎥 Prime Video", "📺 Emby", "🎧 Spotify",
 		"🎞 媒体", "🛒 电商", "🧭 漏网之鱼",
+		"☁️ Cloudflare",
 	}
 	for _, id := range autoFirstGroups {
 		group := config.PolicyGroups[id]
@@ -286,6 +287,16 @@ func TestRealLocalClashDefaultTemplateIsLayered(t *testing.T) {
 	}
 	if len(telegramRule.Rules) != 1 || telegramRule.Rules[0].Type != "geoip" || telegramRule.Rules[0].Value != "telegram" || !telegramRule.Rules[0].NoResolve {
 		t.Fatalf("telegram GEOIP custom rule lines = %+v, want geoip telegram no-resolve", telegramRule.Rules)
+	}
+	cloudflareRule := customRuleByID(config.CustomRules, "cloudflare-geoip")
+	if cloudflareRule == nil || cloudflareRule.Target != "☁️ Cloudflare" {
+		t.Fatalf("Cloudflare GEOIP custom rule = %+v, want ☁️ Cloudflare", cloudflareRule)
+	}
+	if len(cloudflareRule.Rules) != 1 || cloudflareRule.Rules[0].Type != "geoip" || cloudflareRule.Rules[0].Value != "cloudflare" || !cloudflareRule.Rules[0].NoResolve {
+		t.Fatalf("Cloudflare GEOIP custom rule lines = %+v, want geoip cloudflare no-resolve", cloudflareRule.Rules)
+	}
+	if hasPack(config.Packs, "v2fly-dlc", "cloudflare") {
+		t.Fatal("default template must not add GEOSITE,cloudflare")
 	}
 	if got := config.Packs[len(config.Packs)-2].Target; got != "🧭 漏网之鱼" {
 		t.Fatalf("geolocation fallback target = %q, want 🧭 漏网之鱼", got)

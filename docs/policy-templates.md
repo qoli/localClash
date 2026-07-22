@@ -25,7 +25,7 @@ behavior must appear as explicit patch files in the selected template manifest.
   `policy-templates/localclash-default.json`. Each ordered file under
   `policy-templates/localclash-default.d/` contributes one stable default patch,
   such as region exits, communication/social routing, Steam, media groups, games,
-  Syncnext app-maintenance routing, and tail routing. Syncnext-maintained app
+  Syncnext app-maintenance routing, Cloudflare GeoIP routing, and tail routing. Syncnext-maintained app
   domains are evaluated before the broad `GEOSITE,cn,DIRECT` tail rule, while
   `SyncnextUnbreak` remains explicitly direct.
 
@@ -56,6 +56,12 @@ to Taiwan. Region exits are optional so subscriptions without a given region can
 still initialize. Patch files
 intentionally keep emoji identifiers as YAML `\U...` escapes so OpenWrt/BusyBox
 display locale quirks do not change on-disk template bytes.
+
+The Cloudflare default is an explicit `GEOIP,cloudflare` exception before the
+terminal `MATCH,DIRECT` rule. It targets the Dashboard-visible `☁️ Cloudflare`
+business group, whose first exit is `⚡ 自动选择`; it intentionally does not add
+`GEOSITE,cloudflare`, because Cloudflare-owned domains can be directly reachable
+even where Cloudflare's direct IP space is not.
 
 MCP `config_status(patches=true)` exposes the active patch registry and compiled
 intent. For compact Agent-facing routing discovery, use the read-only

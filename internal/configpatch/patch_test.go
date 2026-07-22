@@ -57,30 +57,36 @@ func TestImportPolicyTemplateWritesCanonicalPatchesAndCompiledIntent(t *testing.
 	}
 }
 
-func TestDefaultSyncnextAppMaintenancePatchPrecedesTailFallback(t *testing.T) {
+func TestDefaultCloudflareGeoIPPatchPrecedesTailFallback(t *testing.T) {
 	sources, _, err := policytemplate.PatchSources(filepath.Join("..", "..", "policy-templates"), policytemplate.TemplateLocalClashDefault)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var syncnext, tail policytemplate.PatchSource
+	var syncnext, cloudflare, tail policytemplate.PatchSource
 	for _, source := range sources {
 		switch source.ID {
 		case "default.syncnext-app-maintenance.v1":
 			syncnext = source
+		case "default.cloudflare-geoip.v1":
+			cloudflare = source
 		case "default.tail-fallback.v1":
 			tail = source
 		}
 	}
-	if syncnext.ID == "" || tail.ID == "" {
-		t.Fatalf("template sources = %+v, want Syncnext maintenance and tail fallback patches", sources)
+	if syncnext.ID == "" || cloudflare.ID == "" || tail.ID == "" {
+		t.Fatalf("template sources = %+v, want Syncnext maintenance, Cloudflare GEOIP, and tail fallback patches", sources)
 	}
 	syncnextPatch := patchFromTemplateSource(policytemplate.TemplateLocalClashDefault, syncnext)
+	cloudflarePatch := patchFromTemplateSource(policytemplate.TemplateLocalClashDefault, cloudflare)
 	tailPatch := patchFromTemplateSource(policytemplate.TemplateLocalClashDefault, tail)
-	if syncnextPatch.OrderID != "0750.000000" || tailPatch.OrderID != "0800.000000" {
-		t.Fatalf("patch orders = %q/%q, want Syncnext before tail fallback", syncnextPatch.OrderID, tailPatch.OrderID)
+	if syncnextPatch.OrderID != "0750.000000" || cloudflarePatch.OrderID != "0775.000000" || tailPatch.OrderID != "0800.000000" {
+		t.Fatalf("patch orders = %q/%q/%q, want Syncnext then Cloudflare GEOIP before tail fallback", syncnextPatch.OrderID, cloudflarePatch.OrderID, tailPatch.OrderID)
 	}
 	if len(syncnextPatch.Overlay.Packs) != 2 || syncnextPatch.Overlay.Packs[0].Pack != "SyncnextUnbreak" || syncnextPatch.Overlay.Packs[1].Pack != "SyncnextProxy" {
 		t.Fatalf("Syncnext maintenance packs = %+v, want Unbreak then Proxy", syncnextPatch.Overlay.Packs)
+	}
+	if len(cloudflarePatch.Overlay.CustomRules) != 1 || cloudflarePatch.Overlay.CustomRules[0].ID != "cloudflare-geoip" || cloudflarePatch.Overlay.CustomRules[0].Target != "☁️ Cloudflare" {
+		t.Fatalf("Cloudflare GEOIP custom rules = %+v, want cloudflare-geoip -> ☁️ Cloudflare", cloudflarePatch.Overlay.CustomRules)
 	}
 }
 

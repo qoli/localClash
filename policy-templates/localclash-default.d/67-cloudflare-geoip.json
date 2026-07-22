@@ -1,0 +1,39 @@
+{
+  "id": "default.cloudflare-geoip.v1",
+  "description": "Route known Cloudflare IP space through a Dashboard policy before terminal direct fallback.",
+  "config": {
+    "version": 4,
+    "policy_groups": {
+      "☁️ Cloudflare": {
+        "mode": "manual",
+        "exits": [
+          "⚡ 自动选择",
+          "🎯 手动选择",
+          "🇭🇰 香港节点",
+          "🇺🇸 美国节点",
+          "🇯🇵 日本节点",
+          "🇸🇬 新加坡节点",
+          "🇹🇼 台湾节点",
+          "🇰🇷 韩国节点",
+          "🌐 全球直连"
+        ],
+        "reason": "Cloudflare IP space, including direct-IP resolver traffic, defaults to automatic proxy selection while retaining direct and regional overrides.",
+        "boundary": "business_to_exit_layer"
+      }
+    },
+    "custom_rules": [
+      {
+        "id": "cloudflare-geoip",
+        "target": "☁️ Cloudflare",
+        "reason": "Route known Cloudflare IP space before terminal direct fallback; do not add GEOSITE,cloudflare because Cloudflare-owned domains may remain directly reachable.",
+        "rules": [
+          {
+            "type": "geoip",
+            "value": "cloudflare",
+            "no_resolve": true
+          }
+        ]
+      }
+    ]
+  }
+}
