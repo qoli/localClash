@@ -27,12 +27,11 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 
 Changes:
 
-- 內建 router profile 的 `geosite:cn` 現在優先使用來源可確認且能完成基本
-  DNS 交換的 WAN DNS；無法確認或全部不可用時，才以可觀察原因回退 AliDNS。
-- Core 可嚴格驗證並套用 LuCI 產生的 `dnsqualify.json`；檔案缺失代表最佳化
-  未啟用，已存在但 malformed 則明確停止 render，不會隱藏回退。
-- 最佳化只改變中國大陸服務 DNS，節點域名使用的
-  `proxy-server-nameserver` 保持獨立。
+- `geosite:cn` 優先使用來源可確認且可回應的 WAN DNS；不可用時才以明確原因
+  回退 AliDNS。
+- Core 嚴格驗證 LuCI 產生的 `dnsqualify.json`；malformed 配置會停止 render，
+  不會隱藏回退。
+- 最佳化只改變中國大陸服務 DNS；節點域名 DNS 保持獨立。
 
 Release:
 
@@ -56,12 +55,12 @@ Verification:
 
 Changes:
 
-- `dnsqualify` 正式由 LuCI 發佈和安裝：一鍵更新會按 `amd64`／`arm64`
-  下載，嚴格驗證 manifest、版本及 SHA-256，再原子替換獨立二進位。
-- 使用者按下按鈕才會執行 DNS 與已知服務測量；成功後仍需明確重啟 Mihomo。
-  render 或配置測試失敗會恢復舊配置，reset 則安全回到 Core 預設 WAN DNS。
-- 任務視窗保留完整日誌和結果並可一鍵複製；下載失敗會記錄 downloader、
-  hostname、耗時、bytes、exit code 及可用的 DNS 診斷。
+- LuCI 按架構發佈和安裝 `dnsqualify`，驗證 manifest、版本及 SHA-256 後才
+  原子替換。
+- 只有按下按鈕才會測量；驗證失敗恢復舊配置，生效仍需明確重啟，reset 可回到
+  Core 預設 WAN DNS。
+- 任務視窗保留並可複製完整日誌；下載失敗會附帶 downloader、host、耗時、
+  bytes、exit code 及 DNS 診斷。
 
 Release:
 
