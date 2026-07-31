@@ -19,7 +19,39 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
 | localClash Core | [v0.1.48](https://github.com/qoli/localClash/releases/tag/v0.1.48) | 2026-07-31 UTC+8 |
-| localclash-luci | [v0.1.0-41](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-41) | 2026-07-31 UTC+8 |
+| localclash-luci | [v0.1.0-42](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-42) | 2026-08-01 UTC+8 |
+
+## 2026-08-01
+
+### localclash-luci v0.1.0-42
+
+Changes:
+
+- `dnsqualify` 現在會在候選準備、每輪 DNS 查詢、服務連通性與速度測量、
+  結果選擇及配置寫入時輸出即時進度。
+- 長時間測量每 15 秒輸出目前階段與已用時間，避免任務仍在正常執行時看起來
+  像卡死。
+- 進度只寫入 stderr 並由 LuCI 完整任務日誌收集；stdout 仍只包含最終 JSON，
+  不改變既有 rpcd 契約。
+
+Release:
+
+- [qoli/localclash-luci v0.1.0-42](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-42)
+
+Release assets:
+
+- `luci-app-localclash_0.1.0-42_all.ipk` 及 SHA-256
+- `luci-app-localclash-0.1.0-r42.apk` 及 SHA-256
+- `dnsqualify-linux-amd64`、`dnsqualify-linux-arm64` 及 SHA-256
+- `dnsqualify-release-manifest.json`
+
+Verification:
+
+- dnsqualify Go tests／race tests／vet、rpcd 回歸測試、LuCI JavaScript／shell
+  語法、IPK／APK 建置與所有 release asset checksum 均通過。
+- ARM64 OpenWrt 預設工作量實測約 42 秒，在第 15 秒與第 30 秒均顯示心跳；
+  安裝後 dnsqualify 為 `v0.1.0-42`，Mihomo PID 保持不變，既有 DNS 配置狀態
+  亦未被改動。
 
 ## 2026-07-31
 
