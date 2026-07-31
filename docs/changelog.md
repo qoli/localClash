@@ -18,8 +18,69 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
-| localClash Core | [v0.1.47](https://github.com/qoli/localClash/releases/tag/v0.1.47) | 2026-07-22 UTC+8 |
-| localclash-luci | [v0.1.0-40](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-40) | 2026-07-21 UTC+8 |
+| localClash Core | [v0.1.48](https://github.com/qoli/localClash/releases/tag/v0.1.48) | 2026-07-31 UTC+8 |
+| localclash-luci | [v0.1.0-41](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-41) | 2026-07-31 UTC+8 |
+
+## 2026-07-31
+
+### localClash Core v0.1.48
+
+Changes:
+
+- 內建 router profile 的 `geosite:cn` 現在優先使用來源可確認且能完成基本
+  DNS 交換的 WAN DNS；無法確認或全部不可用時，才以可觀察原因回退 AliDNS。
+- Core 可嚴格驗證並套用 LuCI 產生的 `dnsqualify.json`；檔案缺失代表最佳化
+  未啟用，已存在但 malformed 則明確停止 render，不會隱藏回退。
+- 最佳化只改變中國大陸服務 DNS，節點域名使用的
+  `proxy-server-nameserver` 保持獨立。
+
+Release:
+
+- [qoli/localClash v0.1.48](https://github.com/qoli/localClash/releases/tag/v0.1.48)
+
+Release assets:
+
+- `localclash-linux-amd64`
+- `localclash-linux-arm64`
+- `localclash-base-assets.tar.gz`
+- `localclash-release-manifest.json`
+- 對應的 `.sha256` checksum 文件
+
+Verification:
+
+- `go test ./...`、`go vet ./...` 與 Linux ARM64 候選建置通過。
+- ARM64 OpenWrt 實測由 9 個候選選出 `114DNS UDP`；Core render 明確記錄
+  `mode=dnsqualify`，Mihomo 隔離配置測試通過，既有 runtime PID 未改變。
+
+### localclash-luci v0.1.0-41
+
+Changes:
+
+- `dnsqualify` 正式由 LuCI 發佈和安裝：一鍵更新會按 `amd64`／`arm64`
+  下載，嚴格驗證 manifest、版本及 SHA-256，再原子替換獨立二進位。
+- 使用者按下按鈕才會執行 DNS 與已知服務測量；成功後仍需明確重啟 Mihomo。
+  render 或配置測試失敗會恢復舊配置，reset 則安全回到 Core 預設 WAN DNS。
+- 任務視窗保留完整日誌和結果並可一鍵複製；下載失敗會記錄 downloader、
+  hostname、耗時、bytes、exit code 及可用的 DNS 診斷。
+
+Release:
+
+- [qoli/localclash-luci v0.1.0-41](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-41)
+
+Release assets:
+
+- `luci-app-localclash_0.1.0-41_all.ipk` 及 SHA-256
+- `luci-app-localclash-0.1.0-r41.apk` 及 SHA-256
+- `dnsqualify-linux-amd64`、`dnsqualify-linux-arm64` 及 SHA-256
+- `dnsqualify-release-manifest.json`
+
+Verification:
+
+- 全部 rpcd 回歸測試、LuCI JavaScript／shell 語法、dnsqualify Go tests／vet、
+  IPK／APK 與兩架構 release assets 建置及 checksum 均通過。
+- ARM64 OpenWrt 已驗證候選 LuCI 安裝、真實測量、Core 契約、reset 回到三個
+  WAN resolver，以及全程不自動重啟 Mihomo；失敗保留舊狀態由 rpcd 回歸測試
+  覆蓋。
 
 ## 2026-07-22
 
