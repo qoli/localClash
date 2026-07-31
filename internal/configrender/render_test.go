@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"localclash/internal/configmeta"
+	"localclash/internal/resolverconfig"
 	"localclash/internal/rules"
 	"localclash/internal/runtimeprofile"
 
@@ -420,6 +421,159 @@ enabled_packs: []
 	groups := proxyGroupNamesFromConfig(config)
 	if !groups["DNSProxy"] {
 		t.Fatalf("router runtime DNSProxy group was not materialized: %+v", groups)
+	}
+}
+
+func TestRenderUsesWANByDefaultOnlyForMainlandPolicy(t *testing.T) {
+	paths := writeRenderFixture(t)
+	profilePath := filepath.Join(paths.dir, "localclash-runtime.json")
+	if _, err := runtimeprofile.Configure(profilePath, runtimeprofile.ModeRouter, ""); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, paths.selection, `version: 1
+proxy_groups:
+  "⚡ 自动选择":
+    nodes: ["🇯🇵日本01 | JP"]
+    auto: true
+policy_groups:
+  DNSProxy:
+    exits: ["⚡ 自动选择"]
+    manual: true
+enabled_packs: []
+`)
+	resolvPath := filepath.Join(paths.dir, "resolv.conf.auto")
+	writeFile(t, resolvPath, "# Interface wan\nnameserver 192.0.2.53\n")
+	result, err := Render(Options{
+		SourcePath: paths.subscription, OutputPath: filepath.Join(paths.dir, "optimized.yaml"),
+		PacksSelectionPath: paths.selection, RulesCacheDir: paths.cacheDir,
+		RuntimeProfilePath: profilePath, WANResolvPath: resolvPath,
+		WANProbe: func(string) error { return nil }, Force: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	config := readTestYAML(t, result.OutputPath)
+	dns := config["dns"].(map[string]any)
+	policy := dns["nameserver-policy"].(map[string]any)
+	mainland := policy[resolverconfig.ScopeMainlandServices].([]any)
+	if len(mainland) != 1 || mainland[0] != "192.0.2.53" {
+		t.Fatalf("mainland DNS policy = %#v", mainland)
+	}
+	if got := dns["proxy-server-nameserver"].([]any); len(got) != 2 {
+		t.Fatalf("proxy-server-nameserver changed: %#v", got)
+	}
+	if result.ResolverConfig != nil || result.DNSSelection == nil || result.DNSSelection.Mode != "wan" {
+		t.Fatalf("render result DNS source = %+v", result)
+	}
+}
+
+func TestRenderFallsBackToAliDNSWhenWANUnavailable(t *testing.T) {
+	paths := writeRenderFixture(t)
+	profilePath := filepath.Join(paths.dir, "localclash-runtime.json")
+	if _, err := runtimeprofile.Configure(profilePath, runtimeprofile.ModeRouter, ""); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, paths.selection, `version: 1
+proxy_groups:
+  "⚡ 自动选择":
+    nodes: ["🇯🇵日本01 | JP"]
+    auto: true
+policy_groups:
+  DNSProxy:
+    exits: ["⚡ 自动选择"]
+    manual: true
+enabled_packs: []
+`)
+	result, err := Render(Options{
+		SourcePath: paths.subscription, OutputPath: filepath.Join(paths.dir, "fallback.yaml"),
+		PacksSelectionPath: paths.selection, RulesCacheDir: paths.cacheDir,
+		RuntimeProfilePath: profilePath, WANResolvPath: filepath.Join(paths.dir, "missing-resolv.conf"),
+		Force: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.DNSSelection == nil || result.DNSSelection.Mode != "alidns_fallback" || result.DNSSelection.FallbackReason == "" {
+		t.Fatalf("fallback selection = %+v", result.DNSSelection)
+	}
+	config := readTestYAML(t, result.OutputPath)
+	policy := config["dns"].(map[string]any)["nameserver-policy"].(map[string]any)
+	got := policy[resolverconfig.ScopeMainlandServices].([]any)
+	if len(got) != 1 || got[0] != "https://dns.alidns.com/dns-query" {
+		t.Fatalf("fallback mainland policy = %#v", got)
+	}
+}
+
+func TestRenderRejectsMalformedResolverConfigInsteadOfFallingBack(t *testing.T) {
+	paths := writeRenderFixture(t)
+	profilePath := filepath.Join(paths.dir, "localclash-runtime.json")
+	if _, err := runtimeprofile.Configure(profilePath, runtimeprofile.ModeRouter, ""); err != nil {
+		t.Fatal(err)
+	}
+	configPath := resolverconfig.DefaultPath(profilePath)
+	writeFile(t, configPath, `{"version":1,"unknown":true}`)
+	_, err := Render(Options{
+		SourcePath: paths.subscription, OutputPath: filepath.Join(paths.dir, "invalid.yaml"),
+		RuntimeProfilePath: profilePath, Force: true,
+	})
+	if err == nil || !strings.Contains(err.Error(), "unknown field") {
+		t.Fatalf("render error = %v, want explicit malformed optimization failure", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(paths.dir, "invalid.yaml")); !os.IsNotExist(statErr) {
+		t.Fatalf("invalid optimization unexpectedly produced output: %v", statErr)
+	}
+}
+
+func TestRenderConsumesStandaloneResolverConfigWithoutKnowingReport(t *testing.T) {
+	paths := writeRenderFixture(t)
+	profilePath := filepath.Join(paths.dir, "localclash-runtime.json")
+	if _, err := runtimeprofile.Configure(profilePath, runtimeprofile.ModeRouter, ""); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, paths.selection, `version: 1
+proxy_groups:
+  "⚡ 自动选择":
+    nodes: ["🇯🇵日本01 | JP"]
+    auto: true
+policy_groups:
+  DNSProxy:
+    exits: ["⚡ 自动选择"]
+    manual: true
+enabled_packs: []
+`)
+	configPath := resolverconfig.DefaultPath(profilePath)
+	writeFile(t, configPath, `{
+  "version": 1,
+  "scope": "geosite:cn",
+  "resolver": {
+    "candidate_id": "dnspod-udp",
+    "source": "public_provider",
+    "transport": "udp",
+    "endpoint": "119.29.29.29"
+  },
+  "measurement": {
+    "report_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "report_finished_at": "2026-07-31T08:00:00Z",
+    "resolv_path": "/tmp/resolv.conf.d/resolv.conf.auto",
+    "generated_at": "2026-07-31T08:00:01Z"
+  }
+}`)
+	result, err := Render(Options{
+		SourcePath: paths.subscription, OutputPath: filepath.Join(paths.dir, "dnsqualify.yaml"),
+		PacksSelectionPath: paths.selection, RulesCacheDir: paths.cacheDir,
+		RuntimeProfilePath: profilePath, Force: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.ResolverConfig == nil || result.ResolverConfig.Resolver.CandidateID != "dnspod-udp" {
+		t.Fatalf("resolver config result = %+v", result)
+	}
+	config := readTestYAML(t, result.OutputPath)
+	policy := config["dns"].(map[string]any)["nameserver-policy"].(map[string]any)
+	got := policy[resolverconfig.ScopeMainlandServices].([]any)
+	if len(got) != 1 || got[0] != "119.29.29.29" {
+		t.Fatalf("dnsqualify mainland policy = %#v", got)
 	}
 }
 

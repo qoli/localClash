@@ -779,6 +779,20 @@ Machine-readable output for MCP tools and agent workflows:
 go run . doctor --json
 ```
 
+## External DNS Selection Config
+
+The builtin router profile prefers confirmed, responsive WAN DNS for
+`geosite:cn`. If WAN resolver provenance cannot be confirmed or no listed WAN
+resolver completes a basic DNS exchange, the renderer records an explicit
+AliDNS fallback and its reason.
+
+Core contains no DNS quality probe, service catalog, candidate scorer, or
+`dnsqualify` command. When the optional `dnsqualify.json` file exists beside
+the runtime profile, Core strictly validates its resolver contract and applies
+that single endpoint to `geosite:cn`. A missing file leaves the optional
+selection disabled; a malformed existing file fails rendering explicitly.
+`proxy-server-nameserver` remains independent.
+
 ## 支持 localClash
 
 localClash 是免費項目。

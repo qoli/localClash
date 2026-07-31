@@ -279,10 +279,10 @@ func assertMainlandReachableDNS(t *testing.T, mihomo map[string]any, listen stri
 		}
 	}
 	for key, want := range map[string][]any{
-		"nameserver":              {"https://dns.alidns.com/dns-query", "https://doh.pub/dns-query"},
+		"nameserver":              {"https://dns.alidns.com/dns-query"},
 		"proxy-server-nameserver": {"https://dns.alidns.com/dns-query", "https://doh.pub/dns-query"},
-		"direct-nameserver":       {"https://dns.alidns.com/dns-query", "https://doh.pub/dns-query"},
-		"default-nameserver":      {"223.5.5.5", "119.29.29.29"},
+		"direct-nameserver":       {"https://dns.alidns.com/dns-query"},
+		"default-nameserver":      {"223.5.5.5", "223.6.6.6"},
 	} {
 		if !reflect.DeepEqual(dns[key], want) {
 			t.Fatalf("%s dns %s = %+v, want mainland-reachable defaults %+v", label, key, dns[key], want)

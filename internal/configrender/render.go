@@ -12,8 +12,10 @@ import (
 	"unicode"
 
 	"localclash/internal/configmeta"
+	"localclash/internal/resolverconfig"
 	rulespkg "localclash/internal/rules"
 	"localclash/internal/runtimeprofile"
+	"localclash/internal/wandns"
 
 	"gopkg.in/yaml.v3"
 )
@@ -34,16 +36,21 @@ type Options struct {
 	Selection          *rulespkg.Selection `json:"-"`
 	RulesCacheDir      string
 	RuntimeProfilePath string
+	ResolverConfigPath string
+	WANResolvPath      string
+	WANProbe           wandns.ProbeFunc `json:"-"`
 	Force              bool
 	OnStage            func(StageEvent) `json:"-"`
 }
 
 type Result struct {
-	OutputPath  string
-	RuntimeMode string
-	Core        string
-	ProxyCount  int
-	RuleCount   int
+	OutputPath     string
+	RuntimeMode    string
+	Core           string
+	ProxyCount     int
+	RuleCount      int
+	ResolverConfig *resolverconfig.Config `json:"resolver_config,omitempty"`
+	DNSSelection   *wandns.Selection      `json:"dns_selection,omitempty"`
 }
 
 type ruleSpec struct {
@@ -117,6 +124,44 @@ func Render(opts Options) (Result, error) {
 		return Result{}, err
 	}
 	finish(nil, map[string]any{"runtime_mode": runtimeFile.Mode, "core": runtimeFile.Core})
+
+	finish = stage("select_dns", map[string]any{"resolver_config_path": opts.ResolverConfigPath, "wan_resolv_path": opts.WANResolvPath})
+	resolverConfig, err := resolverconfig.Load(opts.ResolverConfigPath)
+	if err != nil {
+		finish(err, nil)
+		return Result{}, err
+	}
+	var dnsSelection *wandns.Selection
+	builtinRouter := runtimeFile.Mode == runtimeprofile.ModeRouter && profile.Path == "builtin:"+runtimeprofile.ModeRouter
+	if resolverConfig != nil {
+		if !builtinRouter {
+			err := errors.New("resolver config requires the builtin router runtime profile")
+			finish(err, nil)
+			return Result{}, err
+		}
+		if err := resolverconfig.Apply(profile.Mihomo, *resolverConfig); err != nil {
+			finish(err, nil)
+			return Result{}, err
+		}
+		dnsSelection = &wandns.Selection{
+			Mode: resolverconfig.ModeDNSQualify, Scope: resolverconfig.ScopeMainlandServices,
+			Endpoints: []string{resolverConfig.Resolver.Endpoint}, ResolvPath: resolverConfig.Measurement.ResolvPath,
+		}
+	} else if builtinRouter {
+		selected := wandns.Select(opts.WANResolvPath, opts.WANProbe)
+		if err := applyDNSSelection(profile.Mihomo, selected.Endpoints); err != nil {
+			finish(err, nil)
+			return Result{}, err
+		}
+		dnsSelection = &selected
+	}
+	fields := map[string]any{"dnsqualify_config": resolverConfig != nil}
+	if dnsSelection != nil {
+		fields["mode"] = dnsSelection.Mode
+		fields["endpoints"] = dnsSelection.Endpoints
+		fields["fallback_reason"] = dnsSelection.FallbackReason
+	}
+	finish(nil, fields)
 
 	finish = stage("read_proxies", nil)
 	proxies, err := readProxies(source)
@@ -210,11 +255,13 @@ func Render(opts Options) (Result, error) {
 	finish(nil, map[string]any{"bytes": len(data)})
 
 	return Result{
-		OutputPath:  opts.OutputPath,
-		RuntimeMode: runtimeFile.Mode,
-		Core:        runtimeFile.Core,
-		ProxyCount:  len(proxyNames),
-		RuleCount:   len(rendered["rules"].([]string)),
+		OutputPath:     opts.OutputPath,
+		RuntimeMode:    runtimeFile.Mode,
+		Core:           runtimeFile.Core,
+		ProxyCount:     len(proxyNames),
+		RuleCount:      len(rendered["rules"].([]string)),
+		ResolverConfig: resolverConfig,
+		DNSSelection:   dnsSelection,
 	}, nil
 }
 
@@ -567,7 +614,29 @@ func normalizeOptions(opts Options) Options {
 	if opts.RuntimeProfilePath == "" {
 		opts.RuntimeProfilePath = runtimeprofile.DefaultPath
 	}
+	if opts.ResolverConfigPath == "" {
+		opts.ResolverConfigPath = resolverconfig.DefaultPath(opts.RuntimeProfilePath)
+	}
+	if opts.WANResolvPath == "" {
+		opts.WANResolvPath = wandns.DefaultResolvPath
+	}
 	return opts
+}
+
+func applyDNSSelection(mihomo map[string]any, endpoints []string) error {
+	if len(endpoints) == 0 {
+		return errors.New("DNS selection endpoints are required")
+	}
+	dns, ok := mihomo["dns"].(map[string]any)
+	if !ok {
+		return errors.New("runtime profile DNS configuration is missing or invalid")
+	}
+	policy, ok := dns["nameserver-policy"].(map[string]any)
+	if !ok {
+		return errors.New("runtime profile nameserver-policy is missing or invalid")
+	}
+	policy[resolverconfig.ScopeMainlandServices] = append([]string{}, endpoints...)
+	return nil
 }
 
 func ensureOutput(path string, force bool) error {

@@ -1,5 +1,5 @@
 {
-  "description": "Router transparent proxy profile with mainland-reachable DNS and no direct foreign DoT fallback.",
+  "description": "Router transparent proxy profile; render selects WAN DNS for mainland services with an explicit AliDNS fallback.",
   "mihomo": {
     "mixed-port": 7893,
     "redir-port": 7892,
@@ -37,20 +37,18 @@
       "respect-rules": true,
       "fake-ip-filter-mode": "blacklist",
       "nameserver": [
-        "https://dns.alidns.com/dns-query",
-        "https://doh.pub/dns-query"
+        "https://dns.alidns.com/dns-query"
       ],
       "proxy-server-nameserver": [
         "https://dns.alidns.com/dns-query",
         "https://doh.pub/dns-query"
       ],
       "direct-nameserver": [
-        "https://dns.alidns.com/dns-query",
-        "https://doh.pub/dns-query"
+        "https://dns.alidns.com/dns-query"
       ],
       "default-nameserver": [
         "223.5.5.5",
-        "119.29.29.29"
+        "223.6.6.6"
       ],
       "fallback": [
         "https://cloudflare-dns.com/dns-query#DNSProxy",
