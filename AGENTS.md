@@ -14,13 +14,14 @@ The local source checkout for the Mihomo Meta core is `/Volumes/Data/Github/miho
 
 ## Build, Test, and Development Commands
 
-- `rtk go test ./...`: run the full Go test suite.
-- `rtk go run . mcp`: start the stdio MCP server.
-- `rtk go run . doctor` or `rtk go run . doctor --json`: inspect local runtime prerequisites and generated config health.
-- `rtk go run . core download --dry-run`: verify Mihomo release asset selection without writing binaries.
-- `rtk go run . config render --force`: render `.runtime/mihomo/config.yaml` from local subscription, policy-template intent, and pack inputs.
-- `rtk go run . mihomo config-test --json`: run explicit `mihomo -t` validation and record the config hash attestation used by hot reload.
-- `rtk scripts/test-mcp-callcopilot.sh`: run the end-to-end Copilot MCP smoke test when the local MCP registration is configured.
+- `go test ./...`: run the full Go test suite.
+- `go run . mcp`: start the MCP HTTP server.
+- `go run . doctor` or `go run . doctor --json`: inspect local runtime prerequisites and generated config health.
+- `go run . core download --dry-run`: verify Mihomo release asset selection without writing binaries.
+- `go run . config render --force`: render `.runtime/mihomo/config.yaml` from local subscription, policy-template intent, and pack inputs.
+- `go run . mihomo config-test --json`: run explicit `mihomo -t` validation and record the config hash attestation used by hot reload.
+- `scripts/test-mcp-http.sh`: run the local HTTP MCP doctor smoke test.
+- `scripts/test-mcp-cli.sh`: run the third-party MCP client compatibility smoke test.
 
 ## Coding Style & Naming Conventions
 
@@ -28,7 +29,7 @@ Use standard Go formatting: tabs via `gofmt`, short package names, and table-dri
 
 ## Testing Guidelines
 
-Place tests next to implementation as `*_test.go` files. Cover both success paths and safety/error boundaries, especially for config rendering, MCP inputs, filesystem writes, and secret-bearing local data. Run `rtk go test ./...` before handoff; use `doctor --json` when validating runtime-facing changes.
+Place tests next to implementation as `*_test.go` files. Cover both success paths and safety/error boundaries, especially for config rendering, MCP inputs, filesystem writes, and secret-bearing local data. Run `go test ./...` before handoff; use `go run . doctor --json` when validating runtime-facing changes.
 
 ## Commit & Pull Request Guidelines
 
@@ -36,4 +37,4 @@ Recent commits use short imperative subjects such as `Add MCP config plan render
 
 ## Agent-Specific Instructions
 
-Prefix shell commands with `rtk`. For debugging, inspect logs, config state, diagnostics, or MCP responses before changing code. For browser automation, prefer the existing ARC CDP endpoint at `http://localhost:9222` after a quick availability check.
+Use commands available directly in the current shell. For debugging, inspect logs, config state, diagnostics, or MCP responses before changing code. For browser automation, prefer the existing ARC CDP endpoint at `http://localhost:9222` after a quick availability check.
