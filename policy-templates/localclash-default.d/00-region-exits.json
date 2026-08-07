@@ -24,11 +24,6 @@
         "reason": "面向 Dashboard 的自动出口选择，包含全部订阅节点。",
         "boundary": "all_subscription_nodes"
       },
-      "🌐 全球直连": {
-        "mode": "direct",
-        "reason": "面向 Dashboard 的 DIRECT 出口选择。",
-        "boundary": "builtin_direct_exit"
-      },
       "🇹🇼 台湾节点": {
         "mode": "auto",
         "match": {
@@ -91,6 +86,21 @@
       }
     },
     "policy_groups": {
+      "🌐 全球直连": {
+        "mode": "manual",
+        "exits": [
+          "DIRECT",
+          "⚡ 自动选择",
+          "🇭🇰 香港节点",
+          "🇺🇸 美国节点",
+          "🇯🇵 日本节点",
+          "🇸🇬 新加坡节点",
+          "🇹🇼 台湾节点",
+          "🇰🇷 韩国节点"
+        ],
+        "reason": "全局默认策略；默认直连，并允许临时切换到自动或地区代理出口。",
+        "boundary": "global_default_to_exit_layer"
+      },
       "DNSProxy": {
         "mode": "manual",
         "exits": [

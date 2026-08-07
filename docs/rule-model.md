@@ -182,24 +182,23 @@ Examples:
 
 - minimal routing: unmatched traffic goes `DIRECT`
 - default template routing: unmatched traffic follows explicit template rules
-  before the final `DIRECT` fallback
+  before the `🌐 全球直连` policy, whose default exit is `DIRECT`
 
 Optional packs and overrides must be rendered before fallback.
 
-Router transparent-proxy mode must stay blacklist-oriented for game accelerator
-compatibility. Known domains, CIDRs, GEOIP, GEOSITE, transport rules, and user
-overrides may route selected traffic to policy groups, but unknown traffic must
-fall through to the physical network. The final rule for router/game-accelerator
-scenarios is therefore always:
+Router transparent-proxy mode must default to blacklist-oriented behavior for game
+accelerator compatibility. Known domains, CIDRs, GEOIP, GEOSITE, transport rules,
+and user overrides may route selected traffic to policy groups, while unknown
+traffic follows a Dashboard-visible global policy that defaults to the physical
+network. The default template therefore ends with:
 
 ```yaml
-- MATCH,DIRECT
+- MATCH,🌐 全球直连
 ```
 
-Do not use a "catch-all proxy" fallback such as `MATCH,🧭 漏网之鱼` for router
-mode. That turns the profile into whitelist mode, captures traffic that the
-rules do not understand, and can break UDP-heavy game accelerator clients that
-expect unclassified traffic to remain direct.
+`🌐 全球直连` must keep `DIRECT` as its first/default exit. An explicit Dashboard
+selection may switch it to automatic or a regional proxy exit when the user wants
+a broader proxy strategy. Explicit rules targeting `DIRECT` remain direct.
 
 Targets are graph references, not Go-side aliases. The only terminal runtime
 actions are `DIRECT` and `REJECT`. Names such as `⚡ 自动选择`, `🎯 手动选择`,

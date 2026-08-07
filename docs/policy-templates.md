@@ -44,7 +44,9 @@ business group -> exit group -> subscription nodes
 strategy layer. `DNSProxy` exits through `⚡ 自动选择`, so router DNS `#DNSProxy`
 references have a concrete target even without loading the default patch set.
 
-`localclash-default` adds direct and regional exits plus business routing groups.
+`localclash-default` adds regional exits plus business routing groups. Its
+`🌐 全球直连` policy defaults to `DIRECT` while exposing automatic and regional
+proxy exits for an explicit Dashboard override.
 Ordinary proxy-oriented business groups default to `⚡ 自动选择` and keep
 `🎯 手动选择` as the first manual override. Groups with explicit safety or product
 semantics can still choose a different first exit, such as `🤖 ChatGPT` defaulting
@@ -69,15 +71,17 @@ intent. For compact Agent-facing routing discovery, use the read-only
 
 ## Router And Game Accelerators
 
-Router transparent-proxy mode must use blacklist semantics. The default template
+Router transparent-proxy mode defaults to blacklist semantics. The default template
 may send known non-China `GEOSITE` categories to a Dashboard-visible policy group,
-but the final `MATCH` fallback must remain direct:
+while the final `MATCH` fallback targets the `🌐 全球直连` policy whose first
+exit is direct:
 
 ```yaml
-- MATCH,DIRECT
+- MATCH,🌐 全球直连
 ```
 
 This is required for game accelerator compatibility. A template that renders
-`MATCH,🧭 漏网之鱼` turns unknown traffic into proxy-selected traffic, which is
-whitelist behavior and can intercept game accelerator UDP/IP flows that are not
-covered by localClash's domain or geodata rules.
+The default selection therefore leaves unknown traffic direct for game accelerator
+compatibility. Users can explicitly switch `🌐 全球直连` to automatic or a regional
+exit when they need a broader proxy strategy; explicit rules targeting `DIRECT`
+remain direct.

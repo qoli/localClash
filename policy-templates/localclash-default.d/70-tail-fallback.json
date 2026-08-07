@@ -3,7 +3,7 @@
   "description": "Add entertainment, ecommerce, known non-China, and China direct tail routing.",
   "config": {
     "version": 3,
-    "fallback_target": "DIRECT",
+    "fallback_target": "🌐 全球直连",
     "policy_groups": {
       "🎞 媒体": {
         "mode": "manual",

@@ -180,8 +180,8 @@ func TestRealLocalClashDefaultTemplateIsLayered(t *testing.T) {
 	if summary.ID != TemplateLocalClashDefault || config.Version != localconfig.ConfigSchemaVersion {
 		t.Fatalf("template = %+v config version = %d, want current localclash default", summary, config.Version)
 	}
-	if len(config.ProxyGroups) != 9 || len(config.PolicyGroups) != 29 || len(config.Packs) != 35 || len(config.TransportRules) != 1 || len(config.CustomRules) != 2 {
-		t.Fatalf("default template counts: proxy_groups=%d policy_groups=%d packs=%d transport_rules=%d custom_rules=%d, want 9/29/35/1/2", len(config.ProxyGroups), len(config.PolicyGroups), len(config.Packs), len(config.TransportRules), len(config.CustomRules))
+	if len(config.ProxyGroups) != 8 || len(config.PolicyGroups) != 30 || len(config.Packs) != 35 || len(config.TransportRules) != 1 || len(config.CustomRules) != 2 {
+		t.Fatalf("default template counts: proxy_groups=%d policy_groups=%d packs=%d transport_rules=%d custom_rules=%d, want 8/30/35/1/2", len(config.ProxyGroups), len(config.PolicyGroups), len(config.Packs), len(config.TransportRules), len(config.CustomRules))
 	}
 	if got := packTarget(config.Packs, "v2fly-dlc", "category-pt"); got != "🧲 BT/PT 下载" {
 		t.Fatalf("default template category-pt target = %q, want 🧲 BT/PT 下载", got)
@@ -197,6 +197,11 @@ func TestRealLocalClashDefaultTemplateIsLayered(t *testing.T) {
 	}
 	if !config.ProxyGroups["🇭🇰 香港节点"].Optional {
 		t.Fatalf("香港节点 group = %+v, want optional region selector", config.ProxyGroups["🇭🇰 香港节点"])
+	}
+	globalDirect := config.PolicyGroups["🌐 全球直连"]
+	wantGlobalDirectExits := []string{"DIRECT", "⚡ 自动选择", "🇭🇰 香港节点", "🇺🇸 美国节点", "🇯🇵 日本节点", "🇸🇬 新加坡节点", "🇹🇼 台湾节点", "🇰🇷 韩国节点"}
+	if globalDirect.Mode != "manual" || !reflect.DeepEqual(globalDirect.Exits, wantGlobalDirectExits) {
+		t.Fatalf("全球直连 policy group = %+v, want default DIRECT with switchable exits %#v", globalDirect, wantGlobalDirectExits)
 	}
 	steam := config.PolicyGroups["🎮 Steam"]
 	if steam.Mode != "manual" || len(steam.Exits) == 0 {
@@ -304,8 +309,8 @@ func TestRealLocalClashDefaultTemplateIsLayered(t *testing.T) {
 	if got := config.Packs[len(config.Packs)-2].Pack; got != "geolocation-!cn" {
 		t.Fatalf("geolocation fallback pack = %q, want geolocation-!cn", got)
 	}
-	if config.FallbackTarget != "DIRECT" {
-		t.Fatalf("fallback_target = %q, want DIRECT blacklist fallback", config.FallbackTarget)
+	if config.FallbackTarget != "🌐 全球直连" {
+		t.Fatalf("fallback_target = %q, want switchable global direct policy", config.FallbackTarget)
 	}
 }
 
