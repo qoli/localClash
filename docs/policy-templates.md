@@ -46,7 +46,9 @@ references have a concrete target even without loading the default patch set.
 
 `localclash-default` adds regional exits plus business routing groups. Its
 `🌐 全球直连` policy defaults to `DIRECT` while exposing automatic and regional
-proxy exits for an explicit Dashboard override.
+proxy exits for an explicit Dashboard override. The broad `geolocation-!cn`
+pack targets `🌍 非中國網站`, making its known non-China scope explicit in the
+Dashboard.
 Ordinary proxy-oriented business groups default to `⚡ 自动选择` and keep
 `🎯 手动选择` as the first manual override. Groups with explicit safety or product
 semantics can still choose a different first exit, such as `🤖 ChatGPT` defaulting

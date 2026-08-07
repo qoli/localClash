@@ -36,7 +36,7 @@
         "reason": "电商服务允许直连或指定代理出口。",
         "boundary": "business_to_exit_layer"
       },
-      "🧭 漏网之鱼": {
+      "🌍 非中國網站": {
         "mode": "manual",
         "exits": [
           "⚡ 自动选择",
@@ -72,7 +72,7 @@
         "source": "v2fly-dlc",
         "pack": "geolocation-!cn",
         "type": "geosite",
-        "target": "🧭 漏网之鱼",
+        "target": "🌍 非中國網站",
         "reason": "Route known non-China GEOSITE traffic through default business selector."
       },
       {

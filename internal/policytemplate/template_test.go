@@ -240,7 +240,7 @@ func TestRealLocalClashDefaultTemplateIsLayered(t *testing.T) {
 		"🎮 Steam", "🧠 AI", "💻 GitHub",
 		"📺 YouTube", "📺 Apple TV", "📬 Google FCM", "🔎 Google", "🎵 TikTok",
 		"🎬 Netflix", "🏰 Disney", "🎞 HBO", "🎥 Prime Video", "📺 Emby", "🎧 Spotify",
-		"🎞 媒体", "🛒 电商", "🧭 漏网之鱼",
+		"🎞 媒体", "🛒 电商", "🌍 非中國網站",
 		"☁️ Cloudflare",
 	}
 	for _, id := range autoFirstGroups {
@@ -263,7 +263,7 @@ func TestRealLocalClashDefaultTemplateIsLayered(t *testing.T) {
 		"category-pt":               "🧲 BT/PT 下载",
 		"category-social-media-!cn": "👥 社交媒体",
 		"category-ai-!cn":           "🧠 AI",
-		"geolocation-!cn":           "🧭 漏网之鱼",
+		"geolocation-!cn":           "🌍 非中國網站",
 		"category-games@cn":         "DIRECT",
 		"cn":                        "DIRECT",
 	}
@@ -303,8 +303,8 @@ func TestRealLocalClashDefaultTemplateIsLayered(t *testing.T) {
 	if hasPack(config.Packs, "v2fly-dlc", "cloudflare") {
 		t.Fatal("default template must not add GEOSITE,cloudflare")
 	}
-	if got := config.Packs[len(config.Packs)-2].Target; got != "🧭 漏网之鱼" {
-		t.Fatalf("geolocation fallback target = %q, want 🧭 漏网之鱼", got)
+	if got := config.Packs[len(config.Packs)-2].Target; got != "🌍 非中國網站" {
+		t.Fatalf("geolocation non-China target = %q, want 🌍 非中國網站", got)
 	}
 	if got := config.Packs[len(config.Packs)-2].Pack; got != "geolocation-!cn" {
 		t.Fatalf("geolocation fallback pack = %q, want geolocation-!cn", got)

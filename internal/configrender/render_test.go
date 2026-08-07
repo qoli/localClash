@@ -103,11 +103,11 @@ func TestBuildOrderedRulesUsesLocalBaselineFragmentAndDirectFallback(t *testing.
 }
 
 func TestBuildOrderedRulesUsesConfiguredFallback(t *testing.T) {
-	got, err := buildOrderedRules(nil, "🧭 漏网之鱼")
+	got, err := buildOrderedRules(nil, "Catchall")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got[len(got)-1] != "MATCH,🧭 漏网之鱼" {
+	if got[len(got)-1] != "MATCH,Catchall" {
 		t.Fatalf("last rule = %q, want configured fallback", got[len(got)-1])
 	}
 }
@@ -211,11 +211,11 @@ func TestRenderUsesSelectionFallbackTarget(t *testing.T) {
 	paths := writeRenderFixture(t)
 	writeFile(t, paths.selection, `version: 1
 proxy_groups:
-  "🧭 漏网之鱼":
+  Catchall:
     nodes: ["🇯🇵日本01 | JP"]
     manual: true
-fallback_target: "🧭 漏网之鱼"
-required_targets: ["🧭 漏网之鱼"]
+fallback_target: Catchall
+required_targets: [Catchall]
 enabled_packs: []
 `)
 
@@ -232,10 +232,10 @@ enabled_packs: []
 	}
 	config := readTestYAML(t, result.OutputPath)
 	rules := testStringSlice(config["rules"])
-	if got := rules[len(rules)-1]; got != "MATCH,🧭 漏网之鱼" {
+	if got := rules[len(rules)-1]; got != "MATCH,Catchall" {
 		t.Fatalf("last rule = %q, want configured fallback", got)
 	}
-	if !proxyGroupNamesFromConfig(config)["🧭 漏网之鱼"] {
+	if !proxyGroupNamesFromConfig(config)["Catchall"] {
 		t.Fatal("missing fallback proxy group")
 	}
 }
