@@ -26,6 +26,8 @@ localClash should expose:
 - A runtime entrypoint that can ensure prerequisites, render config, validate
   health, and start Mihomo.
 - An MCP server as the primary agent management interface.
+- A versioned Codex companion skill that teaches agents how to observe routing
+  evidence, preserve policy ownership, and apply scoped MCP changes.
 - CLI commands for bootstrap, debugging, and fallback operation.
 - Deterministic renderers for rules, packs, proxy groups, and runtime
   Mihomo configs.
@@ -118,6 +120,46 @@ user asks an AI agent
 CLI commands remain useful for local development and for environments where an
 MCP client is not available. The main human path is either `localclash run` for
 runtime startup, or conversation through an MCP-capable agent for management.
+
+## Codex Companion Skill
+
+localClash ships an official Codex companion skill for MCP routing work. Its
+versioned source of truth is
+`.codex/skills/localclash-mcp-route-operator/`; the installed global copy is an
+agent-side artifact, not part of the router runtime or core release assets.
+
+Install or update the skill on the machine running Codex:
+
+```bash
+scripts/install-codex-skill.sh
+```
+
+The installer writes to
+`${CODEX_HOME:-$HOME/.codex}/skills/localclash-mcp-route-operator`. Check whether
+the installed copy matches the current checkout without changing it:
+
+```bash
+scripts/install-codex-skill.sh --check
+```
+
+Edit and review the repository copy, then rerun the installer; do not maintain
+the installed copy as a second source of truth. MCP tool names, evidence
+semantics, safety boundaries, or patch workflows should update the companion
+skill in the same change. The skill guides agents to:
+
+- select the smallest sufficient evidence layer: pack catalog, durable intent,
+  loaded runtime, active connections, or bounded fresh-traffic logs;
+- prefer reusable rule packs and dedicated service exits;
+- require explicit informed confirmation before mutating shared/default groups;
+- keep shared-group mutation, patch apply, and runtime reload as separate
+  approvals; and
+- verify loaded rules, proxy groups, and fresh connection chains after an
+  approved live change.
+
+The skill complements [MCP](docs/mcp.md), which remains the detailed product
+tool reference. If an older MCP server lacks a required tool or schema, inspect
+`tools_list` and report the capability mismatch instead of guessing a tool name
+or editing generated Mihomo YAML.
 
 ## MCP Server
 

@@ -1,0 +1,4 @@
+interface:
+  display_name: "localClash MCP Route Operator"
+  short_description: "Observe and change localClash routes safely"
+  default_prompt: "Use $localclash-mcp-route-operator to observe localClash evidence or make a scoped route change with a dedicated service exit."
