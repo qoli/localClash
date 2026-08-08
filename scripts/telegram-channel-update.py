@@ -243,7 +243,10 @@ def build_telegram_changelog(changelog: str, state: dict) -> tuple[str, str, dic
             if not source_date:
                 source_date = date
             extracted_blocks += 1
-            latest_announced[channel] = latest_tag(tags)
+            candidate = latest_tag(tags)
+            current = latest_announced.get(channel)
+            if not current or version_key(candidate) > version_key(current):
+                latest_announced[channel] = candidate
             lines.append("")
             lines.append(f"*{telegram_escape_legacy(title)}*")
             for change in changes:

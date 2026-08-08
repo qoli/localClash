@@ -3,7 +3,7 @@
   "telegram": {
     "last_announced": {
       "core": "v0.1.48",
-      "luci": "v0.1.0-41"
+      "luci": "v0.1.0-43"
     }
   }
 }
