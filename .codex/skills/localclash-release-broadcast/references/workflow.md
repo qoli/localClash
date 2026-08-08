@@ -52,6 +52,7 @@ git check-ignore -v \
 Generate the X.com changelog image from the latest dated changelog section:
 
 ```bash
+python3 -m unittest scripts/test_release_broadcast.py
 scripts/x-release-card.py
 ```
 
@@ -66,6 +67,12 @@ The script writes the ignored HTML working file and renders a `1600 x 2000` PNG
 through the existing Arc CDP endpoint at `http://localhost:9222`. If CDP or
 Playwright is unavailable, the script fails explicitly instead of silently
 reusing an old image.
+
+Rendering must reuse Arc's existing persistent browser context and create only
+a temporary tab inside it. Never use `browser.new_context()` as a fallback:
+Arc can map it to an independent window that cannot be closed. If the existing
+context is absent, fail explicitly. Close only the temporary tab after capture;
+do not call `browser.close()` on the connected Arc session.
 
 HTML-only generation for style/debug iteration:
 

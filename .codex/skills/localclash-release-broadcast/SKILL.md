@@ -28,11 +28,15 @@ notes and Telegram channel announcements.
      package, or router behavior changed.
 5. Generate the X.com changelog image from the latest dated changelog section:
    ```bash
+   python3 -m unittest scripts/test_release_broadcast.py
    scripts/x-release-card.py
    ```
    Inspect `telegram/out/localclash-x-release-card.png` before using it
    in an X.com post. The card must contain changelog content only: no Telegram
    fixed top, no product feature introduction, no right-bottom filler text.
+   The renderer must reuse Arc's existing CDP browser context. It must never
+   create an isolated browser context or independent Arc window; if the existing
+   context is unavailable, generation must fail explicitly.
 6. Generate and inspect the Telegram announcement:
    ```bash
    scripts/telegram-channel-update.py --dry-run --no-write

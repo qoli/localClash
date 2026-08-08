@@ -82,6 +82,7 @@ Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "SF Pro Display",
 優先使用本機 Arc CDP 截圖，避免啟動獨立 Playwright 瀏覽器：
 
 ```bash
+python3 -m unittest scripts/test_release_broadcast.py
 curl -s http://localhost:9222/json/version
 python3 - <<'PY'
 from pathlib import Path
@@ -91,18 +92,23 @@ html = Path('telegram/out/localclash-x-release-card.html').resolve().as_uri()
 out = Path('telegram/out/localclash-x-release-card.png').resolve()
 with sync_playwright() as p:
     browser = p.chromium.connect_over_cdp('http://localhost:9222')
-    context = browser.contexts[0] if browser.contexts else browser.new_context(
-        viewport={'width': 1600, 'height': 2000},
-        device_scale_factor=1,
-    )
+    if not browser.contexts:
+        raise RuntimeError('Arc CDP has no existing browser context')
+    context = browser.contexts[0]
     page = context.new_page()
-    page.set_viewport_size({'width': 1600, 'height': 2000})
-    page.goto(html, wait_until='networkidle')
-    page.screenshot(path=str(out), full_page=False)
-    page.close()
-    browser.close()
+    try:
+        page.set_viewport_size({'width': 1600, 'height': 2000})
+        page.goto(html, wait_until='networkidle')
+        page.screenshot(path=str(out), full_page=False)
+    finally:
+        page.close()
 PY
 ```
+
+不要在連接 Arc CDP 後呼叫 `browser.new_context()`。Arc 會把隔離 context
+映射成獨立窗口，受影響版本可能留下無法關閉的窗口。也不要對連接中的 Arc
+呼叫 `browser.close()`。必須重用 `browser.contexts[0]`，只建立一個暫時 tab，
+截圖後只關閉該 tab；如果沒有既有 context，就明確失敗。
 
 生成後檢查：
 

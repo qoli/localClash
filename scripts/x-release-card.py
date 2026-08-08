@@ -602,24 +602,44 @@ def render_png(html_path: Path, output: Path, cdp_url: str) -> None:
     try:
         with sync_playwright() as p:
             browser = p.chromium.connect_over_cdp(cdp_url)
-            # Arc's persistent context may inherit a Retina device scale or a
-            # user page zoom. Render in an isolated 1x context so the fixed
-            # 1600 x 2000 CSS canvas maps exactly to the PNG dimensions.
-            context = browser.new_context(
-                viewport={"width": CARD_WIDTH, "height": CARD_HEIGHT},
-                device_scale_factor=1,
-            )
+            contexts_before = tuple(browser.contexts)
+            if not contexts_before:
+                raise ScriptError(
+                    "Arc CDP has no existing browser context; refusing to create an independent Arc window."
+                )
+
+            # Arc maps browser.new_context() to an independent window which can
+            # become impossible to close. Reuse its existing persistent context
+            # and create only a temporary tab in that context.
+            context = contexts_before[0]
+            pages_before = len(context.pages)
             page = context.new_page()
-            page.set_viewport_size({"width": CARD_WIDTH, "height": CARD_HEIGHT})
-            page.goto(html_path.resolve().as_uri(), wait_until="networkidle")
-            page.evaluate("() => document.fonts.ready")
-            page.evaluate(
-                "() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))"
+            try:
+                page.set_viewport_size({"width": CARD_WIDTH, "height": CARD_HEIGHT})
+                page.goto(html_path.resolve().as_uri(), wait_until="networkidle")
+                page.evaluate("() => document.fonts.ready")
+                page.evaluate(
+                    "() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))"
+                )
+                page.screenshot(path=str(output), full_page=False)
+            finally:
+                page.close()
+
+            pages_after = len(context.pages)
+            if pages_after != pages_before:
+                raise ScriptError(
+                    "Arc CDP temporary tab cleanup failed: "
+                    f"pages before={pages_before}, after={pages_after}."
+                )
+            contexts_after = tuple(browser.contexts)
+            if contexts_after != contexts_before:
+                raise ScriptError(
+                    "Arc CDP browser contexts changed during render; refusing an independent-window result."
+                )
+            print(
+                "Arc CDP render reused existing context: "
+                f"contexts={len(contexts_after)}, pages before={pages_before}, after={pages_after}."
             )
-            page.screenshot(path=str(output), full_page=False)
-            page.close()
-            context.close()
-            browser.close()
     except Exception as exc:
         raise ScriptError(f"Failed to render X.com PNG via Arc CDP at {cdp_url}: {exc}") from exc
 
