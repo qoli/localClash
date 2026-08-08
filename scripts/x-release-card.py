@@ -250,7 +250,7 @@ def build_summary(items: list[ChangeItem]) -> str:
     return "本次更新聚焦" + "、".join(visible) + "。"
 
 
-def build_card_data(changelog: str) -> CardData:
+def build_card_data(changelog: str, channel_filter: str | None = None) -> CardData:
     core_latest, luci_latest = parse_latest_versions(changelog)
     _, section = latest_dated_section(changelog)
     blocks = split_release_blocks(section)
@@ -267,6 +267,8 @@ def build_card_data(changelog: str) -> CardData:
     for title, block in blocks:
         channel = channel_from_title(title)
         if channel is None:
+            continue
+        if channel_filter is not None and channel != channel_filter:
             continue
         range_text = release_range_from_title(title, channel)
         if channel == "core" and not core_range_seen:
@@ -651,6 +653,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--html", type=Path, default=repo_root / "telegram/out" / DEFAULT_HTML_NAME)
     parser.add_argument("--png", type=Path, default=repo_root / "telegram/out" / DEFAULT_PNG_NAME)
     parser.add_argument("--cdp-url", default=DEFAULT_CDP_URL)
+    parser.add_argument(
+        "--channel",
+        choices=("all", "core", "luci"),
+        default="all",
+        help="Render all latest-date release blocks, or only the selected release channel.",
+    )
     parser.add_argument("--html-only", action="store_true", help="Generate HTML without rendering the PNG.")
     return parser.parse_args()
 
@@ -658,7 +666,8 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     changelog = read_text(args.changelog)
-    data = build_card_data(changelog)
+    channel_filter = None if args.channel == "all" else args.channel
+    data = build_card_data(changelog, channel_filter=channel_filter)
     args.html.parent.mkdir(parents=True, exist_ok=True)
     args.png.parent.mkdir(parents=True, exist_ok=True)
     args.html.write_text(render_html(data), encoding="utf-8")

@@ -110,6 +110,10 @@ PY
 呼叫 `browser.close()`。必須重用 `browser.contexts[0]`，只建立一個暫時 tab，
 截圖後只關閉該 tab；如果沒有既有 context，就明確失敗。
 
+同一日期同時包含 Core 與 LuCI，但本次只公告其中一個渠道時，使用
+`scripts/x-release-card.py --channel core` 或 `--channel luci`。不要把另一個已
+公告渠道的內容塞入圖片，否則固定高度卡片可能溢出或造成公告範圍誤導。
+
 生成後檢查：
 
 ```bash

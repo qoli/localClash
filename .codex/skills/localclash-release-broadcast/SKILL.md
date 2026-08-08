@@ -31,6 +31,9 @@ notes and Telegram channel announcements.
    python3 -m unittest scripts/test_release_broadcast.py
    scripts/x-release-card.py
    ```
+   When the latest date contains both Core and LuCI blocks but only one channel
+   is being announced, pass `--channel core` or `--channel luci`. Do not render
+   already-announced blocks into the current channel's image.
    Inspect `telegram/out/localclash-x-release-card.png` before using it
    in an X.com post. The card must contain changelog content only: no Telegram
    fixed top, no product feature introduction, no right-bottom filler text.

@@ -56,6 +56,17 @@ python3 -m unittest scripts/test_release_broadcast.py
 scripts/x-release-card.py
 ```
 
+If the latest date contains both release channels but the current announcement
+is for only one of them, select it explicitly:
+
+```bash
+scripts/x-release-card.py --channel core
+scripts/x-release-card.py --channel luci
+```
+
+Do not include already-announced blocks from the other channel merely because
+they share the latest changelog date.
+
 Generated files:
 
 ```text

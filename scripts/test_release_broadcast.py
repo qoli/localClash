@@ -26,6 +26,35 @@ def load_script(name: str, filename: str):
 
 
 class ReleaseCardRendererSafetyTests(unittest.TestCase):
+    def test_card_can_select_one_release_channel(self) -> None:
+        module = load_script("x_release_card_channel_test", "x-release-card.py")
+        changelog = """# 更新日誌
+
+| 渠道 | 最新版本 | 發佈時間 |
+| --- | --- | --- |
+| localClash Core | [v0.1.49](https://example.com/core) | today |
+| localclash-luci | [v0.1.0-43](https://example.com/luci) | today |
+
+## 2026-08-09
+
+### localClash Core v0.1.49
+
+Changes:
+
+- Core change，core body。
+
+### localclash-luci v0.1.0-43
+
+Changes:
+
+- LuCI change，luci body。
+"""
+        core = module.build_card_data(changelog, channel_filter="core")
+        self.assertEqual(len(core.core_items), 1)
+        self.assertEqual(core.luci_items, [])
+        self.assertIn("Core change", core.summary)
+        self.assertNotIn("LuCI change", core.summary)
+
     def test_arc_renderer_reuses_existing_context(self) -> None:
         module = load_script("x_release_card_test", "x-release-card.py")
         source = textwrap.dedent(inspect.getsource(module.render_png))
