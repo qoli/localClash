@@ -207,7 +207,7 @@ def items_from_change(channel: str, change: str) -> list[ChangeItem]:
         ]
     ):
         return [fallback_item(channel, text)]
-    if channel == "luci" and "概覽頁" in text:
+    if channel == "luci" and "概覽頁重做為摘要表格" in text:
         return [
             ChangeItem(channel, "概覽頁更新檢查", "概覽頁重做為摘要表格，背景檢查 LuCI / Core 更新；進階頁保留組件級維護。", "blue")
         ]

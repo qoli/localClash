@@ -19,7 +19,40 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
 | localClash Core | [v0.1.48](https://github.com/qoli/localClash/releases/tag/v0.1.48) | 2026-07-31 UTC+8 |
-| localclash-luci | [v0.1.0-42](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-42) | 2026-08-01 UTC+8 |
+| localclash-luci | [v0.1.0-43](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-43) | 2026-08-09 UTC+8 |
+
+## 2026-08-09
+
+### localclash-luci v0.1.0-43
+
+Changes:
+
+- 概覽頁新增「Agent Skill 與 MCP 接入」引導，讓 Codex 同時安裝官方
+  `localclash-mcp-route-operator` Skill 並連接真實路由器 MCP。
+- Agent 現在會被明確引導為服務、應用或遊戲建立專用策略出口，不再為單一
+  服務隨意覆蓋「自動選擇」等共享或預設策略組。
+- Draft 一旦觸及 shared/default group 就必須停止套用，先呈現具體組、目前
+  行為、影響範圍與專用出口替代方案；只有使用者明確點名確認後才能繼續。
+- 接入文本加入配置意圖、Mihomo 已載入狀態、目前連線與限定時間日誌的分層
+  觀測說明，並將配置寫入、runtime 載入、服務重啟及路由器接管分開授權。
+
+Release:
+
+- [qoli/localclash-luci v0.1.0-43](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-43)
+
+Release assets:
+
+- `luci-app-localclash_0.1.0-43_all.ipk` 及 SHA-256
+- `luci-app-localclash-0.1.0-r43.apk` 及 SHA-256
+- `dnsqualify-linux-amd64`、`dnsqualify-linux-arm64` 及 SHA-256
+- `dnsqualify-release-manifest.json`
+
+Verification:
+
+- LuCI JavaScript、rpcd helper shell 語法與 diff 檢查通過。
+- IPK、APK、兩架構 dnsqualify 與 checksum 均成功建置及驗證。
+- GitHub Release 為非 draft、非 prerelease 且標記 Latest；9 個資產已上傳，
+  tag 與遠端 `main` 均指向 `8bab994`。
 
 ## 2026-08-01
 
