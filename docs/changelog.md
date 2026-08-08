@@ -18,10 +18,43 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
-| localClash Core | [v0.1.48](https://github.com/qoli/localClash/releases/tag/v0.1.48) | 2026-07-31 UTC+8 |
+| localClash Core | [v0.1.49](https://github.com/qoli/localClash/releases/tag/v0.1.49) | 2026-08-09 UTC+8 |
 | localclash-luci | [v0.1.0-43](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-43) | 2026-08-09 UTC+8 |
 
 ## 2026-08-09
+
+### localClash Core v0.1.49
+
+Changes:
+
+- `🌐 全球直连` 現在是 Dashboard 可切換的全域策略出口；第一個也是預設出口
+  仍為 `DIRECT`，使用者可明確切換到自動或地區代理節點。
+- 預設模板的最終 `MATCH` 改為指向 `🌐 全球直连`。預設行為仍保持未分類流量
+  直連及遊戲加速器相容性，但不再需要修改模板才能臨時切換全域策略。
+- `geolocation-!cn` 的 Dashboard 策略由「漏網之魚」明確改名為
+  `🌍 非中國網站`，使規則涵蓋範圍和實際用途一致。
+- Core repository 新增官方 `localclash-mcp-route-operator` Codex Skill，要求
+  服務路由優先使用專用出口，並以配置意圖、已載入狀態、連線與日誌分層觀測；
+  Draft 觸及 shared/default group 時必須停止並等待明確確認。
+
+Release:
+
+- [qoli/localClash v0.1.49](https://github.com/qoli/localClash/releases/tag/v0.1.49)
+
+Release assets:
+
+- `localclash-linux-amd64`
+- `localclash-linux-arm64`
+- `localclash-base-assets.tar.gz`
+- `localclash-release-manifest.json`
+- 對應的 `.sha256` checksum 文件
+
+Verification:
+
+- 本地 `go test ./...`、`go vet ./...`、release broadcast 回歸測試及 Skill
+  結構驗證通過。
+- Linux amd64／arm64 binaries、base assets、manifest 與 checksum 已在本地
+  預建並驗證；正式 GitHub assets 由 tag workflow 重新建置。
 
 ### localclash-luci v0.1.0-43
 
