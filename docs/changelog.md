@@ -53,8 +53,12 @@ Verification:
 
 - 本地 `go test ./...`、`go vet ./...`、release broadcast 回歸測試及 Skill
   結構驗證通過。
-- Linux amd64／arm64 binaries、base assets、manifest 與 checksum 已在本地
-  預建並驗證；正式 GitHub assets 由 tag workflow 重新建置。
+- GitHub Release workflow
+  [31279818731](https://github.com/qoli/localClash/actions/runs/31279818731)
+  的 Linux tests、兩架構 binary、base assets 及 Release 建立全部成功。
+- 7 個公開資產重新下載後，兩個 binaries 與 base assets checksum 均通過；
+  manifest 宣告 `v0.1.49` 並指向同版本資產，tar 內亦確認包含新的
+  `🌐 全球直连` 與 `🌍 非中國網站` 策略。
 
 ### localclash-luci v0.1.0-43
 
