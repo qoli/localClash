@@ -51,6 +51,12 @@ Verification:
 - 本地 `go test ./...` 與 `go vet ./...` 通過。
 - 回歸測試覆蓋 `☁️ Cloudflare → 🌐 全球直连 → DIRECT`、巢狀 selector
   依賴物化，以及 policy-group cycle 的明確失敗。
+- GitHub Release workflow
+  [31289889150](https://github.com/qoli/localClash/actions/runs/31289889150)
+  的 Linux tests、兩架構 binary、base assets 及 Release 建立全部成功。
+- 7 個公開資產重新下載後，兩個 binaries 與 base assets checksum 均通過；
+  manifest 宣告 `v0.1.51`、所有 URL 均指向同版本，tag 與遠端 `main` 同為
+  `24f2b71`。
 
 ### localClash Core v0.1.49
 
