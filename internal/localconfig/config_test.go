@@ -496,6 +496,28 @@ func TestResolveRejectsLowercaseTerminalPolicyExit(t *testing.T) {
 	}
 }
 
+func TestResolveAllowsNestedPolicyGroupExit(t *testing.T) {
+	dir := t.TempDir()
+	subscriptionPath := filepath.Join(dir, "subscription.gob")
+	writeTestFile(t, subscriptionPath, "proxies:\n  - name: Unused\n    type: ss\n")
+	resolved, err := Resolve(ResolveOptions{
+		Config: Config{
+			PolicyGroups: map[string]PolicyGroup{
+				"☁️ Cloudflare": {Mode: "manual", Exits: []string{"🌐 全球直连"}},
+				"🌐 全球直连":    {Mode: "manual", Exits: []string{"DIRECT"}},
+			},
+			FallbackTarget: "☁️ Cloudflare",
+		},
+		SubscriptionPath: subscriptionPath,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := resolved.Selection.PolicyGroups["☁️ Cloudflare"].Exits; !reflect.DeepEqual(got, []string{"🌐 全球直连"}) {
+		t.Fatalf("Cloudflare exits = %#v, want nested 全球直连 policy", got)
+	}
+}
+
 func TestResolveOptionalProxyGroupCanBeEmpty(t *testing.T) {
 	dir := t.TempDir()
 	subscriptionPath := filepath.Join(dir, "subscription.gob")

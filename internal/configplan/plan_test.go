@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -925,6 +926,19 @@ func TestRenderMissingProxyGroupReturnsError(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "requires a matching proxy group") {
 		t.Fatalf("error = %v, want missing proxy group error", err)
+	}
+}
+
+func TestBuildPolicyGroupsFromOverlayAllowsForwardPolicyReference(t *testing.T) {
+	groups, _, err := buildPolicyGroupsFromOverlay([]OverlayPolicyGroupIntent{
+		{ID: "Cloudflare", Mode: "manual", Exits: []string{"Global Direct"}},
+		{ID: "Global Direct", Mode: "manual", Exits: []string{"DIRECT"}},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := groups["Cloudflare"].Exits; !reflect.DeepEqual(got, []string{"Global Direct"}) {
+		t.Fatalf("Cloudflare exits = %#v, want nested Global Direct policy", got)
 	}
 }
 

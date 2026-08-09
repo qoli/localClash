@@ -1290,10 +1290,7 @@ func buildPolicyGroupsFromOverlay(groups []OverlayPolicyGroupIntent, proxyGroups
 		if mode != "manual" && mode != "auto" && mode != "smart" {
 			return nil, nil, fmt.Errorf("policy group %q mode must be manual, auto, or smart", id)
 		}
-		exits, err := validatePolicyGroupExits(id, group.Exits, proxyGroups)
-		if err != nil {
-			return nil, nil, err
-		}
+		exits := normalizePolicyGroupExits(group.Exits)
 		pg := rules.PolicyGroup{Exits: exits}
 		switch mode {
 		case "manual":
@@ -1313,32 +1310,24 @@ func buildPolicyGroupsFromOverlay(groups []OverlayPolicyGroupIntent, proxyGroups
 			Boundary:  group.Boundary,
 		})
 	}
+	if err := rules.ValidatePolicyGroupGraph(proxyGroups, policyGroups); err != nil {
+		return nil, nil, err
+	}
 	return policyGroups, summaries, nil
 }
 
-func validatePolicyGroupExits(groupID string, rawExits []string, proxyGroups map[string]rules.ProxyGroup) ([]string, error) {
-	if len(rawExits) == 0 {
-		return nil, fmt.Errorf("policy group %q exits is required", groupID)
-	}
+func normalizePolicyGroupExits(rawExits []string) []string {
 	exits := make([]string, 0, len(rawExits))
 	seen := map[string]bool{}
 	for _, rawExit := range rawExits {
 		exit := strings.TrimSpace(rawExit)
-		if exit == "" {
-			return nil, fmt.Errorf("policy group %q has an empty exit", groupID)
-		}
-		if !rules.IsTerminalAction(exit) {
-			if _, ok := proxyGroups[exit]; !ok {
-				return nil, fmt.Errorf("policy group %q exit %q requires a terminal action or matching proxy group", groupID, exit)
-			}
-		}
 		if seen[exit] {
 			continue
 		}
 		seen[exit] = true
 		exits = append(exits, exit)
 	}
-	return exits, nil
+	return exits
 }
 
 func assertOverlayPackType(id, declared, actual string) error {

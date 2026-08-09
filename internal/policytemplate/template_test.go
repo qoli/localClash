@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"localclash/internal/localconfig"
+	"localclash/internal/rules"
 
 	"gopkg.in/yaml.v3"
 )
@@ -202,6 +203,17 @@ func TestRealLocalClashDefaultTemplateIsLayered(t *testing.T) {
 	wantGlobalDirectExits := []string{"DIRECT", "⚡ 自动选择", "🇭🇰 香港节点", "🇺🇸 美国节点", "🇯🇵 日本节点", "🇸🇬 新加坡节点", "🇹🇼 台湾节点", "🇰🇷 韩国节点"}
 	if globalDirect.Mode != "manual" || !reflect.DeepEqual(globalDirect.Exits, wantGlobalDirectExits) {
 		t.Fatalf("全球直连 policy group = %+v, want default DIRECT with switchable exits %#v", globalDirect, wantGlobalDirectExits)
+	}
+	proxyGroups := make(map[string]rules.ProxyGroup, len(config.ProxyGroups))
+	for id := range config.ProxyGroups {
+		proxyGroups[id] = rules.ProxyGroup{}
+	}
+	policyGroups := make(map[string]rules.PolicyGroup, len(config.PolicyGroups))
+	for id, group := range config.PolicyGroups {
+		policyGroups[id] = rules.PolicyGroup{Exits: append([]string{}, group.Exits...)}
+	}
+	if err := rules.ValidatePolicyGroupGraph(proxyGroups, policyGroups); err != nil {
+		t.Fatalf("default template policy graph is invalid: %v", err)
 	}
 	steam := config.PolicyGroups["🎮 Steam"]
 	if steam.Mode != "manual" || len(steam.Exits) == 0 {

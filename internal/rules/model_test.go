@@ -529,6 +529,44 @@ func TestRenderFragmentSortsPolicyGroupsBeforeRegionGroupsByDisplayName(t *testi
 	}
 }
 
+func TestRenderFragmentMaterializesNestedPolicyGroup(t *testing.T) {
+	selection := Selection{
+		PolicyGroups: map[string]PolicyGroup{
+			"Cloudflare":    {Manual: true, Exits: []string{"Global Direct"}},
+			"Global Direct": {Manual: true, Exits: []string{"DIRECT"}},
+		},
+		EnabledPack: []SelectedPack{{Source: "sukkaw", Pack: "ai", Target: "Cloudflare"}},
+	}
+	fragment, err := RenderFragment(selection, testPackCaches())
+	if err != nil {
+		t.Fatal(err)
+	}
+	groups := map[string]map[string]any{}
+	for _, group := range fragment.ProxyGroups {
+		groups[group["name"].(string)] = group
+	}
+	if groups["Cloudflare"] == nil || groups["Global Direct"] == nil {
+		t.Fatalf("nested policy groups missing from %+v", fragment.ProxyGroups)
+	}
+	if got := groups["Cloudflare"]["proxies"].([]string); !reflect.DeepEqual(got, []string{"Global Direct"}) {
+		t.Fatalf("Cloudflare exits = %#v, want nested Global Direct policy", got)
+	}
+}
+
+func TestRenderFragmentRejectsPolicyGroupCycle(t *testing.T) {
+	selection := Selection{
+		PolicyGroups: map[string]PolicyGroup{
+			"A": {Manual: true, Exits: []string{"B"}},
+			"B": {Manual: true, Exits: []string{"A"}},
+		},
+		FallbackTarget: "A",
+	}
+	_, err := RenderFragment(selection, testPackCaches())
+	if err == nil || !strings.Contains(err.Error(), `policy group cycle detected: "A" -> "B" -> "A"`) {
+		t.Fatalf("error = %v, want explicit policy cycle", err)
+	}
+}
+
 func TestRenderFragmentSkipsEmptyOptionalPolicyExit(t *testing.T) {
 	selection := Selection{
 		ProxyGroups: map[string]ProxyGroup{

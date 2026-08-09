@@ -224,7 +224,9 @@ The renderer owns:
 
 - proxy groups
 - optional policy groups that expose business-layer choices before selecting
-  proxy-group exits
+  other policy groups, reusable proxy-group exits, or terminal actions;
+  policy-group references form an acyclic selector graph and cycles fail
+  validation
 - rule provider definitions
 - rule order
 - local DNS safety policy

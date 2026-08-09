@@ -733,11 +733,35 @@ func prepareTargets(selection Selection, proxyNames []string) (preparedTargets, 
 		if enabledModes == 0 {
 			return preparedTargets{}, fmt.Errorf("policy group %q has no enabled choices", groupName)
 		}
+	}
+	if err := ValidatePolicyGroupGraph(selection.ProxyGroups, selection.PolicyGroups); err != nil {
+		return preparedTargets{}, err
+	}
+	return preparedTargets{proxyGroups: selection.ProxyGroups, policyGroups: selection.PolicyGroups}, nil
+}
+
+// ValidatePolicyGroupGraph verifies that every policy exit resolves to an
+// explicit terminal action, proxy group, or policy group and rejects selector
+// cycles before Mihomo receives the generated configuration.
+func ValidatePolicyGroupGraph(proxyGroups map[string]ProxyGroup, policyGroups map[string]PolicyGroup) error {
+	names := make([]string, 0, len(policyGroups))
+	for name := range policyGroups {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, groupName := range names {
+		group := policyGroups[groupName]
+		if _, exists := proxyGroups[groupName]; exists {
+			return fmt.Errorf("policy group %q conflicts with a proxy group id", groupName)
+		}
+		if len(group.Exits) == 0 {
+			return fmt.Errorf("policy group %q has no exits", groupName)
+		}
 		seen := map[string]bool{}
 		for _, rawExit := range group.Exits {
 			exit := strings.TrimSpace(rawExit)
 			if exit == "" {
-				return preparedTargets{}, fmt.Errorf("policy group %q has an empty exit", groupName)
+				return fmt.Errorf("policy group %q has an empty exit", groupName)
 			}
 			if seen[exit] {
 				continue
@@ -746,12 +770,56 @@ func prepareTargets(selection Selection, proxyNames []string) (preparedTargets, 
 			if IsTerminalAction(exit) {
 				continue
 			}
-			if _, ok := selection.ProxyGroups[exit]; !ok {
-				return preparedTargets{}, fmt.Errorf("policy group %q exit %q requires a terminal action or matching proxy group", groupName, exit)
+			if _, ok := proxyGroups[exit]; ok {
+				continue
+			}
+			if _, ok := policyGroups[exit]; !ok {
+				return fmt.Errorf("policy group %q exit %q requires a terminal action or matching proxy group or policy group", groupName, exit)
 			}
 		}
 	}
-	return preparedTargets{proxyGroups: selection.ProxyGroups, policyGroups: selection.PolicyGroups}, nil
+
+	state := map[string]uint8{}
+	stack := make([]string, 0, len(policyGroups))
+	var visit func(string) error
+	visit = func(name string) error {
+		state[name] = 1
+		stack = append(stack, name)
+		for _, rawExit := range policyGroups[name].Exits {
+			exit := strings.TrimSpace(rawExit)
+			if _, ok := policyGroups[exit]; !ok {
+				continue
+			}
+			switch state[exit] {
+			case 0:
+				if err := visit(exit); err != nil {
+					return err
+				}
+			case 1:
+				start := 0
+				for stack[start] != exit {
+					start++
+				}
+				cycle := append(append([]string{}, stack[start:]...), exit)
+				quoted := make([]string, len(cycle))
+				for i, item := range cycle {
+					quoted[i] = fmt.Sprintf("%q", item)
+				}
+				return fmt.Errorf("policy group cycle detected: %s", strings.Join(quoted, " -> "))
+			}
+		}
+		stack = stack[:len(stack)-1]
+		state[name] = 2
+		return nil
+	}
+	for _, name := range names {
+		if state[name] == 0 {
+			if err := visit(name); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 type targetKind int
@@ -847,6 +915,28 @@ func materializeProxyGroups(used map[string]bool, targets preparedTargets) ([]ma
 }
 
 func materializePolicyGroups(used map[string]bool, targets preparedTargets) ([]map[string]any, map[string]bool, error) {
+	expanded := map[string]bool{}
+	var includeDependencies func(string)
+	includeDependencies = func(name string) {
+		if expanded[name] {
+			return
+		}
+		expanded[name] = true
+		used[name] = true
+		for _, rawExit := range targets.policyGroups[name].Exits {
+			exit := strings.TrimSpace(rawExit)
+			if _, ok := targets.policyGroups[exit]; ok {
+				includeDependencies(exit)
+			}
+		}
+	}
+	seedNames := make([]string, 0, len(used))
+	for name := range used {
+		seedNames = append(seedNames, name)
+	}
+	for _, name := range seedNames {
+		includeDependencies(name)
+	}
 	names := make([]string, 0, len(used))
 	for name := range used {
 		names = append(names, name)

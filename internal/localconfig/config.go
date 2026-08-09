@@ -492,11 +492,6 @@ func Resolve(opts ResolveOptions) (Resolved, error) {
 			finish(err, nil)
 			return Resolved{}, err
 		}
-		if err := validatePolicyGroupExits(id, ruleGroup.Exits, selection.ProxyGroups); err != nil {
-			finishGroup(err, nil)
-			finish(err, nil)
-			return Resolved{}, err
-		}
 		finishGroup(nil, map[string]any{"exits": len(ruleGroup.Exits)})
 		group.Mode = mode
 		group.Exits = append([]string{}, ruleGroup.Exits...)
@@ -510,6 +505,10 @@ func Resolve(opts ResolveOptions) (Resolved, error) {
 			Reason:    group.Reason,
 			Boundary:  group.Boundary,
 		})
+	}
+	if err := rules.ValidatePolicyGroupGraph(selection.ProxyGroups, selection.PolicyGroups); err != nil {
+		finish(err, nil)
+		return Resolved{}, err
 	}
 	finish(nil, map[string]any{"resolved_policy_groups": len(policyResults)})
 	fallbackTarget := strings.TrimSpace(resolvedConfig.FallbackTarget)
@@ -1087,24 +1086,6 @@ func normalizePolicyGroupExits(rawExits []string) []string {
 		exits = append(exits, exit)
 	}
 	return exits
-}
-
-func validatePolicyGroupExits(id string, exits []string, proxyGroups map[string]rules.ProxyGroup) error {
-	if len(exits) == 0 {
-		return fmt.Errorf("policy group %q exits is required", id)
-	}
-	for _, exit := range exits {
-		if strings.TrimSpace(exit) == "" {
-			return fmt.Errorf("policy group %q contains an empty exit", id)
-		}
-		if rules.IsTerminalAction(exit) {
-			continue
-		}
-		if _, ok := proxyGroups[exit]; !ok {
-			return fmt.Errorf("policy group %q exit %q requires a terminal action or matching proxy group", id, exit)
-		}
-	}
-	return nil
 }
 
 func resolveTransportRules(transportRules []TransportRule, proxyGroups map[string]rules.ProxyGroup, policyGroups map[string]rules.PolicyGroup) ([]TransportRule, []TransportRuleResult, error) {
