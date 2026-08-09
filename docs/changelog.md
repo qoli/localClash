@@ -18,10 +18,37 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
-| localClash Core | [v0.1.49](https://github.com/qoli/localClash/releases/tag/v0.1.49) | 2026-08-09 UTC+8 |
+| localClash Core | [v0.1.50](https://github.com/qoli/localClash/releases/tag/v0.1.50) | 2026-08-09 UTC+8 |
 | localclash-luci | [v0.1.0-43](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-43) | 2026-08-09 UTC+8 |
 
 ## 2026-08-09
+
+### localClash Core v0.1.50
+
+Changes:
+
+- 修正 v0.1.49 預設策略在刷新訂閱時，`☁️ Cloudflare` 等業務策略指向
+  `🌐 全球直连` 會被錯誤判定為非終端出口，導致一鍵更新於配置生成階段失敗。
+- policy group 現在可明確引用另一個 policy group；渲染器會一併輸出被引用的
+  selector，未知目標、自我引用及多組循環仍會明確拒絕，不會靜默降級。
+
+Release:
+
+- [qoli/localClash v0.1.50](https://github.com/qoli/localClash/releases/tag/v0.1.50)
+
+Release assets:
+
+- `localclash-linux-amd64`
+- `localclash-linux-arm64`
+- `localclash-base-assets.tar.gz`
+- `localclash-release-manifest.json`
+- 對應的 `.sha256` checksum 文件
+
+Verification:
+
+- 本地 `go test ./...` 與 `go vet ./...` 通過。
+- 回歸測試覆蓋 `☁️ Cloudflare → 🌐 全球直连 → DIRECT`、巢狀 selector
+  依賴物化，以及 policy-group cycle 的明確失敗。
 
 ### localClash Core v0.1.49
 
