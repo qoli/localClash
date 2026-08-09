@@ -8,6 +8,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"localclash/internal/corerun"
 )
 
 func TestRunDryRunDoesNotDeleteFactoryResetTargets(t *testing.T) {
@@ -42,6 +44,7 @@ func TestRunDryRunDoesNotDeleteFactoryResetTargets(t *testing.T) {
 }
 
 func TestRunDeletesFactoryResetTargetsWithYes(t *testing.T) {
+	stubResetRuntimeStopped(t)
 	dir := t.TempDir()
 	t.Chdir(dir)
 	writeResetFile(t, filepath.Join(".runtime", "mihomo", "logs", "mihomo.log"), "log")
@@ -76,6 +79,7 @@ func TestRunDeletesFactoryResetTargetsWithYes(t *testing.T) {
 }
 
 func TestRunFactoryResetPreservesUserProfile(t *testing.T) {
+	stubResetRuntimeStopped(t)
 	dir := t.TempDir()
 	t.Chdir(dir)
 	writeResetFile(t, "localclash-intent.json", "version: 1\n")
@@ -128,6 +132,7 @@ func TestRunFullDryRunPlansWorkspaceWithoutDeleting(t *testing.T) {
 }
 
 func TestRunFullDeletesWorkspaceWithYes(t *testing.T) {
+	stubResetRuntimeStopped(t)
 	parent := t.TempDir()
 	dir := filepath.Join(parent, "localclash")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -176,6 +181,7 @@ func TestRunFullRequiresExplicitWorkspace(t *testing.T) {
 }
 
 func TestRunFullRejectsMissingWorkspaceMarker(t *testing.T) {
+	stubResetRuntimeStopped(t)
 	parent := t.TempDir()
 	dir := filepath.Join(parent, "localclash")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -193,6 +199,7 @@ func TestRunFullRejectsMissingWorkspaceMarker(t *testing.T) {
 }
 
 func TestRunFullRejectsSourceCheckout(t *testing.T) {
+	stubResetRuntimeStopped(t)
 	parent := t.TempDir()
 	dir := filepath.Join(parent, "localClash")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -212,6 +219,7 @@ func TestRunFullRejectsSourceCheckout(t *testing.T) {
 }
 
 func TestRunRequiresConfirmation(t *testing.T) {
+	stubResetRuntimeStopped(t)
 	dir := t.TempDir()
 	t.Chdir(dir)
 	writeResetFile(t, "localclash-intent.json", "version: 1\n")
@@ -268,6 +276,17 @@ func writeResetFile(t *testing.T, path string, content string) {
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func stubResetRuntimeStopped(t *testing.T) {
+	t.Helper()
+	previous := runtimeStatus
+	runtimeStatus = func(corerun.StatusOptions) corerun.StatusResult {
+		return corerun.StatusResult{}
+	}
+	t.Cleanup(func() {
+		runtimeStatus = previous
+	})
 }
 
 func workspaceMarkerPath(dir string) string {

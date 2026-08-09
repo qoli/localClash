@@ -16,6 +16,8 @@ import (
 const ConfirmationPhrase = "reset localclash"
 const FullConfirmationPhrase = "delete localclash workspace"
 
+var runtimeStatus = corerun.Status
+
 type Options struct {
 	DryRun                   bool
 	Yes                      bool
@@ -60,7 +62,7 @@ func Run(opts Options) (Result, error) {
 		return Result{}, err
 	}
 	if !opts.DryRun {
-		if status := corerun.Status(corerun.StatusOptions{WorkDir: filepath.Join(ws.Path, ".runtime", "mihomo")}); status.Running {
+		if status := runtimeStatus(corerun.StatusOptions{WorkDir: filepath.Join(ws.Path, ".runtime", "mihomo")}); status.Running {
 			return Result{}, fmt.Errorf("mihomo runtime is running (pid %d); stop it before reset", status.PID)
 		}
 	}
