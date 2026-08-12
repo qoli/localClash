@@ -45,6 +45,63 @@ git check-ignore -v \
   telegram/sent/example.json
 ```
 
+## LuCI CI Release Evidence
+
+The authoritative LuCI release procedure is:
+
+```text
+version bump commit -> main CI success -> matching immutable tag
+-> tag-triggered Release workflow success -> GitHub Release verification
+-> changelog/card/Telegram dry-run
+```
+
+Read `../localclash-luci/docs/github-release-runbook.md` before operating a
+LuCI release. The CI workflows are:
+
+- `.github/workflows/ci.yml`: pull request and `main` candidate validation;
+- `.github/workflows/release.yml`: tag-only publication after rebuilding and
+  validating the exact asset allow-list.
+
+Useful evidence commands from the LuCI repository:
+
+```bash
+git status --short --branch
+gh run list --workflow CI --limit 5
+gh run list --workflow Release --limit 5
+gh run view <run-id>
+gh release view <tag> --json tagName,isDraft,isPrerelease,assets,url
+git ls-remote --tags origin <tag>
+```
+
+For CI-enabled LuCI releases, verify these artifact families:
+
+```text
+luci-app-localclash_<version>-<release>_all.ipk[.sha256]
+luci-app-localclash-<version>-r<release>.apk[.sha256]
+dnsqualify-linux-amd64[.sha256]
+dnsqualify-linux-arm64[.sha256]
+dnsqualify-release-manifest.json
+localclash-istore-<tag>-x86_64.run[.sha256]
+localclash-istore-<tag>-aarch64.run[.sha256]
+```
+
+Download `.run` files to a temporary directory and inspect without installing:
+
+```bash
+sh localclash-istore-<tag>-x86_64.run --info
+sh localclash-istore-<tag>-x86_64.run --list
+sh localclash-istore-<tag>-x86_64.run --check
+sh localclash-istore-<tag>-x86_64.run --noexec --noprogress
+```
+
+Repeat for aarch64. These checks prove archive integrity and content only;
+real-router compatibility still requires target-router evidence.
+
+Do not use `gh release create`, `gh release upload`, `--clobber`, or manual
+local build artifacts to bypass the workflow. If the workflow fails, fix the
+source-controlled contract. If a public release is already wrong, bump the
+LuCI `PKG_RELEASE` and publish a new tag.
+
 ## Telegram Commands
 
 ## X.com Image Command

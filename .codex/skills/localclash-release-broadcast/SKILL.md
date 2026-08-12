@@ -19,6 +19,14 @@ notes and Telegram channel announcements.
    - `gh release list --limit 8` in `../localclash-luci` for LuCI.
    - Use `gh release view <tag>` when asset lists, publish time, or release URL
      matters.
+   - For a new LuCI release, inspect the tag-triggered `Release` workflow with
+     `gh run list --workflow Release --limit 5` and `gh run view <run-id>`.
+     A GitHub Release page alone is not sufficient evidence that the automated
+     build and installer checks passed.
+   - When the user explicitly asks to publish a LuCI release, follow
+     `../localclash-luci/docs/github-release-runbook.md`: review the version
+     commit and successful main CI, then create and push the matching tag. Do
+     not run a local `gh release create` or upload locally rebuilt substitutes.
 4. Update `docs/changelog.md`:
    - Keep Core and LuCI as separate release channels.
    - Update the latest-version table.
@@ -66,6 +74,13 @@ notes and Telegram channel announcements.
    ```
 9. Run `git diff --check` before claiming the docs/tooling are ready.
 
+For LuCI release announcements, verify the published asset names against the
+CI allow-list. In addition to IPK/APK and dnsqualify assets, CI-enabled releases
+carry architecture-specific iStore `.run` bundles and SHA-256 sidecars. Verify
+both `.run` archives with `--info`, `--list`, `--check`, and `--noexec` before
+describing them as available. Do not claim real-router compatibility until the
+corresponding x86_64/aarch64 router evidence exists.
+
 ## Boundaries
 
 - Never commit or stage `telegram/changelog.md`, `telegram/.token`,
@@ -75,9 +90,15 @@ notes and Telegram channel announcements.
 - Never print Telegram bot tokens.
 - Do not treat Core and LuCI releases as the same artifact. Core releases carry
   binaries, base assets, and `localclash-release-manifest.json`; LuCI releases
-  carry IPK/APK package artifacts and checksums.
+  carry IPK/APK package artifacts, LuCI-owned dnsqualify assets, and checksums.
+  LuCI CI releases may also carry iStore offline `.run` bundles; the Core inside
+  those bundles is pinned by the LuCI repository and does not merge the two
+  release channels.
 - Do not overwrite public release history. If a LuCI package changed after a
   release, bump `PKG_RELEASE` and publish a new tag instead.
+- Never bypass a failed LuCI workflow by creating a Release or uploading an
+  asset manually. Fix the source-controlled build or validation contract and
+  publish a new package release when required.
 
 ## Reference
 
