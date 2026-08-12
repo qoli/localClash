@@ -19,7 +19,53 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
 | localClash Core | [v0.1.51](https://github.com/qoli/localClash/releases/tag/v0.1.51) | 2026-08-09 UTC+8 |
-| localclash-luci | [v0.1.0-43](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-43) | 2026-08-09 UTC+8 |
+| localclash-luci | [v0.1.0-45](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-45) | 2026-08-12 UTC+8 |
+
+## 2026-08-12
+
+### localclash-luci v0.1.0-45
+
+Changes:
+
+- LuCI Release 改由 tag 驅動的 GitHub Actions 統一測試、建置及發佈；pull
+  request 與 `main` 亦會先產生候選資產，公開 Release 不再依賴本機手工上傳。
+- 新增 iStoreOS／opkg 離線 `.run`：x86-64 與 aarch64 各自包含 LuCI IPK、
+  固定版本的 Core v0.1.51、對應架構 `dnsqualify`、Core base assets、bundle
+  manifest 及 SHA-256，不會在安裝時執行 `opkg update` 或下載 `latest`。
+- 離線 installer 會先驗證 root、必要命令、CPU 架構、ELF 架構、全部 checksum
+  及 base assets 完整性；失敗時明確終止，不改抓線上替代文件，也不修改訂閱、
+  策略選擇或路由器接管狀態。
+- 官方 policy／rule 文件採逐文件原子更新，保留使用者額外加入的文件。
+- 修正首個 CI 發佈版 v0.1.0-44 的 `dnsqualify` checksum sidecar 帶有 runner
+  絕對路徑、下載後無法直接校驗的問題；請使用 v0.1.0-45。
+
+Release:
+
+- [qoli/localclash-luci v0.1.0-45](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-45)
+
+Release assets:
+
+- `luci-app-localclash_0.1.0-45_all.ipk` 及 SHA-256
+- `luci-app-localclash-0.1.0-r45.apk` 及 SHA-256
+- `dnsqualify-linux-amd64`、`dnsqualify-linux-arm64` 及 SHA-256
+- `dnsqualify-release-manifest.json`
+- `localclash-istore-v0.1.0-45-x86_64.run` 及 SHA-256
+- `localclash-istore-v0.1.0-45-aarch64.run` 及 SHA-256
+
+Verification:
+
+- Main CI
+  [31566502248](https://github.com/qoli/localclash-luci/actions/runs/31566502248)
+  與 tag Release CI
+  [31566588233](https://github.com/qoli/localclash-luci/actions/runs/31566588233)
+  的語法、rpcd、dnsqualify、完整打包、離線安裝及 Release 發佈全部成功。
+- 13 個公開資產從 GitHub Release 重新下載後，精確檔名清單及全部 portable
+  SHA-256 sidecar 均通過；tag `v0.1.0-45` 指向 release commit `8b7ecba`。
+- 兩個 `.run` 均通過 Makeself `--info`、`--list`、`--check` 及 `--noexec`，
+  並確認包含正確 IPK、Core、dnsqualify、base assets、manifest 與 installer。
+- x86-64 bundle 已在完全斷網的 Linux 容器完成安裝；架構不匹配與 payload
+  被篡改均會在安裝前拒絕。aarch64 archive 與 ELF 架構已驗證，但尚未宣稱
+  真實 aarch64 iStoreOS 路由器驗收完成。
 
 ## 2026-08-09
 
