@@ -19,9 +19,50 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
 | localClash Core | [v0.1.51](https://github.com/qoli/localClash/releases/tag/v0.1.51) | 2026-08-09 UTC+8 |
-| localclash-luci | [v0.1.0-45](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-45) | 2026-08-12 UTC+8 |
+| localclash-luci | [v0.1.0-46](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-46) | 2026-08-12 UTC+8 |
 
 ## 2026-08-12
+
+### localclash-luci v0.1.0-46
+
+Changes:
+
+- 唯一公開源碼：[`qoli/dnsqualify`](https://github.com/qoli/dnsqualify) 成為唯一源碼，
+  LuCI 移除內嵌副本。
+- CI 來源釘選：Main／Release CI 鎖定完整 commit；來源、HEAD 或 dirty checkout
+  不符即失敗。
+- 發布來源證明：Release manifest 記錄來源；兩個 `.run` 內嵌 dnsqualify 與
+  公開 asset SHA 一致。
+
+Release:
+
+- [qoli/localclash-luci v0.1.0-46](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-46)
+
+Release assets:
+
+- `luci-app-localclash_0.1.0-46_all.ipk` 及 SHA-256
+- `luci-app-localclash-0.1.0-r46.apk` 及 SHA-256
+- `dnsqualify-linux-amd64`、`dnsqualify-linux-arm64` 及 SHA-256
+- `dnsqualify-release-manifest.json`
+- `localclash-istore-v0.1.0-46-x86_64.run` 及 SHA-256
+- `localclash-istore-v0.1.0-46-aarch64.run` 及 SHA-256
+
+Verification:
+
+- Main CI
+  [31568307106](https://github.com/qoli/localclash-luci/actions/runs/31568307106)
+  與 tag Release CI
+  [31568402518](https://github.com/qoli/localclash-luci/actions/runs/31568402518)
+  均通過 pinned source checkout、dnsqualify test/vet、rpcd、完整打包、離線安裝
+  與 Release 發布。
+- 13 個公開資產重新下載後，精確檔名與全部 SHA-256 均通過；tag、遠端 main
+  與發布 commit 同為 `20255e6`。
+- Manifest 宣告 `qoli/dnsqualify@525bcf8`；amd64 與 arm64 二進制的 Go build
+  metadata 亦確認相同 module、完整 VCS revision 及 `vcs.modified=false`，並在
+  對應 Linux 容器實際回報 `dnsqualify v0.1.0-46`。
+- 兩個 `.run` 均通過 Makeself `--info`、`--list`、`--check`、`--noexec` 與
+  payload checksum；其中 dnsqualify SHA 與同架構公開 asset 完全一致。這些是
+  archive／Linux runtime 證據，未據此宣稱新增真實路由器驗收。
 
 ### localclash-luci v0.1.0-45
 
