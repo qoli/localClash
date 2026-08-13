@@ -28,7 +28,8 @@
           "🇺🇸 美国节点",
           "🇯🇵 日本节点",
           "🇹🇼 台湾节点",
-          "🇰🇷 韩国节点"
+          "🇰🇷 韩国节点",
+          "🌐 全球直连"
         ],
         "reason": "非中国泛 AI 服务分类；OpenAI/ChatGPT 已由专属业务组先匹配。",
         "boundary": "business_to_exit_layer"
