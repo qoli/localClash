@@ -641,6 +641,64 @@ func TestRefreshRangeRecoveryAcceptsClampedSmallPayload(t *testing.T) {
 	}
 }
 
+func TestSubscriptionRangeHTTPClientDoesNotInheritHTTP2ALPN(t *testing.T) {
+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/sub" && r.Header.Get("Range") != "bytes=0-3" {
+			t.Errorf("Range = %q, want bytes=0-3", r.Header.Get("Range"))
+		}
+		w.Header().Set("Content-Range", "bytes 0-3/4")
+		_, _ = w.Write([]byte("test"))
+	}))
+	server.EnableHTTP2 = true
+	server.StartTLS()
+	defer server.Close()
+
+	originalDefaultTransport := http.DefaultTransport
+	base := server.Client().Transport.(*http.Transport).Clone()
+	base.ForceAttemptHTTP2 = true
+	http.DefaultTransport = base
+	defer func() {
+		http.DefaultTransport = originalDefaultTransport
+	}()
+
+	warmResponse, err := (&http.Client{Transport: base}).Get(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if warmResponse.ProtoMajor != 2 {
+		t.Fatalf("warm response protocol = %s, want HTTP/2", warmResponse.Proto)
+	}
+	_ = warmResponse.Body.Close()
+
+	req, err := http.NewRequest(http.MethodGet, server.URL+"/sub?token=secret-token", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Range", "bytes=0-3")
+	response, err := subscriptionRangeHTTPClient().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.Proto != "HTTP/1.1" {
+		t.Fatalf("range response protocol = %s, want HTTP/1.1", response.Proto)
+	}
+}
+
+func TestSafeTransportErrorRedactsSubscriptionURI(t *testing.T) {
+	source := Source{DisplayName: "01", URI: "https://example.com/sub?token=secret-token&url=https%3A%2F%2Forigin.example%2Fplaylist%3Fkey%3Dnested-secret"}
+	raw := fmt.Errorf("Get %q: transport failed", source.URI)
+	got := safeTransportError(raw, source)
+	for _, banned := range []string{"secret-token", "nested-secret", "token=", "key="} {
+		if strings.Contains(got, banned) {
+			t.Fatalf("safe transport error leaked %q: %s", banned, got)
+		}
+	}
+	if !strings.Contains(got, "https://example.com/sub?...") || !strings.Contains(got, "transport failed") {
+		t.Fatalf("safe transport error = %q, want masked URI and cause", got)
+	}
+}
+
 func TestRefreshRangeRecoveryRejectsUnverifiableResponses(t *testing.T) {
 	body := largeSubscriptionBody(1800)
 	tests := []struct {

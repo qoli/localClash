@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"crypto/tls"
 	"encoding/gob"
 	"encoding/hex"
 	"encoding/json"
@@ -949,7 +950,7 @@ func fetchSource(ctx context.Context, source Source, userAgent string, stage fun
 	finish = stage("fetch_subscription_response", identity)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		err = fmt.Errorf("%s request failed: %v", sourceLogLabel(source), err)
+		err = fmt.Errorf("%s request failed: %s", sourceLogLabel(source), safeTransportError(err, source))
 		finish(err, map[string]any{"failure_kind": "transport"})
 		return subscriptionDoc{}, err
 	}
@@ -1188,7 +1189,7 @@ func fetchSubscriptionRange(ctx context.Context, client *http.Client, source Sou
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		err = fmt.Errorf("range request %d-%d failed: %w", start, end, err)
+		err = fmt.Errorf("range request %d-%d failed: %s", start, end, safeTransportError(err, source))
 		finish(err, map[string]any{"failure_kind": "transport"})
 		return rangeResponse{}, err
 	}
@@ -1239,6 +1240,14 @@ func fetchSubscriptionRange(ctx context.Context, client *http.Client, source Sou
 
 func subscriptionRangeHTTPClient() *http.Client {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
+	if transport.TLSClientConfig == nil {
+		transport.TLSClientConfig = &tls.Config{}
+	} else {
+		transport.TLSClientConfig = transport.TLSClientConfig.Clone()
+	}
+	transport.TLSClientConfig.NextProtos = []string{"http/1.1"}
+	transport.TLSNextProto = map[string]func(string, *tls.Conn) http.RoundTripper{}
+	transport.ForceAttemptHTTP2 = false
 	transport.Protocols = new(http.Protocols)
 	transport.Protocols.SetHTTP1(true)
 	transport.Protocols.SetHTTP2(false)
@@ -1334,6 +1343,16 @@ func safeResponsePreview(body []byte, source Source) string {
 	preview = sensitiveResponseFieldPattern.ReplaceAllString(preview, `${1}${2}<redacted>`)
 	preview = responseURLPattern.ReplaceAllStringFunc(preview, MaskURI)
 	return preview
+}
+
+func safeTransportError(err error, source Source) string {
+	if err == nil {
+		return "transport error"
+	}
+	if text := safeResponsePreview([]byte(err.Error()), source); text != "" {
+		return text
+	}
+	return "transport error"
 }
 
 func parseRemoteSubscription(sourceID string, data []byte) (subscriptionDoc, error) {
