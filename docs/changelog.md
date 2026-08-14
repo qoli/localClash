@@ -59,6 +59,15 @@ Verification:
 - ChatGPT capability 的單元及 MCP 整合測試覆蓋兩端 eligibility fingerprint、
   bounded concurrency、重試、明確拒絕、遲滯、集合崩塌保護、snapshot 保密與
   生成 proxy group；多訂閱測試覆蓋 `dialer-proxy` 重寫及歧義拒絕。
+- GitHub Release workflow
+  [31831309856](https://github.com/qoli/localClash/actions/runs/31831309856) 的
+  Linux tests、兩架構 binary、base assets 及 Release 建立全部成功。
+- 7 個公開資產重新下載後，精確檔名與全部 SHA-256 均通過；兩個靜態 Linux
+  binaries 分別為 x86-64／ARM64，均內嵌 `v0.1.54` 與發版 commit
+  `75af481`。manifest 宣告 `v0.1.54`，所有 URL、檔案大小及 checksum 均指向
+  並符合同版本；base assets 內的預設 template 亦包含
+  `openai.chatgpt.mobile.v1`。annotated tag、發佈時的遠端 `main` 與發版
+  commit 同為 `75af481`；其後僅新增本次驗證記錄。
 
 ## 2026-08-14
 
