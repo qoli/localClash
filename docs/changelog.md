@@ -18,8 +18,47 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
-| localClash Core | [v0.1.53](https://github.com/qoli/localClash/releases/tag/v0.1.53) | 2026-08-14 UTC+8 |
+| localClash Core | [v0.1.54](https://github.com/qoli/localClash/releases/tag/v0.1.54) | 2026-08-15 UTC+8 |
 | localclash-luci | [v0.1.0-47](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-47) | 2026-08-14 UTC+8 |
+
+## 2026-08-15
+
+### localClash Core v0.1.54
+
+Changes:
+
+- 新增 `ChatGPT-available` 服務能力出口：訂閱更新會透過隔離的臨時 Mihomo，
+  同時驗證 ChatGPT iOS 與 Android 根端點的 IP eligibility fingerprint，只把
+  通過兩端驗證的節點放入自動選擇組。
+- 能力驗證加入有界並行、重試、連續失敗遲滯與既有合格集合突然歸零保護；暫時
+  網絡故障不會立刻移除已合格節點，也不會在整組異常崩塌時覆寫既有 snapshot
+  或生成配置。明確的 ISP／地區拒絕仍會立即移除節點。
+- `🤖 ChatGPT` 保持美國地區出口為預設，新的能力篩選出口放在最後作為 opt-in
+  選項，不會自動改變既有使用者的預設路由。
+- 多訂閱合併為節點名稱加入來源前綴時，現在同步重寫來源內的
+  `dialer-proxy` 引用；若同名節點使引用產生歧義，會明確失敗而不是選擇不確定
+  的出口。
+- 路由器部署腳本只同步 release 實際提供的 `policy-templates` 與
+  `rule-sources` base assets，並在部署前驗證兩個來源目錄存在。
+
+Release:
+
+- [qoli/localClash v0.1.54](https://github.com/qoli/localClash/releases/tag/v0.1.54)
+
+Release assets:
+
+- `localclash-linux-amd64`
+- `localclash-linux-arm64`
+- `localclash-base-assets.tar.gz`
+- `localclash-release-manifest.json`
+- 對應的 `.sha256` checksum 文件
+
+Verification:
+
+- 本地 `go test ./...`、`go vet ./...` 與 release broadcast 回歸測試通過。
+- ChatGPT capability 的單元及 MCP 整合測試覆蓋兩端 eligibility fingerprint、
+  bounded concurrency、重試、明確拒絕、遲滯、集合崩塌保護、snapshot 保密與
+  生成 proxy group；多訂閱測試覆蓋 `dialer-proxy` 重寫及歧義拒絕。
 
 ## 2026-08-14
 
