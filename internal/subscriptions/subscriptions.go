@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -28,6 +29,9 @@ const sourceIDPrefix = "S-"
 const sourceIDHashLength = 8
 const maxSourceDisplayIndex = 99
 const refreshFetchConcurrency = 4
+const subscriptionRangeChunkSize = 64 * 1024
+const subscriptionRangeOverlap = 256
+const maxRangeRecoveryBytes = 32 * 1024 * 1024
 const (
 	sourceTypeRemoteSubscription = "remote_subscription"
 	sourceTypeInlineProxyURIs    = "inline_proxy_uris"
@@ -183,6 +187,9 @@ type subscriptionArtifact struct {
 
 var sourceIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 var sourceDisplayNamePattern = regexp.MustCompile(`^[0-9]{2}$`)
+var sensitiveResponseFieldPattern = regexp.MustCompile(`(?i)(token|access_token|api[_-]?key|secret|password|passwd|authorization)(["']?[[:space:]]*[:=][[:space:]]*["']?)[^&[:space:]"',}]+`)
+var responseURLPattern = regexp.MustCompile(`https?://[^[:space:]"'<>]+`)
+var contentRangePattern = regexp.MustCompile(`^bytes ([0-9]+)-([0-9]+)/([0-9]+)$`)
 
 func init() {
 	gob.Register(map[string]any{})
@@ -353,7 +360,7 @@ func Refresh(ctx context.Context, opts RefreshOptions) (RefreshResult, error) {
 	}
 	finish(nil, nil)
 
-	finish = stage("select_sources", map[string]any{"ids": opts.IDs})
+	finish = stage("select_sources", map[string]any{"requested_count": len(opts.IDs)})
 	selected, err := selectedSourceIDs(config.Sources, opts.IDs)
 	if err != nil {
 		finish(err, nil)
@@ -365,7 +372,13 @@ func Refresh(ctx context.Context, opts RefreshOptions) (RefreshResult, error) {
 			selectedCount++
 		}
 	}
-	finish(nil, map[string]any{"selected_count": selectedCount})
+	selectedSources := make([]map[string]any, 0, selectedCount)
+	for _, source := range config.Sources {
+		if selected[source.ID] {
+			selectedSources = append(selectedSources, sourceStageFields(source))
+		}
+	}
+	finish(nil, map[string]any{"selected_count": selectedCount, "selected_sources": selectedSources})
 
 	finish = stage("ensure_runtime_dir", map[string]any{"runtime_dir": opts.RuntimeDir})
 	if err := os.MkdirAll(opts.RuntimeDir, 0o755); err != nil {
@@ -391,13 +404,13 @@ func Refresh(ctx context.Context, opts RefreshOptions) (RefreshResult, error) {
 			if err != nil {
 				if errors.Is(err, os.ErrNotExist) {
 					if selected[source.ID] {
-						finish(err, map[string]any{"source_id": source.ID})
-						return RefreshResult{}, fmt.Errorf("source %q artifact was not written", source.ID)
+						finish(err, sourceStageFields(source))
+						return RefreshResult{}, fmt.Errorf("%s artifact was not written", sourceLogLabel(source))
 					}
-					result.Warnings = append(result.Warnings, fmt.Sprintf("source %q has no local artifact; run subscriptions_refresh for that source", source.ID))
+					result.Warnings = append(result.Warnings, fmt.Sprintf("%s has no local artifact; run subscriptions_refresh for that source", sourceLogLabel(source)))
 					continue
 				}
-				finish(err, map[string]any{"source_id": source.ID})
+				finish(err, sourceStageFields(source))
 				return RefreshResult{}, err
 			}
 			docs[source.ID] = doc
@@ -520,7 +533,7 @@ func refreshSelectedSources(ctx context.Context, sources []Source, selected map[
 		}
 		outcome, ok := outcomes[source.ID]
 		if !ok {
-			return nil, nil, fmt.Errorf("source %q was not refreshed", source.ID)
+			return nil, nil, fmt.Errorf("%s was not refreshed", sourceLogLabel(source))
 		}
 		if outcome.err != nil {
 			return nil, nil, outcome.err
@@ -538,8 +551,9 @@ func refreshSelectedSources(ctx context.Context, sources []Source, selected map[
 }
 
 func refreshOneSource(ctx context.Context, source Source, opts RefreshOptions, stage func(string, map[string]any) func(error, map[string]any)) sourceRefreshOutcome {
-	finish := stage("refresh_source", map[string]any{"source_id": source.ID, "type": sourceType(source), "uri": MaskURI(sourcePrimaryURI(source))})
-	doc, err := refreshSource(ctx, source, opts.UserAgent)
+	identity := sourceStageFields(source)
+	finish := stage("refresh_source", identity)
+	doc, err := refreshSource(ctx, source, opts.UserAgent, stage)
 	if err != nil {
 		finish(err, nil)
 		return sourceRefreshOutcome{sourceID: source.ID, err: err}
@@ -547,7 +561,7 @@ func refreshOneSource(ctx context.Context, source Source, opts RefreshOptions, s
 	finish(nil, nil)
 
 	artifact := artifactPath(opts.RuntimeDir, source.ID)
-	finish = stage("write_source_artifact", map[string]any{"source_id": source.ID, "artifact": artifact})
+	finish = stage("write_source_artifact", mergeStageFields(identity, map[string]any{"artifact_dir": filepath.Dir(artifact)}))
 	if err := writeSubscriptionArtifact(artifact, doc); err != nil {
 		finish(err, nil)
 		return sourceRefreshOutcome{sourceID: source.ID, err: err}
@@ -575,13 +589,14 @@ func subscriptionStageEmitter(callback func(StageEvent)) func(string, map[string
 			return func(error, map[string]any) {}
 		}
 		started := time.Now()
-		emit(StageEvent{Stage: stage, Event: "started", Fields: fields})
+		startedFields := cloneStageFields(fields)
+		emit(StageEvent{Stage: stage, Event: "started", Fields: startedFields})
 		return func(err error, doneFields map[string]any) {
 			event := StageEvent{
 				Stage:      stage,
 				Event:      "done",
 				DurationMS: time.Since(started).Milliseconds(),
-				Fields:     doneFields,
+				Fields:     mergeStageFields(startedFields, doneFields),
 			}
 			if err != nil {
 				event.Event = "error"
@@ -899,43 +914,426 @@ func selectedSourceIDs(sources []Source, ids []string) (map[string]bool, error) 
 	return selected, nil
 }
 
-func refreshSource(ctx context.Context, source Source, userAgent string) (subscriptionDoc, error) {
+func refreshSource(ctx context.Context, source Source, userAgent string, stage func(string, map[string]any) func(error, map[string]any)) (subscriptionDoc, error) {
 	switch sourceType(source) {
 	case sourceTypeRemoteSubscription:
-		return fetchSource(ctx, source, userAgent)
+		return fetchSource(ctx, source, userAgent, stage)
 	case sourceTypeInlineProxyURIs:
-		return parseProxyURIList(source.ID, []byte(strings.Join(source.URIs, "\n")))
+		fields := mergeStageFields(sourceStageFields(source), map[string]any{"uri_count": len(source.URIs)})
+		finish := stage("parse_inline_source", fields)
+		doc, err := parseProxyURIList(sourceLogLabel(source), []byte(strings.Join(source.URIs, "\n")))
+		if err != nil {
+			finish(err, nil)
+			return subscriptionDoc{}, err
+		}
+		finish(nil, map[string]any{"format": doc.Format, "proxies": len(proxyMaps(doc.Data))})
+		return doc, nil
 	default:
-		return subscriptionDoc{}, fmt.Errorf("source %q type %q is not supported", source.ID, sourceType(source))
+		return subscriptionDoc{}, fmt.Errorf("%s type %q is not supported", sourceLogLabel(source), sourceType(source))
 	}
 }
 
-func fetchSource(ctx context.Context, source Source, userAgent string) (subscriptionDoc, error) {
+func fetchSource(ctx context.Context, source Source, userAgent string, stage func(string, map[string]any) func(error, map[string]any)) (subscriptionDoc, error) {
+	identity := sourceStageFields(source)
+	finish := stage("build_subscription_request", mergeStageFields(identity, map[string]any{"method": http.MethodGet, "user_agent": userAgent}))
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, sourcePrimaryURI(source), nil)
 	if err != nil {
-		return subscriptionDoc{}, fmt.Errorf("source %q request could not be created", source.ID)
+		err = fmt.Errorf("%s request could not be created", sourceLogLabel(source))
+		finish(err, nil)
+		return subscriptionDoc{}, err
 	}
 	req.Header.Set("User-Agent", userAgent)
 	req.Header.Set("Accept", "*/*")
+	finish(nil, nil)
+
+	finish = stage("fetch_subscription_response", identity)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return subscriptionDoc{}, fmt.Errorf("source %q request failed", source.ID)
+		err = fmt.Errorf("%s request failed: %v", sourceLogLabel(source), err)
+		finish(err, map[string]any{"failure_kind": "transport"})
+		return subscriptionDoc{}, err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
-		return subscriptionDoc{}, fmt.Errorf("source %q request failed: %s", source.ID, resp.Status)
+	responseFields := map[string]any{
+		"status":            resp.Status,
+		"status_code":       resp.StatusCode,
+		"protocol":          resp.Proto,
+		"content_type":      resp.Header.Get("Content-Type"),
+		"content_encoding":  resp.Header.Get("Content-Encoding"),
+		"content_length":    resp.ContentLength,
+		"transfer_encoding": append([]string(nil), resp.TransferEncoding...),
+		"uncompressed":      resp.Uncompressed,
+		"response_uri":      MaskURI(resp.Request.URL.String()),
+		"redirected":        resp.Request.URL.String() != sourcePrimaryURI(source),
 	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, readErr := io.ReadAll(io.LimitReader(resp.Body, 4097))
+		preview := safeResponsePreview(body, source)
+		if preview != "" {
+			responseFields["response_body_preview"] = preview
+		}
+		if len(body) > 4096 {
+			responseFields["response_body_truncated"] = true
+		}
+		if readErr != nil {
+			responseFields["response_read_error"] = readErr.Error()
+		}
+		message := fmt.Sprintf("%s request failed: HTTP %s", sourceLogLabel(source), resp.Status)
+		if preview != "" {
+			message += "; response: " + preview
+		}
+		err = errors.New(message)
+		finish(err, responseFields)
+		return subscriptionDoc{}, err
+	}
+	finish(nil, responseFields)
+
+	finish = stage("read_subscription_response", identity)
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return subscriptionDoc{}, fmt.Errorf("source %q response could not be read", source.ID)
+		initialErr := err
+		partialSum := sha256.Sum256(body)
+		_ = resp.Body.Close()
+		recovered, recovery, recoveryErr := recoverSubscriptionWithRanges(ctx, source, userAgent, stage, initialErr, len(body))
+		if recoveryErr != nil {
+			err = fmt.Errorf("%s response could not be read: %v; range chunk recovery failed: %w", sourceLogLabel(source), initialErr, recoveryErr)
+			finish(err, map[string]any{
+				"bytes_received":      len(body),
+				"partial_body_sha256": hex.EncodeToString(partialSum[:]),
+				"payload_logged":      false,
+				"recovery":            "range_chunks",
+				"recovery_error":      recoveryErr.Error(),
+			})
+			return subscriptionDoc{}, err
+		}
+		body = recovered
+		finish(nil, map[string]any{
+			"bytes":              len(body),
+			"initial_read_error": initialErr.Error(),
+			"recovered":          true,
+			"recovery":           "range_chunks",
+			"range_chunks":       recovery.Chunks,
+			"range_total_bytes":  recovery.TotalBytes,
+			"body_sha256":        recovery.BodySHA256,
+		})
+	} else {
+		finish(nil, map[string]any{"bytes": len(body), "recovered": false})
 	}
-	doc, err := parseRemoteSubscription(source.ID, body)
+
+	finish = stage("parse_subscription_response", mergeStageFields(identity, map[string]any{"bytes": len(body)}))
+	doc, err := parseRemoteSubscription(sourceLogLabel(source), body)
 	if err != nil {
+		bodySum := sha256.Sum256(body)
+		finish(err, map[string]any{"body_sha256": hex.EncodeToString(bodySum[:]), "payload_logged": false})
 		return subscriptionDoc{}, err
 	}
 	doc.Raw = append([]byte(nil), body...)
+	summary := summarizeMap(doc.Data)
+	finish(nil, map[string]any{"format": doc.Format, "proxies": summary.ProxiesCount, "proxy_groups": summary.ProxyGroupsCount, "rules": summary.RulesCount})
 	return doc, nil
+}
+
+type rangeRecoverySummary struct {
+	Chunks     int
+	TotalBytes int
+	BodySHA256 string
+}
+
+type rangeResponse struct {
+	Body         []byte
+	Start        int
+	End          int
+	Total        int
+	ValidatorKey string
+	Validator    string
+}
+
+func recoverSubscriptionWithRanges(ctx context.Context, source Source, userAgent string, stage func(string, map[string]any) func(error, map[string]any), trigger error, partialBytes int) ([]byte, rangeRecoverySummary, error) {
+	identity := sourceStageFields(source)
+	finish := stage("range_chunk_recovery", mergeStageFields(identity, map[string]any{
+		"trigger_error": trigger.Error(),
+		"partial_bytes": partialBytes,
+		"chunk_size":    subscriptionRangeChunkSize,
+		"overlap_bytes": subscriptionRangeOverlap,
+		"protocol":      "HTTP/1.1",
+	}))
+	client := subscriptionRangeHTTPClient()
+	defer client.CloseIdleConnections()
+
+	firstEnd := subscriptionRangeChunkSize - 1
+	first, err := fetchSubscriptionRange(ctx, client, source, userAgent, 0, firstEnd, "assemble", 1, "", "", stage)
+	if err != nil {
+		finish(err, nil)
+		return nil, rangeRecoverySummary{}, err
+	}
+	if first.Total <= 0 || first.Total > maxRangeRecoveryBytes {
+		err := fmt.Errorf("range response total %d is outside allowed range 1..%d", first.Total, maxRangeRecoveryBytes)
+		finish(err, map[string]any{"range_total_bytes": first.Total})
+		return nil, rangeRecoverySummary{}, err
+	}
+	if first.End >= first.Total {
+		err := fmt.Errorf("range response end %d exceeds total %d", first.End, first.Total)
+		finish(err, nil)
+		return nil, rangeRecoverySummary{}, err
+	}
+
+	body := append([]byte(nil), first.Body...)
+	chunks := 1
+	previousEnd := first.End
+	for len(body) < first.Total {
+		start := previousEnd + 1 - subscriptionRangeOverlap
+		if start < 0 {
+			start = 0
+		}
+		end := start + subscriptionRangeChunkSize - 1
+		if end >= first.Total {
+			end = first.Total - 1
+		}
+		chunks++
+		part, err := fetchSubscriptionRange(ctx, client, source, userAgent, start, end, "assemble", chunks, first.ValidatorKey, first.Validator, stage)
+		if err != nil {
+			finish(err, map[string]any{"range_chunks": chunks - 1, "range_total_bytes": first.Total})
+			return nil, rangeRecoverySummary{}, err
+		}
+		if part.Total != first.Total {
+			err := fmt.Errorf("range response total changed from %d to %d", first.Total, part.Total)
+			finish(err, map[string]any{"range_chunks": chunks})
+			return nil, rangeRecoverySummary{}, err
+		}
+		if part.ValidatorKey != first.ValidatorKey || part.Validator != first.Validator {
+			err := fmt.Errorf("range response validator changed during recovery")
+			finish(err, map[string]any{"range_chunks": chunks})
+			return nil, rangeRecoverySummary{}, err
+		}
+		overlap := previousEnd - start + 1
+		if overlap < 0 || overlap > len(part.Body) || start+overlap > len(body) {
+			err := fmt.Errorf("range overlap %d is invalid", overlap)
+			finish(err, map[string]any{"range_chunks": chunks})
+			return nil, rangeRecoverySummary{}, err
+		}
+		if !bytes.Equal(body[start:start+overlap], part.Body[:overlap]) {
+			err := fmt.Errorf("range overlap mismatch at bytes %d-%d", start, start+overlap-1)
+			finish(err, map[string]any{"range_chunks": chunks})
+			return nil, rangeRecoverySummary{}, err
+		}
+		body = append(body, part.Body[overlap:]...)
+		previousEnd = part.End
+	}
+	if len(body) != first.Total {
+		err := fmt.Errorf("assembled range body has %d bytes, expected %d", len(body), first.Total)
+		finish(err, map[string]any{"range_chunks": chunks})
+		return nil, rangeRecoverySummary{}, err
+	}
+
+	verifyFirst, err := fetchSubscriptionRange(ctx, client, source, userAgent, 0, first.End, "verify_first", chunks+1, first.ValidatorKey, first.Validator, stage)
+	if err != nil {
+		finish(err, map[string]any{"range_chunks": chunks})
+		return nil, rangeRecoverySummary{}, err
+	}
+	if verifyFirst.Total != first.Total || verifyFirst.ValidatorKey != first.ValidatorKey || verifyFirst.Validator != first.Validator || !bytes.Equal(verifyFirst.Body, body[:len(verifyFirst.Body)]) {
+		err := fmt.Errorf("range first-boundary verification changed during recovery")
+		finish(err, map[string]any{"range_chunks": chunks})
+		return nil, rangeRecoverySummary{}, err
+	}
+
+	lastStart := first.Total - subscriptionRangeChunkSize
+	if lastStart < 0 {
+		lastStart = 0
+	}
+	verifyLast, err := fetchSubscriptionRange(ctx, client, source, userAgent, lastStart, first.Total-1, "verify_last", chunks+2, first.ValidatorKey, first.Validator, stage)
+	if err != nil {
+		finish(err, map[string]any{"range_chunks": chunks})
+		return nil, rangeRecoverySummary{}, err
+	}
+	if verifyLast.Total != first.Total || verifyLast.ValidatorKey != first.ValidatorKey || verifyLast.Validator != first.Validator || !bytes.Equal(verifyLast.Body, body[lastStart:]) {
+		err := fmt.Errorf("range last-boundary verification changed during recovery")
+		finish(err, map[string]any{"range_chunks": chunks})
+		return nil, rangeRecoverySummary{}, err
+	}
+
+	bodySum := sha256.Sum256(body)
+	summary := rangeRecoverySummary{Chunks: chunks, TotalBytes: len(body), BodySHA256: hex.EncodeToString(bodySum[:])}
+	finish(nil, map[string]any{
+		"range_chunks":       chunks,
+		"verification_reads": 2,
+		"range_total_bytes":  len(body),
+		"body_sha256":        summary.BodySHA256,
+		"validator":          rangeValidatorName(first.ValidatorKey),
+	})
+	return body, summary, nil
+}
+
+func fetchSubscriptionRange(ctx context.Context, client *http.Client, source Source, userAgent string, start, end int, phase string, index int, validatorKey, validator string, stage func(string, map[string]any) func(error, map[string]any)) (rangeResponse, error) {
+	identity := sourceStageFields(source)
+	fields := mergeStageFields(identity, map[string]any{
+		"chunk_index": index,
+		"phase":       phase,
+		"range_start": start,
+		"range_end":   end,
+		"protocol":    "HTTP/1.1",
+	})
+	finish := stage("range_chunk", fields)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, sourcePrimaryURI(source), nil)
+	if err != nil {
+		err = fmt.Errorf("range request could not be created")
+		finish(err, nil)
+		return rangeResponse{}, err
+	}
+	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("Accept", "*/*")
+	req.Header.Set("Accept-Encoding", "identity")
+	req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", start, end))
+	if validatorKey != "" && validator != "" {
+		req.Header.Set("If-Range", validator)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		err = fmt.Errorf("range request %d-%d failed: %w", start, end, err)
+		finish(err, map[string]any{"failure_kind": "transport"})
+		return rangeResponse{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
+		err = fmt.Errorf("range request %d-%d failed: HTTP %s", start, end, resp.Status)
+		finish(err, map[string]any{"status": resp.Status, "status_code": resp.StatusCode, "response_uri": MaskURI(resp.Request.URL.String())})
+		return rangeResponse{}, err
+	}
+	actualStart, actualEnd, total, err := parseContentRange(resp.Header.Get("Content-Range"))
+	if err != nil {
+		finish(err, map[string]any{"status": resp.Status, "status_code": resp.StatusCode})
+		return rangeResponse{}, err
+	}
+	if actualStart != start || actualEnd > end || (actualEnd != end && actualEnd != total-1) {
+		err = fmt.Errorf("range response was bytes %d-%d, expected %d-%d", actualStart, actualEnd, start, end)
+		finish(err, map[string]any{"range_total_bytes": total})
+		return rangeResponse{}, err
+	}
+	expectedBytes := actualEnd - actualStart + 1
+	body, readErr := io.ReadAll(io.LimitReader(resp.Body, int64(expectedBytes+1)))
+	if readErr != nil {
+		err = fmt.Errorf("range response %d-%d could not be read: %w", start, end, readErr)
+		finish(err, map[string]any{"bytes_received": len(body), "expected_bytes": expectedBytes})
+		return rangeResponse{}, err
+	}
+	if len(body) != expectedBytes {
+		err = fmt.Errorf("range response %d-%d returned %d bytes, expected %d", start, end, len(body), expectedBytes)
+		finish(err, map[string]any{"bytes_received": len(body), "expected_bytes": expectedBytes})
+		return rangeResponse{}, err
+	}
+	responseValidatorKey, responseValidator := rangeValidator(resp.Header)
+	if validatorKey != "" && (responseValidatorKey != validatorKey || responseValidator != validator) {
+		err = fmt.Errorf("range response validator changed")
+		finish(err, nil)
+		return rangeResponse{}, err
+	}
+	finish(nil, map[string]any{
+		"status":            resp.Status,
+		"status_code":       resp.StatusCode,
+		"bytes":             len(body),
+		"range_total_bytes": total,
+		"response_uri":      MaskURI(resp.Request.URL.String()),
+		"validator":         rangeValidatorName(responseValidatorKey),
+	})
+	return rangeResponse{Body: body, Start: actualStart, End: actualEnd, Total: total, ValidatorKey: responseValidatorKey, Validator: responseValidator}, nil
+}
+
+func subscriptionRangeHTTPClient() *http.Client {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.Protocols = new(http.Protocols)
+	transport.Protocols.SetHTTP1(true)
+	transport.Protocols.SetHTTP2(false)
+	return &http.Client{Transport: transport}
+}
+
+func parseContentRange(value string) (int, int, int, error) {
+	matches := contentRangePattern.FindStringSubmatch(strings.TrimSpace(value))
+	if matches == nil {
+		return 0, 0, 0, fmt.Errorf("range response Content-Range %q is invalid", value)
+	}
+	values := make([]int, 3)
+	for i := range values {
+		parsed, err := strconv.ParseInt(matches[i+1], 10, 64)
+		if err != nil || parsed > int64(maxRangeRecoveryBytes) {
+			return 0, 0, 0, fmt.Errorf("range response Content-Range %q is outside supported limits", value)
+		}
+		values[i] = int(parsed)
+	}
+	if values[0] < 0 || values[1] < values[0] || values[2] <= values[1] {
+		return 0, 0, 0, fmt.Errorf("range response Content-Range %q is inconsistent", value)
+	}
+	return values[0], values[1], values[2], nil
+}
+
+func rangeValidator(header http.Header) (string, string) {
+	if value := strings.TrimSpace(header.Get("ETag")); value != "" {
+		return "etag", value
+	}
+	if value := strings.TrimSpace(header.Get("Last-Modified")); value != "" {
+		return "last_modified", value
+	}
+	return "", ""
+}
+
+func rangeValidatorName(key string) string {
+	if key == "" {
+		return "overlap_and_boundary_recheck"
+	}
+	return key
+}
+
+func sourceStageFields(source Source) map[string]any {
+	return map[string]any{
+		"display_id": sourceDisplayName(source),
+		"type":       sourceType(source),
+		"uri":        MaskURI(sourcePrimaryURI(source)),
+	}
+}
+
+func sourceLogLabel(source Source) string {
+	return fmt.Sprintf("subscription %s (%s)", sourceDisplayName(source), MaskURI(sourcePrimaryURI(source)))
+}
+
+func cloneStageFields(fields map[string]any) map[string]any {
+	return mergeStageFields(nil, fields)
+}
+
+func mergeStageFields(base, extra map[string]any) map[string]any {
+	out := map[string]any{}
+	for key, value := range base {
+		out[key] = value
+	}
+	for key, value := range extra {
+		out[key] = value
+	}
+	return out
+}
+
+func safeResponsePreview(body []byte, source Source) string {
+	const maxPreviewBytes = 4096
+	if len(body) > maxPreviewBytes {
+		body = body[:maxPreviewBytes]
+	}
+	preview := strings.ToValidUTF8(string(body), "�")
+	preview = strings.Join(strings.Fields(preview), " ")
+	if preview == "" {
+		return ""
+	}
+	rawURI := sourcePrimaryURI(source)
+	if rawURI != "" {
+		preview = strings.ReplaceAll(preview, rawURI, MaskURI(rawURI))
+		if parsed, err := url.Parse(rawURI); err == nil {
+			for _, values := range parsed.Query() {
+				for _, value := range values {
+					if value != "" {
+						preview = strings.ReplaceAll(preview, value, "<redacted>")
+					}
+				}
+			}
+		}
+	}
+	preview = sensitiveResponseFieldPattern.ReplaceAllString(preview, `${1}${2}<redacted>`)
+	preview = responseURLPattern.ReplaceAllStringFunc(preview, MaskURI)
+	return preview
 }
 
 func parseRemoteSubscription(sourceID string, data []byte) (subscriptionDoc, error) {

@@ -285,7 +285,14 @@ MCP subscription bootstrap tools:
   them, write `.runtime/subscriptions/<id>.gob`, and merge the effective
   `subscription.gob`. It also returns proxy-node diffs and, when
   `localclash-intent.json` exists, reevaluates saved selectors against the refreshed
-  node list.
+  node list. Refresh emits structured stage logs for source selection, HTTP
+  response, body read, parsing, artifact writes, and merge. Source events use
+  the two-digit display ID and a masked URI; HTTP errors include a bounded,
+  redacted response preview without subscription query secrets. If a successful
+  response is truncated by the peer, refresh can explicitly recover it through
+  logged HTTP/1.1 64 KiB range chunks. Recovery requires a consistent total,
+  exact byte counts, matching 256-byte overlaps, and repeated first/last boundary
+  reads; any mismatch fails without writing a partial or stale artifact.
 
 Subscription tools do not ask the agent for subscription config, runtime
 artifact, or merged output paths. The caller supplies only subscription source

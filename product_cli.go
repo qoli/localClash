@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"localclash/internal/appinit"
@@ -204,6 +205,7 @@ func runProductSubscription(args []string, state appinit.RuntimeState) error {
 			MergedPath: state.Paths.SubscriptionPath,
 			Force:      true,
 			UserAgent:  subscriptions.DefaultUserAgent,
+			OnStage:    productSubscriptionStageLogger(os.Stderr),
 		})
 		if err != nil {
 			return err
@@ -211,6 +213,32 @@ func runProductSubscription(args []string, state appinit.RuntimeState) error {
 		return printProductOK(productEnvelope{OK: true, Changed: true, Summary: "Subscription artifacts refreshed.", Status: result, Changes: []string{"subscriptions_refreshed"}, Warnings: result.Warnings})
 	default:
 		return fmt.Errorf("unknown subscription subcommand %q", args[0])
+	}
+}
+
+func productSubscriptionStageLogger(w io.Writer) func(subscriptions.StageEvent) {
+	var mu sync.Mutex
+	return func(event subscriptions.StageEvent) {
+		record := map[string]any{
+			"ts":          time.Now().UTC().Format(time.RFC3339Nano),
+			"component":   "subscription_refresh",
+			"stage":       event.Stage,
+			"event":       event.Event,
+			"duration_ms": event.DurationMS,
+		}
+		if event.Error != "" {
+			record["error"] = event.Error
+		}
+		for key, value := range event.Fields {
+			record[key] = value
+		}
+		data, err := json.Marshal(record)
+		if err != nil {
+			return
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		_, _ = fmt.Fprintln(w, string(data))
 	}
 }
 

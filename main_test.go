@@ -19,6 +19,7 @@ import (
 	"localclash/internal/coredownload"
 	"localclash/internal/rules"
 	"localclash/internal/runtimeprofile"
+	"localclash/internal/subscriptions"
 
 	"gopkg.in/yaml.v3"
 )
@@ -32,6 +33,33 @@ func TestRunResetDoesNotBootstrapRuntimeFirst(t *testing.T) {
 	}
 	if _, err := os.Stat(".runtime"); !os.IsNotExist(err) {
 		t.Fatalf("reset should run before bootstrap creates .runtime, err=%v", err)
+	}
+}
+
+func TestProductSubscriptionStageLoggerWritesShareableJSONL(t *testing.T) {
+	var output strings.Builder
+	logger := productSubscriptionStageLogger(&output)
+	logger(subscriptions.StageEvent{
+		Stage:      "fetch_subscription_response",
+		Event:      "error",
+		DurationMS: 12,
+		Error:      "subscription 07 request failed: HTTP 400 Bad Request",
+		Fields: map[string]any{
+			"display_id":  "07",
+			"uri":         "https://example.com/sub?...",
+			"status_code": 400,
+		},
+	})
+
+	var record map[string]any
+	if err := json.Unmarshal([]byte(output.String()), &record); err != nil {
+		t.Fatalf("subscription stage log = %q, error = %v", output.String(), err)
+	}
+	if record["component"] != "subscription_refresh" || record["stage"] != "fetch_subscription_response" || record["event"] != "error" {
+		t.Fatalf("stage log = %+v, want subscription refresh error identity", record)
+	}
+	if record["display_id"] != "07" || record["uri"] != "https://example.com/sub?..." || record["status_code"] != float64(400) {
+		t.Fatalf("stage log = %+v, want display ID, URI, and HTTP status", record)
 	}
 }
 

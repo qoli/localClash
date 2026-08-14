@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -512,6 +513,174 @@ proxies:
 	assertNoTokenLeak(t, result)
 }
 
+func TestRefreshHTTPErrorLogsDisplayIdentityAndSafeResponseDetails(t *testing.T) {
+	const secret = "provider-secret-token"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = fmt.Fprintf(w, `{"message":"subscription expired","token":"%s","request":"%s"}`, secret, r.URL.String())
+	}))
+	defer server.Close()
+
+	dir := t.TempDir()
+	config := filepath.Join(dir, "localclash-subscriptions.json")
+	rawURL := server.URL + "/sub?token=" + secret
+	writeTestFile(t, config, fmt.Sprintf(`version: 1
+sources:
+  - id: S-internal-only
+    display_name: "07"
+    type: remote_subscription
+    uri: %s
+`, rawURL))
+	var events []StageEvent
+	_, err := Refresh(context.Background(), RefreshOptions{
+		ConfigPath: config,
+		RuntimeDir: filepath.Join(dir, ".runtime", "subscriptions"),
+		MergedPath: filepath.Join(dir, "subscription.gob"),
+		OnStage: func(event StageEvent) {
+			events = append(events, event)
+		},
+	})
+	if err == nil {
+		t.Fatal("refresh error = nil, want HTTP 400 failure")
+	}
+	errorText := err.Error()
+	for _, want := range []string{"subscription 07", server.URL + "/sub?...", "HTTP 400 Bad Request", "subscription expired"} {
+		if !strings.Contains(errorText, want) {
+			t.Fatalf("error = %q, want %q", errorText, want)
+		}
+	}
+	for _, banned := range []string{secret, "S-internal-only"} {
+		if strings.Contains(errorText, banned) {
+			t.Fatalf("error leaked %q: %s", banned, errorText)
+		}
+	}
+
+	event := findStageEvent(t, events, "fetch_subscription_response", "error")
+	if got := event.Fields["display_id"]; got != "07" {
+		t.Fatalf("display_id = %v, want 07", got)
+	}
+	if got := event.Fields["status_code"]; got != http.StatusBadRequest {
+		t.Fatalf("status_code = %v, want 400", got)
+	}
+	preview, _ := event.Fields["response_body_preview"].(string)
+	if !strings.Contains(preview, "subscription expired") || !strings.Contains(preview, "<redacted>") {
+		t.Fatalf("response_body_preview = %q, want provider message with redaction", preview)
+	}
+	data, marshalErr := json.Marshal(events)
+	if marshalErr != nil {
+		t.Fatal(marshalErr)
+	}
+	for _, banned := range []string{secret, "S-internal-only"} {
+		if strings.Contains(string(data), banned) {
+			t.Fatalf("stage log leaked %q: %s", banned, data)
+		}
+	}
+
+	selection := findStageEvent(t, events, "select_sources", "done")
+	selected, ok := selection.Fields["selected_sources"].([]map[string]any)
+	if !ok || len(selected) != 1 || selected[0]["display_id"] != "07" || selected[0]["uri"] != server.URL+"/sub?..." {
+		t.Fatalf("selected_sources = %#v, want display ID to masked URI mapping", selection.Fields["selected_sources"])
+	}
+}
+
+func TestRefreshRecoversTruncatedSubscriptionWithVerifiedRanges(t *testing.T) {
+	body := largeSubscriptionBody(1800)
+	server := newTruncatedRangeServer(t, body, "success")
+	defer server.Close()
+	paths := writeRefreshConfig(t, []Source{{URI: server.URL + "/sub?token=secret-token"}})
+	var events []StageEvent
+
+	result, err := Refresh(context.Background(), RefreshOptions{
+		ConfigPath: paths.config,
+		RuntimeDir: paths.runtimeDir,
+		MergedPath: paths.merged,
+		OnStage: func(event StageEvent) {
+			events = append(events, event)
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Merged.ProxiesCount != 1800 {
+		t.Fatalf("merged proxies = %d, want 1800", result.Merged.ProxiesCount)
+	}
+	if artifact := readTestFile(t, filepath.Join(paths.runtimeDir, result.Sources[0].ID+".gob")); artifact != string(body) {
+		t.Fatalf("recovered artifact differs from complete response: got %d bytes, want %d", len(artifact), len(body))
+	}
+	recovery := findStageEvent(t, events, "range_chunk_recovery", "done")
+	if chunks, ok := recovery.Fields["range_chunks"].(int); !ok || chunks < 2 {
+		t.Fatalf("range_chunks = %#v, want at least 2", recovery.Fields["range_chunks"])
+	}
+	if got := recovery.Fields["range_total_bytes"]; got != len(body) {
+		t.Fatalf("range_total_bytes = %#v, want %d", got, len(body))
+	}
+	read := findStageEvent(t, events, "read_subscription_response", "done")
+	if got := read.Fields["recovered"]; got != true {
+		t.Fatalf("read recovered = %#v, want true", got)
+	}
+	assertNoTokenLeak(t, events)
+}
+
+func TestRefreshRangeRecoveryAcceptsClampedSmallPayload(t *testing.T) {
+	body := largeSubscriptionBody(80)
+	server := newTruncatedRangeServer(t, body, "success")
+	defer server.Close()
+	paths := writeRefreshConfig(t, []Source{{URI: server.URL + "/sub?token=secret-token"}})
+
+	result, err := Refresh(context.Background(), RefreshOptions{
+		ConfigPath: paths.config,
+		RuntimeDir: paths.runtimeDir,
+		MergedPath: paths.merged,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Merged.ProxiesCount != 80 {
+		t.Fatalf("merged proxies = %d, want 80", result.Merged.ProxiesCount)
+	}
+}
+
+func TestRefreshRangeRecoveryRejectsUnverifiableResponses(t *testing.T) {
+	body := largeSubscriptionBody(1800)
+	tests := []struct {
+		name string
+		mode string
+		want string
+	}{
+		{name: "missing content range", mode: "missing_content_range", want: "Content-Range"},
+		{name: "changing total", mode: "changing_total", want: "total changed"},
+		{name: "overlap mismatch", mode: "overlap_mismatch", want: "overlap mismatch"},
+		{name: "short chunk", mode: "short_chunk", want: "could not be read"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := newTruncatedRangeServer(t, body, tt.mode)
+			defer server.Close()
+			paths := writeRefreshConfig(t, []Source{{URI: server.URL + "/sub?token=secret-token"}})
+			var events []StageEvent
+
+			_, err := Refresh(context.Background(), RefreshOptions{
+				ConfigPath: paths.config,
+				RuntimeDir: paths.runtimeDir,
+				MergedPath: paths.merged,
+				OnStage: func(event StageEvent) {
+					events = append(events, event)
+				},
+			})
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("error = %v, want %q", err, tt.want)
+			}
+			findStageEvent(t, events, "range_chunk_recovery", "error")
+			if _, statErr := os.Stat(paths.merged); !os.IsNotExist(statErr) {
+				t.Fatalf("merged artifact exists after rejected recovery: %v", statErr)
+			}
+			assertNoTokenLeak(t, events)
+			assertNoTokenLeak(t, err.Error())
+		})
+	}
+}
+
 func TestRefreshSingleSourcePreservesNodeNames(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`proxies:
@@ -809,6 +978,92 @@ func findStageEvent(t *testing.T, events []StageEvent, stage, event string) Stag
 	}
 	t.Fatalf("missing stage event %s/%s in %+v", stage, event, events)
 	return StageEvent{}
+}
+
+func largeSubscriptionBody(proxyCount int) []byte {
+	var body strings.Builder
+	body.WriteString("proxies:\n")
+	for i := 0; i < proxyCount; i++ {
+		fmt.Fprintf(&body, "  - name: Node %04d\n    type: ss\n    server: node-%04d.example\n    password: test-value\n", i, i)
+	}
+	return []byte(body.String())
+}
+
+func newTruncatedRangeServer(t *testing.T, body []byte, mode string) *httptest.Server {
+	t.Helper()
+	rangeCalls := 0
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rangeHeader := r.Header.Get("Range")
+		if rangeHeader == "" {
+			w.Header().Set("Content-Type", "text/yaml")
+			w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+			w.WriteHeader(http.StatusOK)
+			limit := 4096
+			if limit > len(body) {
+				limit = len(body) / 2
+			}
+			_, _ = w.Write(body[:limit])
+			return
+		}
+
+		rangeCalls++
+		start, end, err := parseTestRange(rangeHeader)
+		if err != nil {
+			t.Errorf("Range = %q: %v", rangeHeader, err)
+			http.Error(w, "bad range", http.StatusBadRequest)
+			return
+		}
+		if start >= len(body) {
+			http.Error(w, "range outside body", http.StatusRequestedRangeNotSatisfiable)
+			return
+		}
+		if end >= len(body) {
+			end = len(body) - 1
+		}
+		responseBody := append([]byte(nil), body[start:end+1]...)
+		headerTotal := len(body)
+		switch mode {
+		case "missing_content_range":
+		case "changing_total":
+			if rangeCalls >= 2 {
+				headerTotal++
+			}
+			w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, headerTotal))
+		case "overlap_mismatch":
+			if rangeCalls == 2 {
+				responseBody[0] ^= 0xff
+			}
+			w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, headerTotal))
+		case "short_chunk":
+			w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, headerTotal))
+			if len(responseBody) > 0 {
+				responseBody = responseBody[:len(responseBody)-1]
+			}
+		default:
+			w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, headerTotal))
+		}
+		w.Header().Set("Content-Type", "text/yaml")
+		w.Header().Set("Content-Length", strconv.Itoa(end-start+1))
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(responseBody)
+	}))
+}
+
+func parseTestRange(value string) (int, int, error) {
+	value = strings.TrimPrefix(value, "bytes=")
+	parts := strings.Split(value, "-")
+	if len(parts) != 2 {
+		return 0, 0, fmt.Errorf("invalid byte range")
+	}
+	start, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return 0, 0, err
+	}
+	end, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return 0, 0, err
+	}
+	return start, end, nil
 }
 
 func mustSourceID(t *testing.T, rawURL string) string {
