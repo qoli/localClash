@@ -55,6 +55,13 @@ Verification:
 - x86_64 OpenWrt 測試環境的現有 dler 訂閱完整下載、解析及 artifact 合併成功；
   隔離短讀驗收則從 4,096 bytes 的 `unexpected EOF` 經 3 個 Range 分段與 2 次
   邊界重讀恢復 163,809 bytes，完成 1,800 個節點解析，MCP 與 Mihomo 保持健康。
+- GitHub Release workflow
+  [31778549896](https://github.com/qoli/localClash/actions/runs/31778549896)
+  的 Linux tests、兩架構 binary、base assets 及 Release 建立全部成功。
+- 7 個公開資產重新下載後，兩個 binaries 與 base assets checksum 均通過；
+  manifest 宣告 `v0.1.52` 且所有下載 URL 指向同版本，base assets 亦確認
+  `🧠 AI` 保持 `⚡ 自动选择` 為首選並加入 `🌐 全球直连`；tag、遠端 `main`
+  與發佈 commit 在發佈時同為 `3512734`。
 
 ## 2026-08-12
 
