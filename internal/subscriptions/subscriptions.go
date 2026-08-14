@@ -1456,26 +1456,80 @@ func mergeSubscriptions(sources []Source, docs map[string]subscriptionDoc) (map[
 		if !ok {
 			continue
 		}
-		for _, rawProxy := range anySlice(doc.Data["proxies"]) {
-			proxy := cloneMap(rawProxy.(map[string]any))
-			originalName := stringValue(proxy["name"])
-			name := originalName
-			if prefixSource {
-				name = "[" + sourceDisplayName(source) + "] " + name
-			}
-			// Mihomo requires unique proxy names, but unsafe subscription
-			// payloads can contain duplicates. Normalize duplicates during
-			// merge so the generated artifact remains selector-safe.
-			name = uniqueProxyName(name, usedNames)
-			if name != originalName {
-				renamed++
-			}
-			proxy["name"] = name
-			usedNames[name] = true
-			mergedProxies = append(mergedProxies, proxy)
+		proxies, sourceRenamed, err := renameSourceProxies(source, doc, prefixSource, usedNames)
+		if err != nil {
+			return nil, 0, err
 		}
+		mergedProxies = append(mergedProxies, proxies...)
+		renamed += sourceRenamed
 	}
 	return map[string]any{"proxies": mergedProxies}, renamed, nil
+}
+
+type plannedProxyRename struct {
+	proxy        map[string]any
+	originalName string
+	newName      string
+}
+
+func renameSourceProxies(source Source, doc subscriptionDoc, prefixSource bool, usedNames map[string]bool) ([]any, int, error) {
+	plans := make([]plannedProxyRename, 0, len(anySlice(doc.Data["proxies"])))
+	renamedTargets := map[string][]string{}
+	renamed := 0
+
+	// Plan every final name before rewriting references. A dialer-proxy may
+	// point forward to a proxy that appears later in the same subscription.
+	for _, rawProxy := range anySlice(doc.Data["proxies"]) {
+		proxy, ok := rawProxy.(map[string]any)
+		if !ok {
+			return nil, 0, fmt.Errorf("source %q subscription contains an invalid proxy entry", source.ID)
+		}
+		proxy = cloneMap(proxy)
+		originalName := stringValue(proxy["name"])
+		if strings.TrimSpace(originalName) == "" {
+			return nil, 0, fmt.Errorf("source %q subscription contains a proxy without name", source.ID)
+		}
+
+		newName := originalName
+		if prefixSource {
+			newName = "[" + sourceDisplayName(source) + "] " + newName
+		}
+		// Mihomo requires unique proxy names, but unsafe subscription
+		// payloads can contain duplicates. Normalize duplicates during
+		// merge so the generated artifact remains selector-safe.
+		newName = uniqueProxyName(newName, usedNames)
+		usedNames[newName] = true
+		renamedTargets[originalName] = append(renamedTargets[originalName], newName)
+		plans = append(plans, plannedProxyRename{proxy: proxy, originalName: originalName, newName: newName})
+		if newName != originalName {
+			renamed++
+		}
+	}
+
+	proxies := make([]any, 0, len(plans))
+	for _, plan := range plans {
+		plan.proxy["name"] = plan.newName
+		rawDialerProxy, hasDialerProxy := plan.proxy["dialer-proxy"]
+		if hasDialerProxy {
+			dialerProxy, ok := rawDialerProxy.(string)
+			if !ok || strings.TrimSpace(dialerProxy) == "" {
+				return nil, 0, fmt.Errorf("source %q proxy %q has invalid dialer-proxy; expected a non-empty proxy or policy-group name", source.ID, plan.originalName)
+			}
+			targets := renamedTargets[dialerProxy]
+			switch len(targets) {
+			case 0:
+				// The reference may name a localClash-owned policy group, which
+				// is outside the subscription source and must remain unchanged.
+			case 1:
+				plan.proxy["dialer-proxy"] = targets[0]
+			default:
+				return nil, 0, fmt.Errorf("source %q proxy %q dialer-proxy %q is ambiguous: %d proxies share that name", source.ID, plan.originalName, dialerProxy, len(targets))
+			}
+		}
+		proxies = append(proxies, plan.proxy)
+	}
+
+	return proxies, renamed, nil
 }
 
 func uniqueProxyName(name string, used map[string]bool) string {

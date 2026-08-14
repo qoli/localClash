@@ -289,6 +289,109 @@ rules:
 	assertNoTokenLeak(t, result)
 }
 
+func TestMergeSubscriptionsRewritesDialerProxyWithinItsSource(t *testing.T) {
+	sources := []Source{
+		{ID: "first", DisplayName: "01"},
+		{ID: "second", DisplayName: "02"},
+	}
+	docs := map[string]subscriptionDoc{
+		"first": mustParseSubscription(t, "first", `proxies:
+  - name: chain
+    type: ss
+    dialer-proxy: relay
+  - name: relay
+    type: ss
+`),
+		"second": mustParseSubscription(t, "second", `proxies:
+  - name: chain
+    type: ss
+    dialer-proxy: relay
+  - name: relay
+    type: ss
+`),
+	}
+
+	merged, renamed, err := mergeSubscriptions(sources, docs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if renamed != 4 {
+		t.Fatalf("renamed = %d, want 4", renamed)
+	}
+	proxies := mergedProxiesByName(t, merged)
+	for chain, relay := range map[string]string{
+		"[01] chain": "[01] relay",
+		"[02] chain": "[02] relay",
+	} {
+		if got := stringValue(proxies[chain]["dialer-proxy"]); got != relay {
+			t.Fatalf("proxy %q dialer-proxy = %q, want %q", chain, got, relay)
+		}
+	}
+}
+
+func TestMergeSubscriptionsPreservesExternalDialerProxyReference(t *testing.T) {
+	sources := []Source{
+		{ID: "first", DisplayName: "01"},
+		{ID: "second", DisplayName: "02"},
+	}
+	docs := map[string]subscriptionDoc{
+		"first": mustParseSubscription(t, "first", `proxies:
+  - name: chain
+    type: ss
+    dialer-proxy: local-dialer-group
+`),
+		"second": mustParseSubscription(t, "second", `proxies:
+  - name: other
+    type: ss
+`),
+	}
+
+	merged, _, err := mergeSubscriptions(sources, docs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proxies := mergedProxiesByName(t, merged)
+	if got := stringValue(proxies["[01] chain"]["dialer-proxy"]); got != "local-dialer-group" {
+		t.Fatalf("dialer-proxy = %q, want external policy-group name unchanged", got)
+	}
+}
+
+func TestMergeSubscriptionsRejectsAmbiguousDialerProxyReference(t *testing.T) {
+	sources := []Source{{ID: "first", DisplayName: "01"}}
+	docs := map[string]subscriptionDoc{
+		"first": mustParseSubscription(t, "first", `proxies:
+  - name: chain
+    type: ss
+    dialer-proxy: relay
+  - name: relay
+    type: ss
+  - name: relay
+    type: trojan
+`),
+	}
+
+	_, _, err := mergeSubscriptions(sources, docs)
+	if err == nil || !strings.Contains(err.Error(), `dialer-proxy "relay" is ambiguous: 2 proxies share that name`) {
+		t.Fatalf("error = %v, want explicit ambiguous dialer-proxy failure", err)
+	}
+}
+
+func TestMergeSubscriptionsRejectsInvalidDialerProxyReference(t *testing.T) {
+	sources := []Source{{ID: "first", DisplayName: "01"}}
+	docs := map[string]subscriptionDoc{
+		"first": mustParseSubscription(t, "first", `proxies:
+  - name: chain
+    type: ss
+    dialer-proxy: ""
+`),
+	}
+
+	_, _, err := mergeSubscriptions(sources, docs)
+	if err == nil || !strings.Contains(err.Error(), `proxy "chain" has invalid dialer-proxy`) {
+		t.Fatalf("error = %v, want explicit invalid dialer-proxy failure", err)
+	}
+}
+
 func TestRefreshRemoteProxyURILines(t *testing.T) {
 	const body = `vless://uuid@example.com:443?security=tls&type=tcp#VLESS
 vmess://eyJ2IjoiMiIsInBzIjoiVk1lc3MiLCJhZGQiOiJ2bWVzcy5leGFtcGxlIiwicG9ydCI6IjQ0MyIsImlkIjoiYjgzMTM4MWQtNjMyNC00ZDUzLWFkNGYtOGNkYTQ4YjMwODExIiwiYWlkIjoiMCIsInNjeSI6ImF1dG8iLCJuZXQiOiJ3cyIsInR5cGUiOiJub25lIiwiaG9zdCI6ImNkbi5leGFtcGxlIiwicGF0aCI6Ii9lZGdlIiwidGxzIjoidGxzIn0=
@@ -920,6 +1023,28 @@ type refreshPaths struct {
 	config     string
 	runtimeDir string
 	merged     string
+}
+
+func mustParseSubscription(t *testing.T, sourceID, content string) subscriptionDoc {
+	t.Helper()
+	doc, err := parseSubscription(sourceID, []byte(content))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return doc
+}
+
+func mergedProxiesByName(t *testing.T, merged map[string]any) map[string]map[string]any {
+	t.Helper()
+	result := map[string]map[string]any{}
+	for _, rawProxy := range anySlice(merged["proxies"]) {
+		proxy, ok := rawProxy.(map[string]any)
+		if !ok {
+			t.Fatalf("merged proxy = %#v, want map", rawProxy)
+		}
+		result[stringValue(proxy["name"])] = proxy
+	}
+	return result
 }
 
 func writeRefreshConfig(t *testing.T, sources []Source) refreshPaths {

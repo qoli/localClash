@@ -308,6 +308,9 @@ only source of truth. `localclash-subscriptions.json` contains sensitive
 subscription URIs and must not be committed. If a saved selector in
 `localclash-intent.json` still matches after refresh, localClash updates the selected
 nodes, derives `localclash-packs.gob`, and regenerates `.runtime/mihomo/config.yaml`.
+When a multi-source merge prefixes proxy names, source-local `dialer-proxy`
+references are rewritten to the same final names. A reference to duplicate
+same-name proxies is rejected as ambiguous instead of choosing a target.
 If exact `nodes` were selected and one of those nodes disappears, the tool
 reports `state: stale_exact_nodes` with `missing_nodes` and leaves the active
 generated config unchanged. New nodes are only reported in `node_diff.added`;
