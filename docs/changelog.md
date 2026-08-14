@@ -51,6 +51,13 @@ Verification:
   457,685 bytes，完成 2 次邊界驗證；訂閱解析出 2 proxies、27 groups、10,964
   rules，成功生成配置並通過 Mihomo config-test。transport error 日誌未洩漏完整
   URI、巢狀 URL 或 token。
+- GitHub Release workflow
+  [31781914814](https://github.com/qoli/localClash/actions/runs/31781914814) 的
+  Linux tests、兩架構 binary、base assets 及 Release 建立全部成功。
+- 7 個公開資產重新下載後，精確檔名與全部 SHA-256 均通過；manifest 宣告
+  `v0.1.53`，所有下載 URL、檔案大小及 checksum 均指向並符合同版本。annotated
+  tag、發佈時的遠端 `main` 與發佈 commit 同為 `7802a8d`；其後僅新增本次驗證
+  記錄。
 
 ### localClash Core v0.1.52
 
