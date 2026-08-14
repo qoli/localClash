@@ -18,10 +18,39 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
-| localClash Core | [v0.1.52](https://github.com/qoli/localClash/releases/tag/v0.1.52) | 2026-08-14 UTC+8 |
+| localClash Core | [v0.1.53](https://github.com/qoli/localClash/releases/tag/v0.1.53) | 2026-08-14 UTC+8 |
 | localclash-luci | [v0.1.0-47](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-47) | 2026-08-14 UTC+8 |
 
 ## 2026-08-14
+
+### localClash Core v0.1.53
+
+Changes:
+
+- 訂閱 Range 分段恢復現在明確使用 HTTP/1.1，不再繼承初始請求的 HTTP/2
+  ALPN 協商；遇到部分上游的 HTTP/2 中斷時，後續分段可以穩定完成恢復。
+- 訂閱初始及分段請求的 transport error 會維持遮罩 URL，不會把完整訂閱 URI、巢狀
+  URL 或 token 寫入錯誤日誌。
+
+Release:
+
+- [qoli/localClash v0.1.53](https://github.com/qoli/localClash/releases/tag/v0.1.53)
+
+Release assets:
+
+- `localclash-linux-amd64`
+- `localclash-linux-arm64`
+- `localclash-base-assets.tar.gz`
+- `localclash-release-manifest.json`
+- 對應的 `.sha256` checksum 文件
+
+Verification:
+
+- 本地 `go test ./...`、`go vet ./...` 與 release broadcast 回歸測試通過。
+- x86_64 OpenWrt 測試環境中，初始 HTTP/2 中斷後以 8 個 HTTP/1.1 Range 分段恢復
+  457,685 bytes，完成 2 次邊界驗證；訂閱解析出 2 proxies、27 groups、10,964
+  rules，成功生成配置並通過 Mihomo config-test。transport error 日誌未洩漏完整
+  URI、巢狀 URL 或 token。
 
 ### localClash Core v0.1.52
 
