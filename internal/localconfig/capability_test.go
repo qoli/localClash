@@ -38,6 +38,40 @@ func TestResolveCapabilityProxyGroup(t *testing.T) {
 	}
 }
 
+func TestResolveOptionalCapabilityAllowsExplicitEmptyQualification(t *testing.T) {
+	resolved, err := Resolve(ResolveOptions{
+		Config: Config{ProxyGroups: map[string]ProxyGroup{
+			"ChatGPT-available": {Mode: "auto", Capability: "openai.chatgpt.mobile.v1", Optional: true},
+		}},
+		SubscriptionNodes: []SubscriptionNode{{Name: "US 01"}},
+		CapabilityNodes: map[string][]string{
+			"openai.chatgpt.mobile.v1": {},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	group := resolved.Selection.ProxyGroups["ChatGPT-available"]
+	if !group.Optional || len(group.Nodes) != 0 {
+		t.Fatalf("resolved optional capability = %+v, want explicit empty optional group", group)
+	}
+}
+
+func TestResolveRequiredCapabilityRejectsEmptyQualification(t *testing.T) {
+	_, err := Resolve(ResolveOptions{
+		Config: Config{ProxyGroups: map[string]ProxyGroup{
+			"Required": {Mode: "auto", Capability: "openai.chatgpt.mobile.v1"},
+		}},
+		SubscriptionNodes: []SubscriptionNode{{Name: "US 01"}},
+		CapabilityNodes: map[string][]string{
+			"openai.chatgpt.mobile.v1": {},
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "has no nodes") {
+		t.Fatalf("error = %v, want required empty capability rejection", err)
+	}
+}
+
 func TestResolveCapabilityUsesPersistedSelectionOutsideRefresh(t *testing.T) {
 	config := Config{
 		ProxyGroups: map[string]ProxyGroup{

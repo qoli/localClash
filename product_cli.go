@@ -16,6 +16,7 @@ import (
 
 	"localclash/internal/appinit"
 	"localclash/internal/baseassets"
+	"localclash/internal/chatgptavailable"
 	"localclash/internal/configinspect"
 	"localclash/internal/configpatch"
 	"localclash/internal/configrender"
@@ -57,6 +58,7 @@ type codedProductError struct {
 }
 
 var downloadCore = coredownload.Download
+var rebuildProductChatGPT = chatgptavailable.RebuildWithMihomo
 
 func (err codedProductError) Error() string {
 	return err.message
@@ -197,7 +199,7 @@ func runProductSubscription(args []string, state appinit.RuntimeState) error {
 		if err := parseJSONOnly("subscription refresh", args[1:]); err != nil {
 			return err
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
 		result, err := subscriptions.Refresh(ctx, subscriptions.RefreshOptions{
 			ConfigPath: state.Paths.SubscriptionConfig,
@@ -210,10 +212,122 @@ func runProductSubscription(args []string, state appinit.RuntimeState) error {
 		if err != nil {
 			return err
 		}
-		return printProductOK(productEnvelope{OK: true, Changed: true, Summary: "Subscription artifacts refreshed.", Status: result, Changes: []string{"subscriptions_refreshed"}, Warnings: result.Warnings})
+		capabilities, err := refreshProductCapabilities(ctx, state, result.MergedDoc, os.Stderr)
+		if err != nil {
+			return err
+		}
+		status := productSubscriptionRefreshStatus{RefreshResult: result, Capabilities: capabilities}
+		return printProductOK(productEnvelope{OK: true, Changed: true, Summary: "Subscription artifacts and configured capabilities refreshed.", Status: status, Changes: []string{"subscriptions_refreshed"}, Warnings: result.Warnings})
 	default:
 		return fmt.Errorf("unknown subscription subcommand %q", args[0])
 	}
+}
+
+type productSubscriptionRefreshStatus struct {
+	subscriptions.RefreshResult
+	Capabilities []chatgptavailable.Result `json:"capabilities,omitempty"`
+}
+
+func refreshProductCapabilities(ctx context.Context, state appinit.RuntimeState, subscriptionDoc map[string]any, logOutput io.Writer) ([]chatgptavailable.Result, error) {
+	configPath := productWorkspacePath(state, "localclash-intent.json")
+	config, err := localconfig.Load(configPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return []chatgptavailable.Result{}, nil
+		}
+		return nil, err
+	}
+	profiles := configuredProductCapabilityProfiles(config)
+	if len(profiles) == 0 {
+		return []chatgptavailable.Result{}, nil
+	}
+	if len(profiles) != 1 || profiles[0] != chatgptavailable.ProfileID {
+		return nil, fmt.Errorf("unsupported proxy-group capabilities: %s", strings.Join(profiles, ", "))
+	}
+	proxies, err := productSubscriptionProxyMaps(subscriptionDoc)
+	if err != nil {
+		return nil, err
+	}
+	capabilityRoot := productCapabilityRoot(state)
+	snapshotPath := filepath.Join(capabilityRoot, "chatgpt-available.json")
+	started := time.Now()
+	writeProductCapabilityStage(logOutput, "started", started, nil, map[string]any{
+		"profile":     chatgptavailable.ProfileID,
+		"proxy_count": len(proxies),
+	})
+	result, err := rebuildProductChatGPT(ctx, proxies, normalizeCorePathForState(state, state.Paths.CorePath), capabilityRoot, snapshotPath)
+	fields := map[string]any{"profile": chatgptavailable.ProfileID, "proxy_count": len(proxies)}
+	if err == nil {
+		fields["candidates"] = result.Candidates
+		fields["probed"] = result.Probed
+		fields["qualified"] = result.QualifiedCount
+		fields["observed_qualified"] = result.ObservedQualifiedCount
+		fields["retained"] = result.RetainedCount
+		fields["unavailable"] = result.UnavailableCount
+	}
+	writeProductCapabilityStage(logOutput, "done", started, err, fields)
+	if err != nil {
+		return nil, fmt.Errorf("refresh ChatGPT capability: %w", err)
+	}
+	return []chatgptavailable.Result{result}, nil
+}
+
+func writeProductCapabilityStage(w io.Writer, event string, started time.Time, stageErr error, fields map[string]any) {
+	if w == nil {
+		return
+	}
+	record := map[string]any{
+		"ts":          time.Now().UTC().Format(time.RFC3339Nano),
+		"component":   "capability_refresh",
+		"stage":       "qualify_chatgpt",
+		"event":       event,
+		"duration_ms": time.Since(started).Milliseconds(),
+	}
+	if stageErr != nil {
+		record["event"] = "error"
+		record["error"] = stageErr.Error()
+	}
+	for key, value := range fields {
+		record[key] = value
+	}
+	data, err := json.Marshal(record)
+	if err == nil {
+		_, _ = fmt.Fprintln(w, string(data))
+	}
+}
+
+func configuredProductCapabilityProfiles(config localconfig.Config) []string {
+	profiles := make([]string, 0, len(config.ProxyGroups))
+	for _, group := range config.ProxyGroups {
+		profiles = append(profiles, group.Capability)
+	}
+	return chatgptavailable.Profiles(profiles)
+}
+
+func productSubscriptionProxyMaps(doc map[string]any) ([]map[string]any, error) {
+	if doc == nil {
+		return nil, errors.New("merged subscription document is required for capability qualification")
+	}
+	rawProxies, ok := doc["proxies"].([]any)
+	if !ok || len(rawProxies) == 0 {
+		return nil, errors.New("merged subscription document has no proxies for capability qualification")
+	}
+	proxies := make([]map[string]any, 0, len(rawProxies))
+	for index, raw := range rawProxies {
+		proxy, ok := raw.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("merged subscription proxy %d is invalid for capability qualification", index)
+		}
+		proxies = append(proxies, proxy)
+	}
+	return proxies, nil
+}
+
+func productCapabilityRoot(state appinit.RuntimeState) string {
+	if root := strings.TrimSpace(state.Paths.RuntimeRoot); root != "" {
+		return filepath.Join(root, "capabilities")
+	}
+	return productWorkspacePath(state, filepath.Join(".runtime", "capabilities"))
 }
 
 func productSubscriptionStageLogger(w io.Writer) func(subscriptions.StageEvent) {
@@ -1224,11 +1338,16 @@ func renderProductConfig(state appinit.RuntimeState) (map[string]any, []string, 
 		if err != nil {
 			return nil, nil, err
 		}
+		capabilityNodes, err := loadProductCapabilityNodes(config, state)
+		if err != nil {
+			return nil, nil, err
+		}
 		resolved, err := localconfig.Resolve(localconfig.ResolveOptions{
 			Config:              config,
 			SubscriptionPath:    state.Paths.SubscriptionPath,
 			SubscriptionConfig:  state.Paths.SubscriptionConfig,
 			SubscriptionRuntime: state.Paths.SubscriptionRuntime,
+			CapabilityNodes:     capabilityNodes,
 			RulesCache:          state.Paths.RulesCacheDir,
 		})
 		if err != nil {
@@ -1260,6 +1379,21 @@ func renderProductConfig(state appinit.RuntimeState) (map[string]any, []string, 
 		"selection":       selectionPath,
 		"output":          state.Paths.GeneratedConfig,
 	}, warnings, nil
+}
+
+func loadProductCapabilityNodes(config localconfig.Config, state appinit.RuntimeState) (map[string][]string, error) {
+	profiles := configuredProductCapabilityProfiles(config)
+	if len(profiles) == 0 {
+		return map[string][]string{}, nil
+	}
+	if len(profiles) != 1 || profiles[0] != chatgptavailable.ProfileID {
+		return nil, fmt.Errorf("unsupported proxy-group capabilities: %s", strings.Join(profiles, ", "))
+	}
+	qualified, err := chatgptavailable.LoadQualified(filepath.Join(productCapabilityRoot(state), "chatgpt-available.json"))
+	if err != nil {
+		return nil, err
+	}
+	return map[string][]string{chatgptavailable.ProfileID: qualified}, nil
 }
 
 func runtimeStatusOptions(state appinit.RuntimeState) corerun.StatusOptions {

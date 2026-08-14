@@ -927,6 +927,9 @@ func resolveProxyGroupMeasured(id string, group ProxyGroup, nodes []Subscription
 			}
 			selected = group.SelectedNodes
 		}
+		if len(selected) == 0 && group.Optional {
+			return []string{}, nil
+		}
 		return resolveExactNodesMeasured(id, selected, nodes, stats)
 	}
 	if group.Match != nil {

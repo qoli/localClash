@@ -47,6 +47,17 @@ type MihomoProber struct {
 	options MihomoOptions
 }
 
+func RebuildWithMihomo(ctx context.Context, proxies []map[string]any, corePath, runtimeParent, snapshotPath string) (Result, error) {
+	prober, err := NewMihomoProber(MihomoOptions{
+		CorePath:      corePath,
+		RuntimeParent: runtimeParent,
+	})
+	if err != nil {
+		return Result{}, err
+	}
+	return Rebuild(ctx, proxies, prober, Options{SnapshotPath: snapshotPath})
+}
+
 func NewMihomoProber(options MihomoOptions) (*MihomoProber, error) {
 	options.CorePath = strings.TrimSpace(options.CorePath)
 	if options.CorePath == "" {

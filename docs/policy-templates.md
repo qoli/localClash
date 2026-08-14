@@ -79,6 +79,15 @@ existing non-empty qualified set suddenly collapses to zero, the snapshot and
 generated config are not replaced, so a transient carrier outage cannot silently
 rewrite the policy graph.
 
+The product CLI `subscription refresh --json` and MCP `subscriptions_refresh`
+both rebuild the configured capability snapshot. Snapshot schema v4 records the
+ordered qualified node names as derived state so a following `config render
+--json` or MCP `config_render` can resolve the same capability even after the
+patch registry recompiles `localclash-intent.json`. A missing, legacy, malformed,
+or unsupported capability snapshot fails explicitly and requires another
+subscription refresh. An optional capability may resolve to an explicit empty
+set; required capability groups still fail when no node qualifies.
+
 Qualification uses asymmetric hysteresis. A new proxy enters the group only
 after a successful observation. A previously qualified proxy remains eligible
 through two consecutive failed refresh observations and is removed on the third;

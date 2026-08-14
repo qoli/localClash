@@ -16,6 +16,7 @@ import (
 	"testing"
 
 	"localclash/internal/appinit"
+	"localclash/internal/chatgptavailable"
 	"localclash/internal/coredownload"
 	"localclash/internal/rules"
 	"localclash/internal/runtimeprofile"
@@ -267,6 +268,169 @@ custom_rules:
 	}
 	if _, err := os.Stat("localclash-packs.gob"); err != nil {
 		t.Fatalf("derived localclash-packs.gob missing: %v", err)
+	}
+}
+
+func TestRunProductConfigRenderUsesQualifiedCapabilitySnapshot(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+
+	writeMainTestFile(t, "subscription.gob", `proxies:
+  - name: "US 01"
+    type: ss
+    server: example.com
+    port: 443
+    cipher: none
+    password: test
+`)
+	writeMainTestFile(t, "localclash-intent.json", `version: 4
+proxy_groups:
+  ChatGPT-available:
+    mode: auto
+    capability: openai.chatgpt.mobile.v1
+    optional: true
+custom_rules:
+  - id: chatgpt_test
+    target: ChatGPT-available
+    rules:
+      - type: domain_suffix
+        value: openai.com
+`)
+	writeMainTestFile(t, filepath.Join(".runtime", "capabilities", "chatgpt-available.json"), `{
+  "version": 4,
+  "profile": "openai.chatgpt.mobile.v1",
+  "updated_at": "2026-08-15T00:00:00Z",
+  "qualified": ["US 01"],
+  "nodes": {}
+}`)
+	writeMainTestPackIndex(t, filepath.Join(".runtime", "rules", "packs"))
+
+	output := captureStdout(t, func() error {
+		return run([]string{"config", "render", "--json"})
+	})
+	var result struct {
+		OK bool `json:"ok"`
+	}
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
+		t.Fatalf("config render JSON = %q, error = %v", output, err)
+	}
+	if !result.OK {
+		t.Fatalf("config render result = %+v, want qualified capability snapshot to resolve", result)
+	}
+	generated, err := os.ReadFile(filepath.Join(".runtime", "mihomo", "config.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if text := string(generated); !strings.Contains(text, "name: ChatGPT-available") || !strings.Contains(text, "US 01") {
+		t.Fatalf("generated config did not consume qualified capability snapshot:\n%s", text)
+	}
+}
+
+func TestRunProductSubscriptionRefreshBuildsCapabilityForFollowingRender(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	t.Setenv("LOCALCLASH_WORKDIR", dir)
+
+	subscriptionServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`proxies:
+  - name: US 01
+    type: ss
+    server: us.example.com
+    port: 443
+    cipher: aes-128-gcm
+    password: secret
+`))
+	}))
+	t.Cleanup(subscriptionServer.Close)
+	replace := true
+	if _, err := subscriptions.Configure(subscriptions.ConfigureOptions{
+		ConfigPath: filepath.Join(dir, "localclash-subscriptions.json"),
+		Sources:    []subscriptions.Source{{URL: subscriptionServer.URL + "/sub", DisplayName: "01"}},
+		Replace:    &replace,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	writeMainTestFile(t, filepath.Join(dir, "localclash-intent.json"), `version: 4
+proxy_groups:
+  ChatGPT-available:
+    mode: auto
+    capability: openai.chatgpt.mobile.v1
+    optional: true
+custom_rules:
+  - id: chatgpt_test
+    target: ChatGPT-available
+    rules:
+      - type: domain_suffix
+        value: openai.com
+`)
+	writeMainTestPackIndex(t, filepath.Join(dir, ".runtime", "rules", "packs"))
+
+	previousRebuild := rebuildProductChatGPT
+	t.Cleanup(func() { rebuildProductChatGPT = previousRebuild })
+	rebuildCalled := false
+	rebuildProductChatGPT = func(_ context.Context, proxies []map[string]any, _, runtimeParent, snapshotPath string) (chatgptavailable.Result, error) {
+		rebuildCalled = true
+		if len(proxies) != 1 || proxies[0]["name"] != "US 01" {
+			t.Fatalf("capability proxies = %+v, want refreshed merged proxy", proxies)
+		}
+		if runtimeParent != filepath.Join(dir, ".runtime", "capabilities") || snapshotPath != filepath.Join(runtimeParent, "chatgpt-available.json") {
+			t.Fatalf("capability paths = %q / %q", runtimeParent, snapshotPath)
+		}
+		writeMainTestFile(t, snapshotPath, `{
+  "version": 4,
+  "profile": "openai.chatgpt.mobile.v1",
+  "updated_at": "2026-08-15T00:00:00Z",
+  "qualified": ["US 01"],
+  "nodes": {}
+}`)
+		return chatgptavailable.Result{
+			Profile:          chatgptavailable.ProfileID,
+			SnapshotPath:     snapshotPath,
+			Candidates:       1,
+			Probed:           1,
+			Qualified:        []string{"US 01"},
+			QualifiedCount:   1,
+			UnavailableCount: 0,
+		}, nil
+	}
+
+	refreshOutput := captureStdout(t, func() error {
+		return run([]string{"subscription", "refresh", "--json"})
+	})
+	if !rebuildCalled {
+		t.Fatal("subscription refresh did not rebuild the configured capability")
+	}
+	var refreshResult struct {
+		OK     bool `json:"ok"`
+		Status struct {
+			Capabilities []chatgptavailable.Result `json:"capabilities"`
+		} `json:"status"`
+	}
+	if err := json.Unmarshal([]byte(refreshOutput), &refreshResult); err != nil {
+		t.Fatalf("subscription refresh JSON = %q, error = %v", refreshOutput, err)
+	}
+	if !refreshResult.OK || len(refreshResult.Status.Capabilities) != 1 || refreshResult.Status.Capabilities[0].QualifiedCount != 1 {
+		t.Fatalf("subscription refresh result = %+v, want qualified capability evidence", refreshResult)
+	}
+
+	renderOutput := captureStdout(t, func() error {
+		return run([]string{"config", "render", "--json"})
+	})
+	var renderResult struct {
+		OK bool `json:"ok"`
+	}
+	if err := json.Unmarshal([]byte(renderOutput), &renderResult); err != nil {
+		t.Fatalf("config render JSON = %q, error = %v", renderOutput, err)
+	}
+	if !renderResult.OK {
+		t.Fatalf("config render result = %+v, want snapshot-backed render", renderResult)
+	}
+	generated, err := os.ReadFile(filepath.Join(dir, ".runtime", "mihomo", "config.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if text := string(generated); !strings.Contains(text, "name: ChatGPT-available") || !strings.Contains(text, "US 01") {
+		t.Fatalf("one-click render did not consume refreshed capability:\n%s", text)
 	}
 }
 

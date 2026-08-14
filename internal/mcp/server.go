@@ -83,19 +83,8 @@ func newServer(state *appinit.RuntimeState) *Server {
 		taskCtx:         ctx,
 		taskCancel:      cancel,
 		watchdogNotices: map[string]time.Time{},
-		rebuildChatGPT:  rebuildChatGPTCapability,
+		rebuildChatGPT:  chatgptavailable.RebuildWithMihomo,
 	}
-}
-
-func rebuildChatGPTCapability(ctx context.Context, proxies []map[string]any, corePath, runtimeParent, snapshotPath string) (chatgptavailable.Result, error) {
-	prober, err := chatgptavailable.NewMihomoProber(chatgptavailable.MihomoOptions{
-		CorePath:      corePath,
-		RuntimeParent: runtimeParent,
-	})
-	if err != nil {
-		return chatgptavailable.Result{}, err
-	}
-	return chatgptavailable.Rebuild(ctx, proxies, prober, chatgptavailable.Options{SnapshotPath: snapshotPath})
 }
 
 func (s *Server) Shutdown(ctx context.Context) error {
@@ -1182,6 +1171,7 @@ type configToolInput struct {
 	RuntimeProfile      string `json:"runtime_profile"`
 	Core                string `json:"core"`
 	RuntimeDir          string `json:"runtime_dir"`
+	CapabilityRoot      string `json:"capability_root"`
 	ValidationCache     string `json:"validation_cache"`
 	Selection           string `json:"selection"`
 	Output              string `json:"output"`
@@ -1449,11 +1439,17 @@ func renderCurrentConfig(ctx context.Context, in configToolInput, force bool) (m
 			finishTaskStage(finish, err, nil)
 			return nil, err
 		}
+		capabilityNodes, err := configuredCapabilityNodesFromSnapshot(config, in.CapabilityRoot)
+		if err != nil {
+			finishTaskStage(finish, err, nil)
+			return nil, err
+		}
 		resolved, err := localconfig.Resolve(localconfig.ResolveOptions{
 			Config:              config,
 			SubscriptionPath:    in.Subscription,
 			SubscriptionConfig:  in.SubscriptionConfig,
 			SubscriptionRuntime: in.SubscriptionRuntime,
+			CapabilityNodes:     capabilityNodes,
 			RulesCache:          in.RulesCache,
 			OnStage:             localConfigTaskLogger(ctx, "resolve_localclash_config"),
 		})
@@ -2583,6 +2579,21 @@ func configuredCapabilityProfiles(config localconfig.Config) []string {
 	return chatgptavailable.Profiles(profiles)
 }
 
+func configuredCapabilityNodesFromSnapshot(config localconfig.Config, capabilityRoot string) (map[string][]string, error) {
+	profiles := configuredCapabilityProfiles(config)
+	if len(profiles) == 0 {
+		return map[string][]string{}, nil
+	}
+	if len(profiles) != 1 || profiles[0] != chatgptavailable.ProfileID {
+		return nil, fmt.Errorf("unsupported proxy-group capabilities: %s", strings.Join(profiles, ", "))
+	}
+	qualified, err := chatgptavailable.LoadQualified(filepath.Join(capabilityRoot, "chatgpt-available.json"))
+	if err != nil {
+		return nil, err
+	}
+	return map[string][]string{chatgptavailable.ProfileID: qualified}, nil
+}
+
 func subscriptionProxyMaps(doc map[string]any) ([]map[string]any, error) {
 	if doc == nil {
 		return nil, errors.New("merged subscription document is required for capability qualification")
@@ -3205,6 +3216,9 @@ func (s *Server) applyConfigToolDefaults(in *configToolInput) {
 		setDefault(&in.Output, s.state.Paths.GeneratedConfig)
 		setDefault(&in.Core, normalizeMCPStateCorePath(s.state, s.state.Paths.CorePath))
 		setDefault(&in.RuntimeDir, s.state.Paths.MihomoRuntimeDir)
+		if s.state.Paths.RuntimeRoot != "" {
+			setDefault(&in.CapabilityRoot, filepath.Join(s.state.Paths.RuntimeRoot, "capabilities"))
+		}
 		if s.state.Paths.PacksSelectionPath != "" {
 			setDefault(&in.Selection, s.state.Paths.PacksSelectionPath)
 		}
@@ -3218,6 +3232,7 @@ func (s *Server) applyConfigToolDefaults(in *configToolInput) {
 	setDefault(&in.Selection, workspacePath(root, "localclash-packs.gob"))
 	setDefault(&in.Output, workspacePath(root, filepath.Join(".runtime", "mihomo", "config.yaml")))
 	setDefault(&in.RuntimeDir, workspacePath(root, filepath.Join(".runtime", "mihomo")))
+	setDefault(&in.CapabilityRoot, workspacePath(root, filepath.Join(".runtime", "capabilities")))
 	setDefault(&in.ValidationCache, validationCachePath(in.ValidationCache, in.RuntimeDir))
 	setDefault(&in.PatchesDir, workspacePath(root, configpatch.RegistryDirName))
 }

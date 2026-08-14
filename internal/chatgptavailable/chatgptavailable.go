@@ -16,7 +16,7 @@ import (
 
 const (
 	ProfileID                   = "openai.chatgpt.mobile.v1"
-	SnapshotVersion             = 3
+	SnapshotVersion             = 4
 	ConsecutiveFailureThreshold = 3
 )
 
@@ -67,6 +67,7 @@ type Snapshot struct {
 	Version   int                  `json:"version"`
 	Profile   string               `json:"profile"`
 	UpdatedAt string               `json:"updated_at"`
+	Qualified []string             `json:"qualified"`
 	Nodes     map[string]NodeState `json:"nodes"`
 }
 
@@ -201,6 +202,7 @@ func Rebuild(ctx context.Context, proxies []map[string]any, prober Prober, opts 
 	if len(qualified) == 0 && retainedPreviouslyQualified > 0 {
 		return Result{}, fmt.Errorf("%w: %d retained previously-qualified candidates all failed; snapshot was not replaced", ErrQualificationCollapse, retainedPreviouslyQualified)
 	}
+	snapshot.Qualified = append([]string{}, qualified...)
 	if err := writeSnapshot(opts.SnapshotPath, snapshot); err != nil {
 		return Result{}, err
 	}
@@ -289,7 +291,32 @@ func readSnapshot(path string) (Snapshot, bool, error) {
 	if snapshot.Nodes == nil {
 		return Snapshot{}, false, errors.New("ChatGPT capability snapshot nodes are required")
 	}
+	if snapshot.Qualified == nil {
+		return Snapshot{}, false, errors.New("ChatGPT capability snapshot qualified nodes are required")
+	}
+	seenQualified := map[string]bool{}
+	for _, name := range snapshot.Qualified {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			return Snapshot{}, false, errors.New("ChatGPT capability snapshot contains an empty qualified node")
+		}
+		if seenQualified[name] {
+			return Snapshot{}, false, fmt.Errorf("ChatGPT capability snapshot contains duplicate qualified node %q", name)
+		}
+		seenQualified[name] = true
+	}
 	return snapshot, true, nil
+}
+
+func LoadQualified(path string) ([]string, error) {
+	snapshot, exists, err := readSnapshot(path)
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
+		return nil, fmt.Errorf("ChatGPT capability snapshot %q is unavailable; run subscription refresh", path)
+	}
+	return append([]string{}, snapshot.Qualified...), nil
 }
 
 func writeSnapshot(path string, snapshot Snapshot) error {

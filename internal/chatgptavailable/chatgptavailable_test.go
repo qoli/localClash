@@ -65,8 +65,15 @@ func TestRebuildPublishesOnlyQualifiedNodes(t *testing.T) {
 	if !strings.Contains(string(data), `"profile": "openai.chatgpt.mobile.v1"`) {
 		t.Fatalf("snapshot missing profile: %s", data)
 	}
-	if !strings.Contains(string(data), `"version": 3`) || !strings.Contains(string(data), `"ios_ip_eligibility": "eligible"`) || !strings.Contains(string(data), `"android_ip_eligibility": "eligible"`) {
-		t.Fatalf("snapshot missing v3 dual-platform eligibility evidence: %s", data)
+	if !strings.Contains(string(data), `"version": 4`) || !strings.Contains(string(data), `"qualified": [`) || !strings.Contains(string(data), `"ios_ip_eligibility": "eligible"`) || !strings.Contains(string(data), `"android_ip_eligibility": "eligible"`) {
+		t.Fatalf("snapshot missing v4 qualified nodes and dual-platform eligibility evidence: %s", data)
+	}
+	qualified, err := LoadQualified(snapshotPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(qualified, []string{"US 01"}) {
+		t.Fatalf("loaded qualified nodes = %+v, want US 01", qualified)
 	}
 }
 
@@ -201,7 +208,7 @@ func TestBuildCandidatesDeduplicatesEquivalentProxyDefinitions(t *testing.T) {
 }
 
 func TestReadSnapshotTreatsLegacyQualificationsAsAbsent(t *testing.T) {
-	for _, version := range []int{1, 2} {
+	for _, version := range []int{1, 2, 3} {
 		t.Run(fmt.Sprintf("v%d", version), func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "chatgpt.json")
 			legacy := fmt.Sprintf(`{
@@ -223,5 +230,31 @@ func TestReadSnapshotTreatsLegacyQualificationsAsAbsent(t *testing.T) {
 				t.Fatalf("legacy snapshot = %+v, exists=%v; want absent migration baseline", snapshot, exists)
 			}
 		})
+	}
+}
+
+func TestLoadQualifiedRequiresCurrentSnapshot(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "missing.json")
+	_, err := LoadQualified(path)
+	if err == nil || !strings.Contains(err.Error(), "run subscription refresh") {
+		t.Fatalf("error = %v, want explicit missing snapshot instruction", err)
+	}
+}
+
+func TestLoadQualifiedRejectsMalformedCurrentSnapshot(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "chatgpt.json")
+	data := `{
+  "version": 4,
+  "profile": "openai.chatgpt.mobile.v1",
+  "updated_at": "2026-08-15T00:00:00Z",
+  "qualified": ["US 01", "US 01"],
+  "nodes": {}
+}`
+	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := LoadQualified(path)
+	if err == nil || !strings.Contains(err.Error(), "duplicate qualified node") {
+		t.Fatalf("error = %v, want malformed snapshot rejection", err)
 	}
 }
