@@ -11,12 +11,15 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
 	"time"
 
 	"localclash/internal/appinit"
+	"localclash/internal/chatgptavailable"
+	"localclash/internal/localconfig"
 	"localclash/internal/mihomotest"
 	"localclash/internal/routertakeover"
 	"localclash/internal/rules"
@@ -1142,6 +1145,176 @@ packs:
 	}
 	if !strings.Contains(readMCPFile(t, localClashConfig), "SG 02") {
 		t.Fatalf("localclash config was not updated: %s", readMCPFile(t, localClashConfig))
+	}
+}
+
+func TestToolsCallSubscriptionsRefreshRebuildsChatGPTAvailable(t *testing.T) {
+	dir := t.TempDir()
+	subscriptionServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`proxies:
+  - name: US 01
+    type: ss
+    server: us.example.com
+    cipher: aes-128-gcm
+    password: secret-us
+  - name: JP 01
+    type: trojan
+    server: jp.example.com
+    password: secret-jp
+`))
+	}))
+	t.Cleanup(subscriptionServer.Close)
+
+	subscriptionConfig := filepath.Join(dir, "localclash-subscriptions.json")
+	subscriptionRuntime := filepath.Join(dir, ".runtime", "subscriptions")
+	merged := filepath.Join(dir, "subscription.gob")
+	intent := filepath.Join(dir, "localclash-intent.json")
+	selection := filepath.Join(dir, "localclash-packs.gob")
+	generated := filepath.Join(dir, ".runtime", "mihomo", "config.yaml")
+	capabilityRoot := filepath.Join(dir, ".runtime", "capabilities")
+	rulesCache := filepath.Join(dir, ".runtime", "rules", "packs")
+	writeMCPPackIndex(t, rulesCache, rules.PackCache{
+		Version:    1,
+		Source:     "blackmatrix7",
+		Adapter:    "blackmatrix7",
+		Renderable: true,
+		Packs:      []rules.Pack{mcpBlackmatrixPack("OpenAI", "ChatGPT")},
+	})
+	writeMCPFile(t, subscriptionConfig, fmt.Sprintf(`version: 1
+sources:
+  - id: primary
+    display_name: "01"
+    url: %s/sub
+`, subscriptionServer.URL))
+	writeMCPFile(t, intent, `{
+  "version": 4,
+  "proxy_groups": {
+    "ChatGPT-available": {
+      "mode": "smart",
+      "capability": "openai.chatgpt.mobile.v1",
+      "optional": true
+    }
+  },
+  "policy_groups": {
+    "ChatGPT": {
+      "mode": "manual",
+      "exits": ["ChatGPT-available", "DIRECT"]
+    }
+  },
+  "custom_rules": [{
+    "id": "chatgpt-test",
+    "target": "ChatGPT",
+    "rules": [{"type": "domain_suffix", "value": "openai.com"}]
+  }]
+}`)
+
+	server := NewServerWithState(appinit.RuntimeState{Paths: appinit.RuntimePaths{
+		WorkspaceRoot:       dir,
+		RuntimeRoot:         filepath.Join(dir, ".runtime"),
+		SubscriptionConfig:  subscriptionConfig,
+		SubscriptionRuntime: subscriptionRuntime,
+		SubscriptionPath:    merged,
+		PacksSelectionPath:  selection,
+		RulesCacheDir:       rulesCache,
+		GeneratedConfig:     generated,
+		CorePath:            filepath.Join(dir, "unused-fake-core"),
+	}})
+	server.rebuildChatGPT = func(_ context.Context, proxies []map[string]any, _, runtimeParent, snapshotPath string) (chatgptavailable.Result, error) {
+		if len(proxies) != 2 || proxies[0]["name"] != "US 01" || proxies[1]["name"] != "JP 01" {
+			t.Fatalf("probe proxies = %+v", proxies)
+		}
+		if runtimeParent != capabilityRoot || snapshotPath != filepath.Join(capabilityRoot, "chatgpt-available.json") {
+			t.Fatalf("capability paths = %q / %q", runtimeParent, snapshotPath)
+		}
+		return chatgptavailable.Result{
+			Profile:          chatgptavailable.ProfileID,
+			SnapshotPath:     snapshotPath,
+			Candidates:       2,
+			Probed:           2,
+			Qualified:        []string{"US 01"},
+			QualifiedCount:   1,
+			UnavailableCount: 1,
+		}, nil
+	}
+
+	resp := callHandleWithServer(t, server, map[string]any{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  "tools/call",
+		"params": map[string]any{
+			"name":      "subscriptions_refresh",
+			"arguments": map[string]any{"background": false},
+		},
+	})
+	if resp.Error != nil {
+		t.Fatalf("subscriptions_refresh error: %+v", resp.Error)
+	}
+	result := marshalToolResult(t, resp.Result)
+	content := result.StructuredContent.(map[string]any)
+	impact := content["localclash_config"].(map[string]any)
+	if impact["applied_auto"] != true || impact["state"] != "auto_applied" {
+		t.Fatalf("localClash impact = %+v", impact)
+	}
+	capabilities := impact["capabilities"].([]any)
+	if len(capabilities) != 1 || capabilities[0].(map[string]any)["qualified_count"] != float64(1) {
+		t.Fatalf("capabilities = %+v", capabilities)
+	}
+	resolvedIntent := readMCPFile(t, intent)
+	if !strings.Contains(resolvedIntent, `"capability": "openai.chatgpt.mobile.v1"`) || !strings.Contains(resolvedIntent, `"US 01"`) {
+		t.Fatalf("resolved intent missing capability selection: %s", resolvedIntent)
+	}
+	config := readMCPYAML(t, generated)
+	group := findMCPProxyGroup(t, config, "ChatGPT-available")
+	if got := group["proxies"]; !reflect.DeepEqual(got, []any{"US 01"}) {
+		t.Fatalf("ChatGPT-available proxies = %+v", got)
+	}
+	chatGPT := findMCPProxyGroup(t, config, "ChatGPT")
+	if got := chatGPT["proxies"]; !reflect.DeepEqual(got, []any{"ChatGPT-available", "DIRECT"}) {
+		t.Fatalf("ChatGPT policy proxies = %+v", got)
+	}
+}
+
+func TestSubscriptionsRefreshCapabilityCollapseLeavesGeneratedConfigUnchanged(t *testing.T) {
+	dir := t.TempDir()
+	intent := filepath.Join(dir, "localclash-intent.json")
+	generated := filepath.Join(dir, "config.yaml")
+	writeMCPFile(t, intent, `{
+  "version": 4,
+  "proxy_groups": {
+    "ChatGPT-available": {
+      "mode": "smart",
+      "capability": "openai.chatgpt.mobile.v1",
+      "selected_nodes": ["US 01"],
+      "optional": true
+    }
+  }
+}`)
+	writeMCPFile(t, generated, "sentinel: previous-generated-config\n")
+
+	server := NewServer()
+	server.rebuildChatGPT = func(context.Context, []map[string]any, string, string, string) (chatgptavailable.Result, error) {
+		return chatgptavailable.Result{}, fmt.Errorf("%w: carrier outage candidate", chatgptavailable.ErrQualificationCollapse)
+	}
+	impact := server.evaluateLocalClashAfterRefresh(
+		context.Background(),
+		intent,
+		filepath.Join(dir, "selection.gob"),
+		filepath.Join(dir, "subscription.gob"),
+		filepath.Join(dir, "subscriptions.json"),
+		filepath.Join(dir, "subscriptions"),
+		filepath.Join(dir, "rules"),
+		filepath.Join(dir, "runtime.json"),
+		generated,
+		filepath.Join(dir, "mihomo"),
+		filepath.Join(dir, "capabilities"),
+		[]localconfig.SubscriptionNode{{Name: "US 01"}},
+		map[string]any{"proxies": []any{map[string]any{"name": "US 01", "type": "ss"}}},
+	)
+	if impact.State != "capability_probe_failed" || impact.AppliedAuto || !impact.RequiresAgentReplan {
+		t.Fatalf("impact = %+v, want explicit capability failure without apply", impact)
+	}
+	if got := readMCPFile(t, generated); got != "sentinel: previous-generated-config\n" {
+		t.Fatalf("generated config changed after collapse: %q", got)
 	}
 }
 
@@ -3972,4 +4145,33 @@ func readMCPFile(t *testing.T, path string) string {
 		t.Fatal(err)
 	}
 	return string(data)
+}
+
+func readMCPYAML(t *testing.T, path string) map[string]any {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var document map[string]any
+	if err := yaml.Unmarshal(data, &document); err != nil {
+		t.Fatal(err)
+	}
+	return document
+}
+
+func findMCPProxyGroup(t *testing.T, config map[string]any, name string) map[string]any {
+	t.Helper()
+	groups, ok := config["proxy-groups"].([]any)
+	if !ok {
+		t.Fatalf("proxy-groups = %T, want list", config["proxy-groups"])
+	}
+	for _, raw := range groups {
+		group, ok := raw.(map[string]any)
+		if ok && group["name"] == name {
+			return group
+		}
+	}
+	t.Fatalf("proxy group %q not found in %+v", name, groups)
+	return nil
 }

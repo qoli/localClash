@@ -45,10 +45,17 @@ User selection belongs in a separate packs selection gob:
 
 `proxy_groups` materialize to Clash/Mihomo runtime proxy-groups. `nodes` must
 be exact proxy names from `subscription.gob`; use `subscription_nodes_search`
-to find candidate names first. localClash does not verify egress regions with
-IP lookup, hostname geolocation, outbound probing, or capability probing.
-Choose either `auto: true` or `manual: true`; enabling both is rejected because
-it would create competing runtime groups for the same target.
+to find candidate names first. Most groups do not verify egress regions with IP
+lookup or hostname geolocation. The built-in `openai.chatgpt.mobile.v1`
+capability is the exception: `subscriptions_refresh` derives its nodes by
+requiring the expected root IP fingerprint (`HTTP 403`, `type: dc`, and
+`cf_details` containing `Request is not allowed`) from both ChatGPT iOS and
+Android endpoints through an isolated temporary Mihomo. The expected 403 is
+positive evidence. Explicit ISP or region rejection is definitive, while a
+connection reset, timeout, or unexpected response uses bounded retries and
+failure hysteresis. A `capability` group cannot also declare `nodes` or `match`. Choose either
+`auto: true` or `manual: true`; enabling both is rejected because it would
+create competing runtime groups for the same target.
 
 `policy_groups` are the optional business layer for ACL4SSR-style UX. Rules and
 packs can target a visible group such as `Steam`; that group then offers exits

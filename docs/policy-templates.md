@@ -51,15 +51,39 @@ pack targets `🌍 非中國網站`, making its known non-China scope explicit i
 Dashboard.
 Ordinary proxy-oriented business groups default to `⚡ 自动选择` and keep
 `🎯 手动选择` as the first manual override. Groups with explicit safety or product
-semantics can still choose a different first exit, such as `🤖 ChatGPT` defaulting
-to United States, then Japan, then Singapore while excluding the Hong Kong region
-exit; `🚦 QUIC` defaulting to `REJECT`; game platform/Apple/Microsoft/speed-test
+semantics can still choose a different first exit. `🤖 ChatGPT` first exposes
+`ChatGPT-available`, a localClash-owned automatic exit rebuilt during
+`subscriptions_refresh` from nodes that return the expected ChatGPT IP
+fingerprint (`HTTP 403`, `type: dc`, and `Request is not allowed`) from both the
+iOS and Android root endpoints. Explicit ISP or region rejection removes a node
+immediately; connection resets, timeouts, and unexpected responses are retried
+and use failure hysteresis for previously-qualified nodes. Its explicitly configured regional exits remain
+available after that choice. `🚦 QUIC` defaults to `REJECT`; game platform/Apple/Microsoft/speed-test
 defaulting to direct; `🧲 BT/PT 下载` defaulting to direct while exposing automatic,
 manual, and regional proxy exits for Dashboard overrides; or Bahamut defaulting
 to Taiwan. Region exits are optional so subscriptions without a given region can
 still initialize. Patch files
 intentionally keep emoji identifiers as YAML `\U...` escapes so OpenWrt/BusyBox
 display locale quirks do not change on-disk template bytes.
+
+Capability groups are derived configuration, not Mihomo health-check aliases.
+localClash starts an isolated temporary Mihomo, assigns one loopback mixed
+listener to each distinct proxy definition, and checks the two service endpoints
+through each listener. Endpoint checks use bounded concurrency so subscriptions
+with hundreds of nodes can finish within the refresh window. It does not mutate
+or depend on the active core's `alive` state. The resulting secret-safe snapshot
+is stored below `.runtime/capabilities/`; raw proxy credentials are never written
+there. Probe infrastructure errors fail the localClash refresh impact explicitly. If an
+existing non-empty qualified set suddenly collapses to zero, the snapshot and
+generated config are not replaced, so a transient carrier outage cannot silently
+rewrite the policy graph.
+
+Qualification uses asymmetric hysteresis. A new proxy enters the group only
+after a successful observation. A previously qualified proxy remains eligible
+through two consecutive failed refresh observations and is removed on the third;
+the runtime automatic group can still avoid it while its transport is down. A
+successful observation resets the failure counter. This keeps an instantaneous
+carrier interruption from being mistaken for a durable ChatGPT capability change.
 
 The Cloudflare default is an explicit `GEOIP,cloudflare` exception before the
 terminal `MATCH,DIRECT` rule. It targets the Dashboard-visible `☁️ Cloudflare`

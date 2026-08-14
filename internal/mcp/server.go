@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"localclash/internal/appinit"
+	"localclash/internal/chatgptavailable"
 	"localclash/internal/configinspect"
 	"localclash/internal/configpatch"
 	"localclash/internal/configplan"
@@ -50,6 +51,7 @@ type Server struct {
 	configPatchDraftSlot *configPatchDraftSlot
 	watchdogNoticeMu     sync.Mutex
 	watchdogNotices      map[string]time.Time
+	rebuildChatGPT       func(context.Context, []map[string]any, string, string, string) (chatgptavailable.Result, error)
 }
 
 var routerTakeoverStatus = routertakeover.Status
@@ -81,7 +83,19 @@ func newServer(state *appinit.RuntimeState) *Server {
 		taskCtx:         ctx,
 		taskCancel:      cancel,
 		watchdogNotices: map[string]time.Time{},
+		rebuildChatGPT:  rebuildChatGPTCapability,
 	}
+}
+
+func rebuildChatGPTCapability(ctx context.Context, proxies []map[string]any, corePath, runtimeParent, snapshotPath string) (chatgptavailable.Result, error) {
+	prober, err := chatgptavailable.NewMihomoProber(chatgptavailable.MihomoOptions{
+		CorePath:      corePath,
+		RuntimeParent: runtimeParent,
+	})
+	if err != nil {
+		return chatgptavailable.Result{}, err
+	}
+	return chatgptavailable.Rebuild(ctx, proxies, prober, chatgptavailable.Options{SnapshotPath: snapshotPath})
 }
 
 func (s *Server) Shutdown(ctx context.Context) error {
@@ -2234,6 +2248,8 @@ func (s *Server) callSubscriptionsRefresh(ctx context.Context, args json.RawMess
 		RulesCache           string
 		RuntimeProfileConfig string
 		Output               string
+		CorePath             string
+		CapabilityRoot       string
 	}{
 		IDs:       req.IDs,
 		Force:     req.Force,
@@ -2262,6 +2278,12 @@ func (s *Server) callSubscriptionsRefresh(ctx context.Context, args json.RawMess
 		if in.Output == "" {
 			in.Output = s.state.Paths.GeneratedConfig
 		}
+		if in.CorePath == "" {
+			in.CorePath = s.state.Paths.CorePath
+		}
+		if in.CapabilityRoot == "" && s.state.Paths.RuntimeRoot != "" {
+			in.CapabilityRoot = filepath.Join(s.state.Paths.RuntimeRoot, "capabilities")
+		}
 	}
 	setDefault(&in.Config, workspacePath(root, "localclash-subscriptions.json"))
 	setDefault(&in.RuntimeDir, workspacePath(root, filepath.Join(".runtime", "subscriptions")))
@@ -2270,6 +2292,7 @@ func (s *Server) callSubscriptionsRefresh(ctx context.Context, args json.RawMess
 	setDefault(&in.RulesCache, workspacePath(root, filepath.Join(".runtime", "rules", "packs")))
 	setDefault(&in.RuntimeProfileConfig, workspacePath(root, runtimeprofile.DefaultPath))
 	setDefault(&in.Output, workspacePath(root, filepath.Join(".runtime", "mihomo", "config.yaml")))
+	setDefault(&in.CapabilityRoot, workspacePath(root, filepath.Join(".runtime", "capabilities")))
 	if in.Selection == "" {
 		in.Selection = workspacePath(root, "localclash-packs.gob")
 	}
@@ -2284,7 +2307,7 @@ func (s *Server) callSubscriptionsRefresh(ctx context.Context, args json.RawMess
 		OnStage:             localConfigTaskLogger(ctx, "load_subscription_nodes_before"),
 	})
 	finishTaskStage(finish, nil, map[string]any{"node_count": len(beforeNodes)})
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 	result, err := subscriptions.Refresh(ctx, subscriptions.RefreshOptions{
 		ConfigPath: in.Config,
@@ -2306,7 +2329,7 @@ func (s *Server) callSubscriptionsRefresh(ctx context.Context, args json.RawMess
 		NodeDiff:      buildNodeDiff(beforeNodes, afterNodes),
 	}
 	finish = startTaskStage(ctx, "evaluate_localclash_impact", map[string]any{"config": in.LocalClashConfig})
-	impact := s.evaluateLocalClashAfterRefresh(ctx, in.LocalClashConfig, in.Selection, in.Merged, in.Config, in.RuntimeDir, in.RulesCache, in.RuntimeProfileConfig, in.Output, afterNodes, result.MergedDoc)
+	impact := s.evaluateLocalClashAfterRefresh(ctx, in.LocalClashConfig, in.Selection, in.Merged, in.Config, in.RuntimeDir, in.RulesCache, in.RuntimeProfileConfig, in.Output, in.CorePath, in.CapabilityRoot, afterNodes, result.MergedDoc)
 	finishTaskStage(finish, nil, map[string]any{"exists": impact.Exists, "state": impact.State, "valid": impact.Valid})
 	if impact.Exists {
 		toolResultValue.LocalClash = &impact
@@ -2355,6 +2378,7 @@ type localClashRefreshImpact struct {
 	GeneratedConfig     string                       `json:"generated_config,omitempty"`
 	SelectionPath       string                       `json:"selection_path,omitempty"`
 	ProxyGroups         []localClashProxyGroupImpact `json:"proxy_groups,omitempty"`
+	Capabilities        []chatgptavailable.Result    `json:"capabilities,omitempty"`
 	NextActions         []string                     `json:"next_actions,omitempty"`
 }
 
@@ -2407,7 +2431,7 @@ func buildNodeDiff(before, after []localconfig.SubscriptionNode) nodeDiff {
 	return diff
 }
 
-func (s *Server) evaluateLocalClashAfterRefresh(ctx context.Context, configPath, selectionPath, subscriptionPath, subscriptionConfig, subscriptionRuntime, rulesCache, presetPath, outputPath string, subscriptionNodes []localconfig.SubscriptionNode, subscriptionDoc map[string]any) localClashRefreshImpact {
+func (s *Server) evaluateLocalClashAfterRefresh(ctx context.Context, configPath, selectionPath, subscriptionPath, subscriptionConfig, subscriptionRuntime, rulesCache, presetPath, outputPath, corePath, capabilityRoot string, subscriptionNodes []localconfig.SubscriptionNode, subscriptionDoc map[string]any) localClashRefreshImpact {
 	impact := localClashRefreshImpact{ConfigPath: configPath, GeneratedConfig: outputPath, SelectionPath: selectionPath}
 	finish := startTaskStage(ctx, "evaluate_localclash_impact.load_config", map[string]any{"config": configPath})
 	config, err := localconfig.Load(configPath)
@@ -2425,6 +2449,55 @@ func (s *Server) evaluateLocalClashAfterRefresh(ctx context.Context, configPath,
 	finishTaskStage(finish, nil, map[string]any{"exists": true})
 	impact.Exists = true
 
+	capabilityNodes := map[string][]string{}
+	profiles := configuredCapabilityProfiles(config)
+	if len(profiles) > 0 {
+		if len(profiles) != 1 || profiles[0] != chatgptavailable.ProfileID {
+			err := fmt.Errorf("unsupported proxy-group capabilities: %s", strings.Join(profiles, ", "))
+			impact.State = "capability_probe_failed"
+			impact.RequiresAgentReplan = true
+			impact.Error = err.Error()
+			impact.NextActions = []string{"remove the unsupported capability or update localClash with an adapter for it"}
+			return impact
+		}
+		finish = startTaskStage(ctx, "evaluate_localclash_impact.qualify_chatgpt", map[string]any{
+			"profile":     chatgptavailable.ProfileID,
+			"proxy_count": len(subscriptionNodes),
+		})
+		proxies, err := subscriptionProxyMaps(subscriptionDoc)
+		if err == nil {
+			result, rebuildErr := s.rebuildChatGPT(
+				ctx,
+				proxies,
+				corePath,
+				capabilityRoot,
+				filepath.Join(capabilityRoot, "chatgpt-available.json"),
+			)
+			err = rebuildErr
+			if err == nil {
+				impact.Capabilities = append(impact.Capabilities, result)
+				capabilityNodes = chatgptavailable.QualifiedByProfile(result)
+				finishTaskStage(finish, nil, map[string]any{
+					"candidates":         result.Candidates,
+					"probed":             result.Probed,
+					"qualified":          result.QualifiedCount,
+					"observed_qualified": result.ObservedQualifiedCount,
+					"retained":           result.RetainedCount,
+					"unavailable":        result.UnavailableCount,
+					"probe_duration_ms":  result.DurationMS,
+				})
+			}
+		}
+		if err != nil {
+			finishTaskStage(finish, err, nil)
+			impact.State = "capability_probe_failed"
+			impact.RequiresAgentReplan = true
+			impact.Error = err.Error()
+			impact.NextActions = []string{"inspect the qualify_chatgpt task stage and capability snapshot", "retry subscriptions_refresh after the probe path is healthy"}
+			return impact
+		}
+	}
+
 	finish = startTaskStage(ctx, "evaluate_localclash_impact.resolve_after_refresh", map[string]any{"subscription_nodes": len(subscriptionNodes)})
 	resolved, err := localconfig.Resolve(localconfig.ResolveOptions{
 		Config:              config,
@@ -2432,6 +2505,7 @@ func (s *Server) evaluateLocalClashAfterRefresh(ctx context.Context, configPath,
 		SubscriptionConfig:  subscriptionConfig,
 		SubscriptionRuntime: subscriptionRuntime,
 		SubscriptionNodes:   subscriptionNodes,
+		CapabilityNodes:     capabilityNodes,
 		RulesCache:          rulesCache,
 		OnStage:             localConfigTaskLogger(ctx, "evaluate_localclash_impact"),
 	})
@@ -2499,6 +2573,33 @@ func (s *Server) evaluateLocalClashAfterRefresh(ctx context.Context, configPath,
 	finishTaskStage(finish, nil, nil)
 	impact.AppliedAuto = true
 	return impact
+}
+
+func configuredCapabilityProfiles(config localconfig.Config) []string {
+	profiles := make([]string, 0)
+	for _, group := range config.ProxyGroups {
+		profiles = append(profiles, group.Capability)
+	}
+	return chatgptavailable.Profiles(profiles)
+}
+
+func subscriptionProxyMaps(doc map[string]any) ([]map[string]any, error) {
+	if doc == nil {
+		return nil, errors.New("merged subscription document is required for capability qualification")
+	}
+	rawProxies, ok := doc["proxies"].([]any)
+	if !ok || len(rawProxies) == 0 {
+		return nil, errors.New("merged subscription document has no proxies for capability qualification")
+	}
+	proxies := make([]map[string]any, 0, len(rawProxies))
+	for index, raw := range rawProxies {
+		proxy, ok := raw.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("merged subscription proxy %d is invalid for capability qualification", index)
+		}
+		proxies = append(proxies, proxy)
+	}
+	return proxies, nil
 }
 
 func renderSubscriptionSource(doc map[string]any) string {

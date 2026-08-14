@@ -57,6 +57,7 @@ type ProxyGroup struct {
 	Mode          string   `json:"mode" yaml:"mode"`
 	Match         *Match   `json:"match,omitempty" yaml:"match,omitempty"`
 	Nodes         []string `json:"nodes,omitempty" yaml:"nodes,omitempty"`
+	Capability    string   `json:"capability,omitempty" yaml:"capability,omitempty"`
 	SelectedNodes []string `json:"selected_nodes,omitempty" yaml:"selected_nodes,omitempty"`
 	Optional      bool     `json:"optional,omitempty" yaml:"optional,omitempty"`
 	Reason        string   `json:"reason,omitempty" yaml:"reason,omitempty"`
@@ -172,7 +173,8 @@ type ResolveOptions struct {
 	SubscriptionPath    string
 	SubscriptionConfig  string
 	SubscriptionRuntime string
-	SubscriptionNodes   []SubscriptionNode `json:"-"`
+	SubscriptionNodes   []SubscriptionNode  `json:"-"`
+	CapabilityNodes     map[string][]string `json:"-"`
 	RulesCache          string
 	LocalRulePacksDir   string
 	OnStage             func(StageEvent) `json:"-"`
@@ -227,6 +229,7 @@ type ProxyGroupResult struct {
 	ID            string   `json:"id"`
 	Mode          string   `json:"mode"`
 	Match         *Match   `json:"match,omitempty"`
+	Capability    string   `json:"capability,omitempty"`
 	SelectedNodes []string `json:"selected_nodes"`
 	NodeCount     int      `json:"node_count"`
 	Optional      bool     `json:"optional,omitempty"`
@@ -382,12 +385,8 @@ func Resolve(opts ResolveOptions) (Resolved, error) {
 		PolicyGroups: map[string]rules.PolicyGroup{},
 	}
 	resolvedConfig := opts.Config
-	if resolvedConfig.ProxyGroups == nil {
-		resolvedConfig.ProxyGroups = map[string]ProxyGroup{}
-	}
-	if resolvedConfig.PolicyGroups == nil {
-		resolvedConfig.PolicyGroups = map[string]PolicyGroup{}
-	}
+	resolvedConfig.ProxyGroups = cloneProxyGroups(opts.Config.ProxyGroups)
+	resolvedConfig.PolicyGroups = clonePolicyGroups(opts.Config.PolicyGroups)
 	groupIDs := make([]string, 0, len(resolvedConfig.ProxyGroups))
 	for id := range resolvedConfig.ProxyGroups {
 		groupIDs = append(groupIDs, id)
@@ -406,20 +405,21 @@ func Resolve(opts ResolveOptions) (Resolved, error) {
 			"mode":         mode,
 			"has_match":    group.Match != nil,
 			"node_refs":    len(group.Nodes),
+			"capability":   strings.TrimSpace(group.Capability),
 			"optional":     group.Optional,
 			"total_nodes":  len(nodes),
 			"source_scope": matchSourceScope(group.Match),
 		})
 		if mode == "direct" {
-			if group.Match != nil || len(group.Nodes) > 0 {
-				err := fmt.Errorf("proxy group %q direct mode cannot use match or nodes", id)
+			if group.Match != nil || len(group.Nodes) > 0 || strings.TrimSpace(group.Capability) != "" {
+				err := fmt.Errorf("proxy group %q direct mode cannot use match, nodes, or capability", id)
 				finishGroup(err, nil)
 				finish(err, nil)
 				return Resolved{}, err
 			}
 		} else {
 			var currentStats proxyGroupResolveStats
-			selected, err = resolveProxyGroupMeasured(id, group, nodes, &currentStats)
+			selected, err = resolveProxyGroupMeasured(id, group, nodes, opts.CapabilityNodes, &currentStats)
 			if err != nil {
 				finishGroup(err, currentStats.fields())
 				finish(err, groupStats.fields())
@@ -454,6 +454,7 @@ func Resolve(opts ResolveOptions) (Resolved, error) {
 			ID:            id,
 			Mode:          mode,
 			Match:         group.Match,
+			Capability:    group.Capability,
 			SelectedNodes: append([]string{}, selected...),
 			NodeCount:     len(selected),
 			Optional:      group.Optional,
@@ -610,6 +611,31 @@ func Resolve(opts ResolveOptions) (Resolved, error) {
 	resolvedConfig.RuleProviders = resolvedRuleProviders
 	selection.RuleProviders = ruleProvidersForSelection(resolvedRuleProviders)
 	return Resolved{Config: resolvedConfig, Selection: selection, ProxyGroups: groupResults, PolicyGroups: policyResults, TransportRules: transportRuleResults, CustomRules: customRuleResults, RulePacks: rulePackResults, RuleProviders: ruleProviderResults, Packs: packResults}, nil
+}
+
+func cloneProxyGroups(groups map[string]ProxyGroup) map[string]ProxyGroup {
+	cloned := make(map[string]ProxyGroup, len(groups))
+	for id, group := range groups {
+		if group.Nodes != nil {
+			group.Nodes = append([]string{}, group.Nodes...)
+		}
+		if group.SelectedNodes != nil {
+			group.SelectedNodes = append([]string{}, group.SelectedNodes...)
+		}
+		cloned[id] = group
+	}
+	return cloned
+}
+
+func clonePolicyGroups(groups map[string]PolicyGroup) map[string]PolicyGroup {
+	cloned := make(map[string]PolicyGroup, len(groups))
+	for id, group := range groups {
+		if group.Exits != nil {
+			group.Exits = append([]string{}, group.Exits...)
+		}
+		cloned[id] = group
+	}
+	return cloned
 }
 
 func assertPackType(id, declared, actual string) error {
@@ -885,10 +911,24 @@ func readGobMapObserved(path string, stage localConfigStageFunc, prefix string, 
 }
 
 func resolveProxyGroup(id string, group ProxyGroup, nodes []SubscriptionNode) ([]string, error) {
-	return resolveProxyGroupMeasured(id, group, nodes, nil)
+	return resolveProxyGroupMeasured(id, group, nodes, nil, nil)
 }
 
-func resolveProxyGroupMeasured(id string, group ProxyGroup, nodes []SubscriptionNode, stats *proxyGroupResolveStats) ([]string, error) {
+func resolveProxyGroupMeasured(id string, group ProxyGroup, nodes []SubscriptionNode, capabilityNodes map[string][]string, stats *proxyGroupResolveStats) ([]string, error) {
+	capability := strings.TrimSpace(group.Capability)
+	if capability != "" {
+		if group.Match != nil || len(group.Nodes) > 0 {
+			return nil, fmt.Errorf("proxy group %q capability cannot be combined with match or nodes", id)
+		}
+		selected, exists := capabilityNodes[capability]
+		if !exists {
+			if group.SelectedNodes == nil {
+				return nil, fmt.Errorf("proxy group %q requires unresolved capability %q; run subscriptions_refresh", id, capability)
+			}
+			selected = group.SelectedNodes
+		}
+		return resolveExactNodesMeasured(id, selected, nodes, stats)
+	}
 	if group.Match != nil {
 		if len(group.Nodes) > 0 {
 			return nil, fmt.Errorf("proxy group %q must use either match or nodes, not both", id)

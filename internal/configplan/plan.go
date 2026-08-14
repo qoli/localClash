@@ -104,13 +104,14 @@ func (pack *OverlayPackIntent) UnmarshalJSON(data []byte) error {
 }
 
 type OverlayProxyGroupIntent struct {
-	ID       string             `json:"id" yaml:"id"`
-	Nodes    []string           `json:"nodes,omitempty" yaml:"nodes,omitempty"`
-	Match    *localconfig.Match `json:"match,omitempty" yaml:"match,omitempty"`
-	Mode     string             `json:"mode" yaml:"mode"`
-	Optional bool               `json:"optional,omitempty" yaml:"optional,omitempty"`
-	Reason   string             `json:"reason,omitempty" yaml:"reason,omitempty"`
-	Boundary string             `json:"boundary,omitempty" yaml:"boundary,omitempty"`
+	ID         string             `json:"id" yaml:"id"`
+	Nodes      []string           `json:"nodes,omitempty" yaml:"nodes,omitempty"`
+	Match      *localconfig.Match `json:"match,omitempty" yaml:"match,omitempty"`
+	Capability string             `json:"capability,omitempty" yaml:"capability,omitempty"`
+	Mode       string             `json:"mode" yaml:"mode"`
+	Optional   bool               `json:"optional,omitempty" yaml:"optional,omitempty"`
+	Reason     string             `json:"reason,omitempty" yaml:"reason,omitempty"`
+	Boundary   string             `json:"boundary,omitempty" yaml:"boundary,omitempty"`
 }
 
 type OverlayPolicyGroupIntent struct {
@@ -213,6 +214,7 @@ type OverlayProxyGroupSummary struct {
 	Nodes         []string           `json:"nodes"`
 	SelectedNodes []string           `json:"selected_nodes,omitempty"`
 	Match         *localconfig.Match `json:"match,omitempty"`
+	Capability    string             `json:"capability,omitempty"`
 	Mode          string             `json:"mode"`
 	NodeCount     int                `json:"node_count"`
 	Reason        string             `json:"reason,omitempty"`
@@ -763,12 +765,13 @@ func configFromOverlay(overlay OverlayIntent) localconfig.Config {
 	}
 	for _, group := range overlay.ProxyGroups {
 		config.ProxyGroups[group.ID] = localconfig.ProxyGroup{
-			Mode:     group.Mode,
-			Match:    group.Match,
-			Nodes:    append([]string{}, group.Nodes...),
-			Optional: group.Optional,
-			Reason:   group.Reason,
-			Boundary: group.Boundary,
+			Mode:       group.Mode,
+			Match:      group.Match,
+			Nodes:      append([]string{}, group.Nodes...),
+			Capability: group.Capability,
+			Optional:   group.Optional,
+			Reason:     group.Reason,
+			Boundary:   group.Boundary,
 		}
 	}
 	for _, group := range overlay.PolicyGroups {
@@ -1009,6 +1012,7 @@ func overlaySummaryFromResolved(resolved localconfig.Resolved) OverlaySummary {
 			Nodes:         nodes,
 			SelectedNodes: nodes,
 			Match:         group.Match,
+			Capability:    group.Capability,
 			Mode:          group.Mode,
 			NodeCount:     group.NodeCount,
 			Reason:        group.Reason,
@@ -1216,11 +1220,14 @@ func buildSelection(opts Options, proxyNames []string) (rules.Selection, Overlay
 		if mode != "manual" && mode != "auto" && mode != "smart" && mode != "direct" {
 			return rules.Selection{}, OverlaySummary{}, nil, fmt.Errorf("proxy group %q mode must be manual, auto, smart, or direct", id)
 		}
-		if mode == "direct" && (len(group.Nodes) > 0 || group.Match != nil) {
-			return rules.Selection{}, OverlaySummary{}, nil, fmt.Errorf("proxy group %q direct mode cannot use match or nodes", id)
+		if mode == "direct" && (len(group.Nodes) > 0 || group.Match != nil || strings.TrimSpace(group.Capability) != "") {
+			return rules.Selection{}, OverlaySummary{}, nil, fmt.Errorf("proxy group %q direct mode cannot use match, nodes, or capability", id)
 		}
-		if mode != "direct" && len(group.Nodes) == 0 {
+		if mode != "direct" && len(group.Nodes) == 0 && strings.TrimSpace(group.Capability) == "" {
 			return rules.Selection{}, OverlaySummary{}, nil, fmt.Errorf("proxy group %q nodes is required", id)
+		}
+		if strings.TrimSpace(group.Capability) != "" {
+			return rules.Selection{}, OverlaySummary{}, nil, fmt.Errorf("proxy group %q capability %q requires subscriptions_refresh before rendering a plan", id, group.Capability)
 		}
 		var nodes []string
 		var err error
@@ -1475,12 +1482,13 @@ func intentFromSummary(summary OverlaySummary) OverlayIntent {
 	}
 	for _, group := range summary.ProxyGroups {
 		intent.ProxyGroups = append(intent.ProxyGroups, OverlayProxyGroupIntent{
-			ID:       group.ID,
-			Nodes:    append([]string{}, group.Nodes...),
-			Match:    group.Match,
-			Mode:     group.Mode,
-			Reason:   group.Reason,
-			Boundary: group.Boundary,
+			ID:         group.ID,
+			Nodes:      append([]string{}, group.Nodes...),
+			Match:      group.Match,
+			Capability: group.Capability,
+			Mode:       group.Mode,
+			Reason:     group.Reason,
+			Boundary:   group.Boundary,
 		})
 	}
 	for _, group := range summary.PolicyGroups {

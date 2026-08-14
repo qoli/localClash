@@ -3,10 +3,20 @@
   "description": "Add ChatGPT, AI, GitHub, and speed-test business groups.",
   "config": {
     "version": 3,
+    "proxy_groups": {
+      "ChatGPT-available": {
+        "mode": "auto",
+        "capability": "openai.chatgpt.mobile.v1",
+        "optional": true,
+        "reason": "由 localClash 在訂閱更新時驗證 iOS 與 Android 根路徑的 ChatGPT IP 可用指紋後重建。",
+        "boundary": "chatgpt_service_qualified_subscription_nodes"
+      }
+    },
     "policy_groups": {
       "🤖 ChatGPT": {
         "mode": "manual",
         "exits": [
+          "ChatGPT-available",
           "🇺🇸 美国节点",
           "🇯🇵 日本节点",
           "🇸🇬 新加坡节点",
@@ -15,7 +25,7 @@
           "🇹🇼 台湾节点",
           "🇰🇷 韩国节点"
         ],
-        "reason": "OpenAI/ChatGPT 专属业务组；默认按美国、日本、新加坡优先，避开香港出口。",
+        "reason": "OpenAI/ChatGPT 專屬業務組；預設先使用通過服務能力驗證的節點，再提供美國、日本、新加坡等明確出口。",
         "boundary": "business_to_exit_layer"
       },
       "🧠 AI": {

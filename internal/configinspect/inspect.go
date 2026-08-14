@@ -112,6 +112,7 @@ type IntentProxyGroup struct {
 	Mode          string             `json:"mode"`
 	Match         *localconfig.Match `json:"match,omitempty"`
 	Nodes         []string           `json:"nodes,omitempty"`
+	Capability    string             `json:"capability,omitempty"`
 	SelectedNodes []string           `json:"selected_nodes,omitempty"`
 	NodeCount     int                `json:"node_count"`
 	Reason        string             `json:"reason,omitempty"`
@@ -444,6 +445,7 @@ func proxyGroupIntents(groups map[string]localconfig.ProxyGroup, resolved []loca
 			Mode:          strings.ToLower(strings.TrimSpace(group.Mode)),
 			Match:         group.Match,
 			Nodes:         append([]string{}, group.Nodes...),
+			Capability:    group.Capability,
 			SelectedNodes: selected,
 			NodeCount:     nodeCount,
 			Reason:        group.Reason,
