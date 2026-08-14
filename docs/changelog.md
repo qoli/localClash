@@ -56,6 +56,14 @@ Verification:
   snapshot、patch registry 配置生成及 Mihomo config-test；測試代理不可用而
   可選能力集合為空時仍成功生成有效配置。測試未替換已安裝 Core，也未重啟
   現有 Mihomo runtime。
+- GitHub Release workflow
+  [31833356846](https://github.com/qoli/localClash/actions/runs/31833356846) 的
+  Linux tests、兩架構 binary、base assets 及 Release 建立全部成功。
+- 7 個公開資產重新下載後，精確檔名與全部 SHA-256 均通過；兩個靜態 Linux
+  binaries 分別為 x86-64／ARM64，均內嵌 `v0.1.55` 與發版 commit
+  `04f9487`。manifest 宣告 `v0.1.55`，所有 URL、檔案大小及 checksum 均指向
+  並符合同版本；annotated tag、發佈時的遠端 `main` 與發版 commit 同為
+  `04f9487`，其後僅新增本次驗證記錄。
 
 ### localClash Core v0.1.54
 
