@@ -767,10 +767,9 @@ enabled_packs:
 		if group["type"] != "smart" {
 			t.Fatalf("%s type = %v, want smart", name, group["type"])
 		}
-		wantURL := "http://www.gstatic.com/generate_204"
+		wantURL := "https://cp.cloudflare.com/generate_204"
 		wantInterval := 60
 		if name == "SmartOnly" {
-			wantURL = "https://cp.cloudflare.com/generate_204"
 			wantInterval = 600
 		}
 		if group["url"] != wantURL || group["interval"] != wantInterval {

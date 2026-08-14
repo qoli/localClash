@@ -55,7 +55,7 @@ func TestRenderFragmentUsesSelectionAndPackCache(t *testing.T) {
 	}
 }
 
-func TestRenderFragmentAutoGroupsUseDefaultHealthCheckInterval(t *testing.T) {
+func TestRenderFragmentAutoGroupsUseDefaultHealthCheck(t *testing.T) {
 	selection := Selection{
 		ProxyGroups: map[string]ProxyGroup{
 			"ExitAuto": {Nodes: []string{"JP 01"}, Auto: true},
@@ -82,7 +82,7 @@ func TestRenderFragmentAutoGroupsUseDefaultHealthCheckInterval(t *testing.T) {
 		if group == nil {
 			t.Fatalf("missing auto group %q in %+v", name, fragment.ProxyGroups)
 		}
-		if group["type"] != "url-test" || group["url"] != "http://www.gstatic.com/generate_204" || group["interval"] != 60 {
+		if group["type"] != "url-test" || group["url"] != "https://cp.cloudflare.com/generate_204" || group["interval"] != 60 {
 			t.Fatalf("%s health check defaults = %+v, want url-test generate_204 interval 60", name, group)
 		}
 	}

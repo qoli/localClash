@@ -61,6 +61,7 @@ const (
 	TerminalDirect           = "DIRECT"
 	TerminalReject           = "REJECT"
 
+	defaultAutoHealthCheckURL             = "https://cp.cloudflare.com/generate_204"
 	defaultAutoHealthCheckIntervalSeconds = 60
 )
 
@@ -886,7 +887,7 @@ func materializeProxyGroups(used map[string]bool, targets preparedTargets) ([]ma
 				"name":     name,
 				"type":     "url-test",
 				"proxies":  candidates,
-				"url":      "http://www.gstatic.com/generate_204",
+				"url":      defaultAutoHealthCheckURL,
 				"interval": defaultAutoHealthCheckIntervalSeconds,
 			})
 			continue
@@ -961,7 +962,7 @@ func materializePolicyGroups(used map[string]bool, targets preparedTargets) ([]m
 				"name":     name,
 				"type":     "url-test",
 				"proxies":  candidates,
-				"url":      "http://www.gstatic.com/generate_204",
+				"url":      defaultAutoHealthCheckURL,
 				"interval": defaultAutoHealthCheckIntervalSeconds,
 			})
 			continue
