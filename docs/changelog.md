@@ -18,8 +18,43 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
-| localClash Core | [v0.1.51](https://github.com/qoli/localClash/releases/tag/v0.1.51) | 2026-08-09 UTC+8 |
+| localClash Core | [v0.1.52](https://github.com/qoli/localClash/releases/tag/v0.1.52) | 2026-08-14 UTC+8 |
 | localclash-luci | [v0.1.0-46](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-46) | 2026-08-12 UTC+8 |
+
+## 2026-08-14
+
+### localClash Core v0.1.52
+
+Changes:
+
+- `🧠 AI` 策略新增 `🌐 全球直连` 作為可選出口，同時保留 `⚡ 自动选择`
+  為預設選項，不改變現有使用者的預設路由行為。
+- 訂閱保存與刷新現在輸出可直接分享的結構化完整日誌，逐階段記錄來源選擇、
+  HTTP 回應、內容讀取、解析、artifact 寫入及合併結果。
+- 訂閱錯誤與日誌使用兩位數顯示 ID 對應遮罩 URL，加入 HTTP 狀態、協議、
+  長度及安全的錯誤回應摘要，不再暴露內部 source ID 或訂閱密鑰。
+- 上游在成功回應中途斷流時，可明確進入 HTTP/1.1 Range 分段恢復；系統會驗證
+  總長、每段位元組數、重疊內容及首尾重讀結果，任何不一致都會失敗且不寫入
+  部分或舊 artifact。
+
+Release:
+
+- [qoli/localClash v0.1.52](https://github.com/qoli/localClash/releases/tag/v0.1.52)
+
+Release assets:
+
+- `localclash-linux-amd64`
+- `localclash-linux-arm64`
+- `localclash-base-assets.tar.gz`
+- `localclash-release-manifest.json`
+- 對應的 `.sha256` checksum 文件
+
+Verification:
+
+- 本地 `go test ./...`、`go vet ./...` 與 release broadcast 回歸測試通過。
+- x86_64 OpenWrt 測試環境的現有 dler 訂閱完整下載、解析及 artifact 合併成功；
+  隔離短讀驗收則從 4,096 bytes 的 `unexpected EOF` 經 3 個 Range 分段與 2 次
+  邊界重讀恢復 163,809 bytes，完成 1,800 個節點解析，MCP 與 Mihomo 保持健康。
 
 ## 2026-08-12
 
