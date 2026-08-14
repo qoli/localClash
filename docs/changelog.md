@@ -19,7 +19,7 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
 | localClash Core | [v0.1.52](https://github.com/qoli/localClash/releases/tag/v0.1.52) | 2026-08-14 UTC+8 |
-| localclash-luci | [v0.1.0-46](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-46) | 2026-08-12 UTC+8 |
+| localclash-luci | [v0.1.0-47](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-47) | 2026-08-14 UTC+8 |
 
 ## 2026-08-14
 
@@ -62,6 +62,42 @@ Verification:
   manifest 宣告 `v0.1.52` 且所有下載 URL 指向同版本，base assets 亦確認
   `🧠 AI` 保持 `⚡ 自动选择` 為首選並加入 `🌐 全球直连`；tag、遠端 `main`
   與發佈 commit 在發佈時同為 `3512734`。
+
+### localclash-luci v0.1.0-47
+
+Changes:
+
+- LuCI 自動更新讀取 Release、下載 checksum、下載及校驗安裝包遇到暫時失敗時，
+  每個階段最多嘗試 3 次並記錄結果；套件安裝、helper 接棒和服務操作仍明確
+  失敗，不會重複執行非冪等步驟。
+- GitHub Release 頁新增面向普通使用者的下載指南，按 `opkg`、`apk` 和 iStoreOS
+  架構直接選擇正確安裝檔案。
+
+Release:
+
+- [qoli/localclash-luci v0.1.0-47](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-47)
+
+Release assets:
+
+- `luci-app-localclash_0.1.0-47_all.ipk` 及 SHA-256
+- `luci-app-localclash-0.1.0-r47.apk` 及 SHA-256
+- `dnsqualify-linux-amd64`、`dnsqualify-linux-arm64` 及 SHA-256
+- `dnsqualify-release-manifest.json`
+- `localclash-istore-v0.1.0-47-x86_64.run` 及 SHA-256
+- `localclash-istore-v0.1.0-47-aarch64.run` 及 SHA-256
+
+Verification:
+
+- Main CI
+  [31779481727](https://github.com/qoli/localclash-luci/actions/runs/31779481727)
+  與 tag Release CI
+  [31779593520](https://github.com/qoli/localclash-luci/actions/runs/31779593520)
+  均通過來源釘選、dnsqualify test/vet、全部 rpcd 測試、完整打包、離線安裝與
+  Release 發佈。
+- 13 個公開資產重新下載後，精確檔名與全部 SHA-256 均通過；tag、遠端 `main`
+  與發佈 commit 同為 `21260e4`。
+- 兩個 `.run` 均通過 Makeself `--info`、`--list`、`--check` 及 `--noexec`；
+  這些是 archive 驗證，未據此宣稱新增真實路由器驗收。
 
 ## 2026-08-12
 
