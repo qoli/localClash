@@ -18,10 +18,44 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
-| localClash Core | [v0.1.54](https://github.com/qoli/localClash/releases/tag/v0.1.54) | 2026-08-15 UTC+8 |
+| localClash Core | [v0.1.55](https://github.com/qoli/localClash/releases/tag/v0.1.55) | 2026-08-15 UTC+8 |
 | localclash-luci | [v0.1.0-47](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-47) | 2026-08-14 UTC+8 |
 
 ## 2026-08-15
+
+### localClash Core v0.1.55
+
+Changes:
+
+- 修正 LuCI「一鍵更新」在訂閱刷新後可能因 `ChatGPT-available` 能力尚未解析而
+  中止的問題；產品 CLI 現在會先完成能力探測，再生成配置。
+- CLI 與 MCP 共用同一套 ChatGPT 能力探測及 snapshot 流程；配置重新生成時會
+  讀取已驗證、保留順序的合格節點，不會因 patch registry 重新編譯而遺失結果。
+- 沒有節點通過可選能力時，會安全生成空的能力出口；缺少、舊版、格式錯誤或
+  不支援的 snapshot，以及必需能力沒有合格節點時，仍會明確失敗。
+- 訂閱刷新加入結構化 `capability_refresh` 階段日誌，方便從 LuCI 更新記錄追蹤
+  探測開始、完成及失敗原因。
+
+Release:
+
+- [qoli/localClash v0.1.55](https://github.com/qoli/localClash/releases/tag/v0.1.55)
+
+Release assets:
+
+- `localclash-linux-amd64`
+- `localclash-linux-arm64`
+- `localclash-base-assets.tar.gz`
+- `localclash-release-manifest.json`
+- 對應的 `.sha256` checksum 文件
+
+Verification:
+
+- 本地 `go test ./...`、`go vet ./...`、release broadcast 回歸測試與 LuCI
+  一鍵更新 rpcd contract 測試通過。
+- 隔離的 x86_64 OpenWrt 測試環境以實際產品 CLI 完成訂閱刷新、能力探測、v4
+  snapshot、patch registry 配置生成及 Mihomo config-test；測試代理不可用而
+  可選能力集合為空時仍成功生成有效配置。測試未替換已安裝 Core，也未重啟
+  現有 Mihomo runtime。
 
 ### localClash Core v0.1.54
 
