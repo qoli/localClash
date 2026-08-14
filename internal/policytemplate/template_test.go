@@ -204,8 +204,8 @@ func TestRealLocalClashDefaultTemplateIsLayered(t *testing.T) {
 		t.Fatalf("ChatGPT-available group = %+v, want optional ChatGPT capability auto group", chatGPTAvailable)
 	}
 	chatGPT := config.PolicyGroups["🤖 ChatGPT"]
-	if len(chatGPT.Exits) == 0 || chatGPT.Exits[0] != "ChatGPT-available" {
-		t.Fatalf("ChatGPT policy exits = %+v, want ChatGPT-available first", chatGPT.Exits)
+	if len(chatGPT.Exits) == 0 || chatGPT.Exits[len(chatGPT.Exits)-1] != "ChatGPT-available" {
+		t.Fatalf("ChatGPT policy exits = %+v, want ChatGPT-available last", chatGPT.Exits)
 	}
 	globalDirect := config.PolicyGroups["🌐 全球直连"]
 	wantGlobalDirectExits := []string{"DIRECT", "⚡ 自动选择", "🇭🇰 香港节点", "🇺🇸 美国节点", "🇯🇵 日本节点", "🇸🇬 新加坡节点", "🇹🇼 台湾节点", "🇰🇷 韩国节点"}
@@ -242,7 +242,7 @@ func TestRealLocalClashDefaultTemplateIsLayered(t *testing.T) {
 		"🎮 Steam":    {"⚡ 自动选择", "🎯 手动选择", "🌐 全球直连", "🇭🇰 香港节点", "🇺🇸 美国节点", "🇯🇵 日本节点", "🇸🇬 新加坡节点", "🇹🇼 台湾节点", "🇰🇷 韩国节点"},
 		"🎮 游戏平台":     {"🌐 全球直连", "🎯 手动选择", "⚡ 自动选择", "🇭🇰 香港节点", "🇺🇸 美国节点", "🇯🇵 日本节点", "🇸🇬 新加坡节点", "🇹🇼 台湾节点", "🇰🇷 韩国节点"},
 		"🕹 Bahamut":  {"🇹🇼 台湾节点", "🎯 手动选择", "🌐 全球直连"},
-		"🤖 ChatGPT":  {"ChatGPT-available", "🇺🇸 美国节点", "🇯🇵 日本节点", "🇸🇬 新加坡节点", "🎯 手动选择", "⚡ 自动选择", "🇹🇼 台湾节点", "🇰🇷 韩国节点"},
+		"🤖 ChatGPT":  {"🇺🇸 美国节点", "🇯🇵 日本节点", "🇸🇬 新加坡节点", "🎯 手动选择", "⚡ 自动选择", "🇹🇼 台湾节点", "🇰🇷 韩国节点", "ChatGPT-available"},
 		"🧠 AI":       {"⚡ 自动选择", "🎯 手动选择", "🇸🇬 新加坡节点", "🇭🇰 香港节点", "🇺🇸 美国节点", "🇯🇵 日本节点", "🇹🇼 台湾节点", "🇰🇷 韩国节点", "🌐 全球直连"},
 		"🍎 Apple":    {"🌐 全球直连", "🎯 手动选择", "⚡ 自动选择", "🇭🇰 香港节点", "🇺🇸 美国节点", "🇯🇵 日本节点", "🇸🇬 新加坡节点", "🇹🇼 台湾节点", "🇰🇷 韩国节点"},
 		"🧲 BT/PT 下载": {"🌐 全球直连", "⚡ 自动选择", "🎯 手动选择", "🇭🇰 香港节点", "🇯🇵 日本节点", "🇺🇸 美国节点", "🇸🇬 新加坡节点", "🇹🇼 台湾节点", "🇰🇷 韩国节点"},

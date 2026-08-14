@@ -16,16 +16,16 @@
       "🤖 ChatGPT": {
         "mode": "manual",
         "exits": [
-          "ChatGPT-available",
           "🇺🇸 美国节点",
           "🇯🇵 日本节点",
           "🇸🇬 新加坡节点",
           "🎯 手动选择",
           "⚡ 自动选择",
           "🇹🇼 台湾节点",
-          "🇰🇷 韩国节点"
+          "🇰🇷 韩国节点",
+          "ChatGPT-available"
         ],
-        "reason": "OpenAI/ChatGPT 專屬業務組；預設先使用通過服務能力驗證的節點，再提供美國、日本、新加坡等明確出口。",
+        "reason": "OpenAI/ChatGPT 專屬業務組；預設使用美國地區出口，將服務能力篩選出口放在最後供有需要的用戶手動選擇。",
         "boundary": "business_to_exit_layer"
       },
       "🧠 AI": {

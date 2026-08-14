@@ -51,14 +51,15 @@ pack targets `🌍 非中國網站`, making its known non-China scope explicit i
 Dashboard.
 Ordinary proxy-oriented business groups default to `⚡ 自动选择` and keep
 `🎯 手动选择` as the first manual override. Groups with explicit safety or product
-semantics can still choose a different first exit. `🤖 ChatGPT` first exposes
-`ChatGPT-available`, a localClash-owned automatic exit rebuilt during
+semantics can still choose a different first exit. `🤖 ChatGPT` defaults to the
+United States regional exit and places `ChatGPT-available` last as an opt-in
+choice. That localClash-owned automatic exit is rebuilt during
 `subscriptions_refresh` from nodes that return the expected ChatGPT IP
 fingerprint (`HTTP 403`, `type: dc`, and `Request is not allowed`) from both the
 iOS and Android root endpoints. Explicit ISP or region rejection removes a node
 immediately; connection resets, timeouts, and unexpected responses are retried
-and use failure hysteresis for previously-qualified nodes. Its explicitly configured regional exits remain
-available after that choice. `🚦 QUIC` defaults to `REJECT`; game platform/Apple/Microsoft/speed-test
+and use failure hysteresis for previously-qualified nodes. The regional exits
+remain available before that opt-in choice. `🚦 QUIC` defaults to `REJECT`; game platform/Apple/Microsoft/speed-test
 defaulting to direct; `🧲 BT/PT 下载` defaulting to direct while exposing automatic,
 manual, and regional proxy exits for Dashboard overrides; or Bahamut defaulting
 to Taiwan. Region exits are optional so subscriptions without a given region can

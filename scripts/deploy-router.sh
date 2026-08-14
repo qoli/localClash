@@ -166,6 +166,10 @@ require_command go
 require_command ssh
 require_command scp
 
+for asset_dir in policy-templates rule-sources; do
+  [[ -d "${asset_dir}" ]] || die "missing required base asset directory: ${asset_dir}"
+done
+
 ssh_opts=(
   -o BatchMode=yes
   -o ConnectTimeout="${ssh_connect_timeout}"
@@ -290,7 +294,7 @@ COPYFILE_DISABLE=1 tar \
   --exclude='*/._*' \
   --exclude='.DS_Store' \
   --exclude='*/.DS_Store' \
-  -czf "${assets_archive}" policies policy-templates rule-sources
+  -czf "${assets_archive}" policy-templates rule-sources
 scp "${scp_opts[@]}" "${assets_archive}" "${router_ssh}:${remote_assets_tmp}"
 
 log "installing missing base assets under ${remote_workdir}"
@@ -308,14 +312,14 @@ trap cleanup EXIT
 rm -rf "$assets_tmp_dir"
 mkdir -p "$assets_tmp_dir" "$remote_workdir"
 tar -xzf "$remote_assets_tmp" -C "$assets_tmp_dir"
-find "$remote_workdir/policies" "$remote_workdir/policy-templates" "$remote_workdir/rule-sources" \
+find "$remote_workdir/policy-templates" "$remote_workdir/rule-sources" \
   \( -name '._*' -o -name '.DS_Store' \) -type f -print 2>/dev/null \
   | while IFS= read -r polluted_file; do
       rm -f "$polluted_file"
     done
 cd "$assets_tmp_dir"
 installed=0
-for file in $(find policies policy-templates rule-sources -type f | sort); do
+for file in $(find policy-templates rule-sources -type f | sort); do
   target="$remote_workdir/$file"
   if [ -e "$target" ]; then
     continue
