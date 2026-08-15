@@ -16,24 +16,48 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 
 ## Unreleased
 
-- `ChatGPT-available` 改用 ChatGPT 前端實際使用的
-  `ab.chatgpt.com/v1/initialize` Statsig 初始化作為線路能力探測；要求 HTTP
-  200、Brotli 回應、有效 JSON 及 `derived_fields.country`，並在 snapshot
-  記錄服務觀察地區、狀態、延遲及壓縮／解壓字節。
-- 探測預設使用 16 個工作節點，第一輪成功即停止，僅重試失敗節點；Brotli
-  JSON 以有界串流解析，不在記憶體保留完整多 MB 回應。
-- MCP 訂閱刷新改為先 render candidate、執行 `mihomo -t`，再 promote
-  capability snapshot 與正式配置；失敗會保留原配置，runtime hot reload
-  仍使用既有的顯式確認操作。
-
 ## 目前最新版本
 
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
-| localClash Core | [v0.1.56](https://github.com/qoli/localClash/releases/tag/v0.1.56) | 2026-08-15 UTC+8 |
+| localClash Core | [v0.1.57](https://github.com/qoli/localClash/releases/tag/v0.1.57) | 2026-08-15 UTC+8 |
 | localclash-luci | [v0.1.0-47](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-47) | 2026-08-14 UTC+8 |
 
 ## 2026-08-15
+
+### localClash Core v0.1.57
+
+Changes:
+
+- `ChatGPT-available` 改用 `ab.chatgpt.com/v1/initialize` Statsig 探測，驗證
+  HTTP 200、Brotli、JSON 及服務地區。
+- 16 個工作節點只重試失敗線路並串流解析；舊 mobile snapshot 會作廢重測。
+- MCP 先 render candidate、執行 `mihomo -t`，通過才 promote snapshot 與配置。
+- 訂閱完整下載及 Range recovery 統一固定 HTTP/1.1，不影響其他 HTTP 流程。
+
+Release:
+
+- [qoli/localClash v0.1.57](https://github.com/qoli/localClash/releases/tag/v0.1.57)
+
+Release assets:
+
+- `localclash-linux-amd64`
+- `localclash-linux-arm64`
+- `localclash-base-assets.tar.gz`
+- `localclash-release-manifest.json`
+- 對應的 `.sha256` checksum 文件
+
+Verification:
+
+- 本地 `go test ./...`、`go vet ./...`、subscription race／HTTP 協議回歸測試
+  及 release broadcast 測試通過。
+- 隔離的 x86_64 OpenWrt 測試環境在沒有 `GODEBUG` 的情況下，以 HTTP/1.1
+  完成兩個真實訂閱來源、102 個節點的刷新；Statsig 對 76 條去重線路完成探測，
+  50 個節點進入 `ChatGPT-available`，candidate config、capability snapshot 與
+  正式配置均通過驗證並完成 promotion。
+- 測試 runtime 實際載入的 50 個 `ChatGPT-available` 成員與 v5 snapshot
+  完全一致，`DNSProxy` 亦正確指向 `⚡ 自动选择`；驗收後 runtime 已停止並恢復
+  原測試狀態。
 
 ### localClash Core v0.1.56
 
