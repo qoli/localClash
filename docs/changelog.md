@@ -58,6 +58,15 @@ Verification:
 - 測試 runtime 實際載入的 50 個 `ChatGPT-available` 成員與 v5 snapshot
   完全一致，`DNSProxy` 亦正確指向 `⚡ 自动选择`；驗收後 runtime 已停止並恢復
   原測試狀態。
+- GitHub Release workflow
+  [31871304134](https://github.com/qoli/localClash/actions/runs/31871304134) 的
+  Linux tests、兩架構 binary、base assets 及 Release 建立全部成功。
+- 7 個公開資產重新下載後，精確檔名與全部 SHA-256 均通過；兩個靜態 Linux
+  binaries 分別為 x86-64／ARM64，均內嵌 `v0.1.57` 與發版 commit
+  `7b05bad`。manifest 宣告 `v0.1.57`，所有 URL、檔案大小及 checksum 均指向
+  並符合同版本；base assets 內的預設 template 使用
+  `openai.chatgpt.statsig.v1`。annotated tag、發佈時的遠端 `main` 與發版 commit
+  同為 `7b05bad`。
 
 ### localClash Core v0.1.56
 
