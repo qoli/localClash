@@ -1,9 +1,11 @@
 package chatgptavailable
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -11,58 +13,48 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/andybalholm/brotli"
 )
 
-func TestClassifyEligibilityAcceptsExpectedDCFingerprint(t *testing.T) {
-	result := classifyEligibility(http.StatusForbidden, []byte(`{"cf_details":"Request is not allowed. Please try again later.", "type":"dc"}`))
-	if result.decision != eligibilityEligible || result.httpStatus != http.StatusForbidden || result.err != nil {
-		t.Fatalf("result = %+v, want eligible 403 dc fingerprint", result)
+func TestRequestStatsigRequiresBrotliAndReadsCountryWithoutMaterializingResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.Header.Get("Accept-Encoding") != "br" || r.Header.Get("Statsig-Api-Key") != "test-key" || r.URL.Query().Get("k") != "test-key" {
+			t.Errorf("unexpected Statsig request: method=%s encoding=%q key=%q query=%q", r.Method, r.Header.Get("Accept-Encoding"), r.Header.Get("Statsig-Api-Key"), r.URL.RawQuery)
+		}
+		w.Header().Set("Content-Encoding", "br")
+		writer := brotli.NewWriter(w)
+		_, _ = writer.Write([]byte(`{"feature_gates":{"large":{"nested":[1,2,3]}},"derived_fields":{"country":"hk"},"sdk_flags":{}}`))
+		_ = writer.Close()
+	}))
+	defer server.Close()
+
+	result := requestStatsig(context.Background(), server.Client(), server.URL, "test-key", time.Second)
+	if result.err != nil || result.decision != statsigReachable || result.country != "HK" || result.contentEncoding != "br" {
+		t.Fatalf("result = %+v, want reachable HK Brotli response", result)
+	}
+	if result.compressedBytes <= 0 || result.decompressedBytes <= result.compressedBytes {
+		t.Fatalf("byte accounting = compressed %d decompressed %d", result.compressedBytes, result.decompressedBytes)
 	}
 }
 
-func TestClassifyEligibilitySeparatesExplicitRejectionsFromAmbiguousResponses(t *testing.T) {
-	tests := []struct {
-		name       string
-		httpStatus int
-		body       string
-		decision   string
-		explicit   bool
-	}{
-		{name: "disallowed ISP", httpStatus: http.StatusForbidden, body: `{"cf_details":"Something went wrong. You may be connected to a disallowed ISP."}`, decision: eligibilityDisallowedISP, explicit: true},
-		{name: "unsupported region", httpStatus: http.StatusForbidden, body: `{"error":{"code":"unsupported_country_region_territory"}}`, decision: eligibilityUnsupportedRegion, explicit: true},
-		{name: "normal status JSON", httpStatus: http.StatusOK, body: `{"status":"normal"}`, decision: eligibilityUnexpectedResponse},
-		{name: "wrong type", httpStatus: http.StatusForbidden, body: `{"cf_details":"Request is not allowed. Please try again later.","type":"other"}`, decision: eligibilityUnexpectedResponse},
-		{name: "challenge HTML", httpStatus: http.StatusForbidden, body: `<html>challenge</html>`, decision: eligibilityUnexpectedResponse},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			result := classifyEligibility(test.httpStatus, []byte(test.body))
-			if result.decision != test.decision || result.explicitReject != test.explicit || result.err == nil {
-				t.Fatalf("result = %+v, want decision %q explicit=%v", result, test.decision, test.explicit)
-			}
-		})
+func TestRequestStatsigRejectsUncompressedResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"derived_fields":{"country":"US"}}`))
+	}))
+	defer server.Close()
+
+	result := requestStatsig(context.Background(), server.Client(), server.URL, "test-key", time.Second)
+	if result.err == nil || result.decision != statsigUnexpectedResponse || !strings.Contains(result.err.Error(), "Brotli") {
+		t.Fatalf("result = %+v, want explicit uncompressed-response rejection", result)
 	}
 }
 
-func TestEvaluateProbeAttemptRequiresBothMobileEligibilityFingerprints(t *testing.T) {
-	eligible := classifyEligibility(http.StatusForbidden, []byte(`{"cf_details":"Request is not allowed. Please try again later.","type":"dc"}`))
-	if available, rejected, probeError := evaluateProbeAttempt(eligible, eligible); !available || rejected || probeError != "" {
-		t.Fatalf("eligible attempt = available %v rejected %v error %q", available, rejected, probeError)
-	}
-
-	disallowed := classifyEligibility(http.StatusForbidden, []byte(`{"cf_details":"You may be connected to a disallowed ISP."}`))
-	if available, rejected, probeError := evaluateProbeAttempt(eligible, disallowed); available || !rejected || probeError == "" {
-		t.Fatalf("disallowed attempt = available %v rejected %v error %q", available, rejected, probeError)
-	}
-
-	reset := eligibilityProbeResult{decision: eligibilityTransportFailure, err: errors.New("connection reset by peer")}
-	if available, rejected, probeError := evaluateProbeAttempt(reset, eligible); available || rejected || !strings.Contains(probeError, "connection reset by peer") {
-		t.Fatalf("reset attempt = available %v rejected %v error %q", available, rejected, probeError)
-	}
-
-	unexpected := classifyEligibility(http.StatusForbidden, []byte(`<html>challenge</html>`))
-	if available, rejected, probeError := evaluateProbeAttempt(eligible, unexpected); available || rejected || probeError == "" {
-		t.Fatalf("unexpected attempt = available %v rejected %v error %q", available, rejected, probeError)
+func TestReadStatsigCountryRejectsMissingOrTrailingData(t *testing.T) {
+	for _, input := range []string{`{"feature_gates":{}}`, `{"derived_fields":{"country":"US"}} true`} {
+		if country, err := readStatsigCountry(bytes.NewBufferString(input)); err == nil || country != "" {
+			t.Fatalf("input %q produced country=%q err=%v, want explicit failure", input, country, err)
+		}
 	}
 }
 
@@ -99,8 +91,41 @@ func TestNewMihomoProberDefaultsScaleLargeSubscriptions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if prober.options.Concurrency != 40 || prober.options.RequestTimeout != 5*time.Second || prober.options.Attempts != 3 {
-		t.Fatalf("probe defaults = %+v, want concurrency 40, timeout 5s, attempts 3", prober.options)
+	if prober.options.Concurrency != 16 || prober.options.RequestTimeout != 5*time.Second || prober.options.Attempts != 3 || prober.options.Endpoint != statsigInitializeURL || prober.options.ClientKey == "" {
+		t.Fatalf("probe defaults = %+v, want concurrency 16, timeout 5s, attempts 3, and Statsig defaults", prober.options)
+	}
+}
+
+func TestProbeCandidateRetriesOnlyFailureAndAccumulatesTransferBytes(t *testing.T) {
+	calls := 0
+	prober := &MihomoProber{
+		options: MihomoOptions{Attempts: 3, RetryDelay: time.Nanosecond, RequestTimeout: time.Second},
+		probe: func(context.Context, int, string, string, time.Duration) statsigProbeResult {
+			calls++
+			if calls == 1 {
+				return statsigProbeResult{decision: statsigTransportFailure, compressedBytes: 100, decompressedBytes: 200, err: context.DeadlineExceeded}
+			}
+			return statsigProbeResult{decision: statsigReachable, httpStatus: 200, country: "US", contentEncoding: "br", compressedBytes: 50, decompressedBytes: 100}
+		},
+	}
+	observation := prober.probeCandidate(context.Background(), Candidate{Fingerprint: "node"}, 19001)
+	if !observation.Available || observation.Attempts != 2 || calls != 2 || observation.CompressedBytes != 150 || observation.DecompressedBytes != 300 {
+		t.Fatalf("observation = %+v calls=%d, want second-attempt success with cumulative bytes", observation, calls)
+	}
+}
+
+func TestProbeCandidateDoesNotRetryExplicitServiceRejection(t *testing.T) {
+	calls := 0
+	prober := &MihomoProber{
+		options: MihomoOptions{Attempts: 3, RetryDelay: time.Nanosecond, RequestTimeout: time.Second},
+		probe: func(context.Context, int, string, string, time.Duration) statsigProbeResult {
+			calls++
+			return statsigProbeResult{decision: statsigRejected, httpStatus: 401, explicitReject: true, err: errors.New("rejected")}
+		},
+	}
+	observation := prober.probeCandidate(context.Background(), Candidate{Fingerprint: "node"}, 19001)
+	if observation.Available || !observation.ServiceRejected || observation.Attempts != 1 || calls != 1 {
+		t.Fatalf("observation = %+v calls=%d, want one explicit-rejection attempt", observation, calls)
 	}
 }
 

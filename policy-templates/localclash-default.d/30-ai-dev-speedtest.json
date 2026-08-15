@@ -6,7 +6,7 @@
     "proxy_groups": {
       "ChatGPT-available": {
         "mode": "auto",
-        "capability": "openai.chatgpt.mobile.v1",
+        "capability": "openai.chatgpt.statsig.v1",
         "smart_priority": [
           {
             "label": "US",
@@ -35,7 +35,7 @@
           }
         ],
         "optional": true,
-        "reason": "由 localClash 在訂閱更新時驗證 iOS 與 Android 根路徑的 ChatGPT IP 可用指紋後重建。",
+        "reason": "由 localClash 在訂閱更新時透過 ab.chatgpt.com Statsig initialize 驗證線路可用性及服務觀察地區後重建。",
         "boundary": "chatgpt_service_qualified_subscription_nodes"
       }
     },

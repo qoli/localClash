@@ -38,8 +38,8 @@ func TestRebuildPublishesOnlyQualifiedNodes(t *testing.T) {
 		{"name": "JP 01", "type": "trojan", "server": "jp.example.com", "password": "secret-jp"},
 	}
 	result, err := Rebuild(context.Background(), proxies, fakeProber{observations: map[string]Observation{
-		"US 01": {Available: true, Attempts: 1, IOSEligibility: eligibilityEligible, IOSEligibilityStatus: 403, AndroidEligibility: eligibilityEligible, AndroidEligibilityStatus: 403, Duration: 120 * time.Millisecond},
-		"JP 01": {Available: false, Attempts: 3, IOSEligibility: eligibilityEligible, IOSEligibilityStatus: 403, AndroidEligibility: eligibilityUnexpectedResponse, AndroidEligibilityStatus: 403, Error: "unexpected Android response", Duration: 2 * time.Second},
+		"US 01": {Available: true, Attempts: 1, StatsigStatus: statsigReachable, StatsigHTTPStatus: 200, StatsigCountry: "US", ContentEncoding: "br", CompressedBytes: 250000, DecompressedBytes: 2800000, Duration: 120 * time.Millisecond},
+		"JP 01": {Available: false, Attempts: 3, StatsigStatus: statsigTransportFailure, Error: "Statsig timeout", Duration: 2 * time.Second},
 	}}, Options{
 		SnapshotPath: snapshotPath,
 		Now:          func() time.Time { return time.Date(2026, 8, 15, 12, 0, 0, 0, time.UTC) },
@@ -62,11 +62,11 @@ func TestRebuildPublishesOnlyQualifiedNodes(t *testing.T) {
 			t.Fatalf("snapshot leaked %q: %s", secret, data)
 		}
 	}
-	if !strings.Contains(string(data), `"profile": "openai.chatgpt.mobile.v1"`) {
+	if !strings.Contains(string(data), `"profile": "openai.chatgpt.statsig.v1"`) {
 		t.Fatalf("snapshot missing profile: %s", data)
 	}
-	if !strings.Contains(string(data), `"version": 4`) || !strings.Contains(string(data), `"qualified": [`) || !strings.Contains(string(data), `"ios_ip_eligibility": "eligible"`) || !strings.Contains(string(data), `"android_ip_eligibility": "eligible"`) {
-		t.Fatalf("snapshot missing v4 qualified nodes and dual-platform eligibility evidence: %s", data)
+	if !strings.Contains(string(data), `"version": 5`) || !strings.Contains(string(data), `"qualified": [`) || !strings.Contains(string(data), `"statsig_status": "reachable"`) || !strings.Contains(string(data), `"statsig_country": "US"`) || !strings.Contains(string(data), `"content_encoding": "br"`) {
+		t.Fatalf("snapshot missing v5 qualified nodes and Statsig evidence: %s", data)
 	}
 	qualified, err := LoadQualified(snapshotPath)
 	if err != nil {
@@ -82,7 +82,7 @@ func TestRebuildRejectsTotalCollapseAndPreservesSnapshot(t *testing.T) {
 	snapshotPath := filepath.Join(dir, "chatgpt.json")
 	proxies := []map[string]any{{"name": "US 01", "type": "ss", "server": "us.example.com", "password": "secret"}}
 	available := fakeProber{observations: map[string]Observation{
-		"US 01": {Available: true, Attempts: 1, IOSEligibility: eligibilityEligible, AndroidEligibility: eligibilityEligible},
+		"US 01": {Available: true, Attempts: 1, StatsigStatus: statsigReachable, StatsigCountry: "US"},
 	}}
 	if _, err := Rebuild(context.Background(), proxies, available, Options{SnapshotPath: snapshotPath}); err != nil {
 		t.Fatal(err)
@@ -133,13 +133,13 @@ func TestRebuildDoesNotAdmitNewUnavailableCandidate(t *testing.T) {
 	}
 }
 
-func TestRebuildEligibilityRejectionBypassesFailureHysteresis(t *testing.T) {
+func TestRebuildServiceRejectionBypassesFailureHysteresis(t *testing.T) {
 	snapshotPath := filepath.Join(t.TempDir(), "chatgpt.json")
 	proxies := []map[string]any{{"name": "HK 01", "type": "vless", "server": "hk.example.com"}}
 	available := fakeProber{observations: map[string]Observation{
 		"HK 01": {
-			Available: true, Attempts: 1, IOSEligibility: eligibilityEligible,
-			IOSEligibilityStatus: 403, AndroidEligibility: eligibilityEligible, AndroidEligibilityStatus: 403,
+			Available: true, Attempts: 1, StatsigStatus: statsigReachable,
+			StatsigHTTPStatus: 200, StatsigCountry: "HK",
 		},
 	}}
 	if _, err := Rebuild(context.Background(), proxies, available, Options{SnapshotPath: snapshotPath}); err != nil {
@@ -147,14 +147,13 @@ func TestRebuildEligibilityRejectionBypassesFailureHysteresis(t *testing.T) {
 	}
 	rejected := fakeProber{observations: map[string]Observation{
 		"HK 01": {
-			EligibilityRejected: true, Attempts: 1, IOSEligibility: eligibilityEligible,
-			IOSEligibilityStatus: 403, AndroidEligibility: eligibilityDisallowedISP, AndroidEligibilityStatus: 403,
-			Error: "OpenAI rejected the exit ISP",
+			ServiceRejected: true, Attempts: 1, StatsigStatus: statsigRejected,
+			StatsigHTTPStatus: 403, Error: "Statsig initialize rejected the probe",
 		},
 	}}
 	_, err := Rebuild(context.Background(), proxies, rejected, Options{SnapshotPath: snapshotPath})
 	if !errors.Is(err, ErrQualificationCollapse) {
-		t.Fatalf("error = %v, want immediate collapse for explicit eligibility rejection", err)
+		t.Fatalf("error = %v, want immediate collapse for explicit service rejection", err)
 	}
 }
 
@@ -162,13 +161,13 @@ func TestRebuildNetworkFailureStillUsesFailureHysteresis(t *testing.T) {
 	snapshotPath := filepath.Join(t.TempDir(), "chatgpt.json")
 	proxies := []map[string]any{{"name": "US 01", "type": "vless", "server": "us.example.com"}}
 	available := fakeProber{observations: map[string]Observation{
-		"US 01": {Available: true, Attempts: 1, IOSEligibility: eligibilityEligible, IOSEligibilityStatus: 403, AndroidEligibility: eligibilityEligible, AndroidEligibilityStatus: 403},
+		"US 01": {Available: true, Attempts: 1, StatsigStatus: statsigReachable, StatsigHTTPStatus: 200, StatsigCountry: "US"},
 	}}
 	if _, err := Rebuild(context.Background(), proxies, available, Options{SnapshotPath: snapshotPath}); err != nil {
 		t.Fatal(err)
 	}
 	networkFailure := fakeProber{observations: map[string]Observation{
-		"US 01": {Attempts: 3, IOSEligibility: eligibilityTransportFailure, AndroidEligibility: eligibilityTransportFailure, Error: "connection reset by peer"},
+		"US 01": {Attempts: 3, StatsigStatus: statsigTransportFailure, Error: "connection reset by peer"},
 	}}
 	result, err := Rebuild(context.Background(), proxies, networkFailure, Options{SnapshotPath: snapshotPath})
 	if err != nil {
@@ -190,6 +189,43 @@ func TestRebuildDoesNotPublishWhenProbeInfrastructureFails(t *testing.T) {
 	}
 }
 
+func TestRebuildCandidateUsesPromotedSnapshotAsHysteresisBaseline(t *testing.T) {
+	dir := t.TempDir()
+	promoted := filepath.Join(dir, "promoted.json")
+	candidate := filepath.Join(dir, "transaction", "candidate.json")
+	proxies := []map[string]any{{"name": "US 01", "type": "ss", "server": "us.example.com"}}
+	available := fakeProber{observations: map[string]Observation{
+		"US 01": {Available: true, Attempts: 1, StatsigStatus: statsigReachable, StatsigCountry: "US"},
+	}}
+	if _, err := Rebuild(context.Background(), proxies, available, Options{SnapshotPath: promoted}); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(promoted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unavailable := fakeProber{observations: map[string]Observation{
+		"US 01": {Attempts: 3, StatsigStatus: statsigTransportFailure, Error: "timeout"},
+	}}
+	result, err := Rebuild(context.Background(), proxies, unavailable, Options{SnapshotPath: candidate, PreviousSnapshotPath: promoted})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.QualifiedCount != 1 || result.RetainedCount != 1 {
+		t.Fatalf("candidate result = %+v, want retained promoted qualification", result)
+	}
+	after, err := os.ReadFile(promoted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Fatalf("candidate rebuild mutated promoted snapshot")
+	}
+	if _, err := os.Stat(candidate); err != nil {
+		t.Fatalf("candidate snapshot missing: %v", err)
+	}
+}
+
 func TestBuildCandidatesDeduplicatesEquivalentProxyDefinitions(t *testing.T) {
 	proxies := []map[string]any{
 		{"name": "US 01", "type": "ss", "server": "same.example", "password": "secret"},
@@ -208,12 +244,12 @@ func TestBuildCandidatesDeduplicatesEquivalentProxyDefinitions(t *testing.T) {
 }
 
 func TestReadSnapshotTreatsLegacyQualificationsAsAbsent(t *testing.T) {
-	for _, version := range []int{1, 2, 3} {
+	for _, version := range []int{1, 2, 3, 4} {
 		t.Run(fmt.Sprintf("v%d", version), func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "chatgpt.json")
 			legacy := fmt.Sprintf(`{
   "version": %d,
-  "profile": "openai.chatgpt.mobile.v1",
+  "profile": "openai.chatgpt.statsig.v1",
   "updated_at": "2026-08-14T00:00:00Z",
   "nodes": {
     "old": {"name":"HK 01","available":true,"observed_available":true,"attempts":1,"checked_at":"2026-08-14T00:00:00Z","duration_ms":1}
@@ -244,8 +280,8 @@ func TestLoadQualifiedRequiresCurrentSnapshot(t *testing.T) {
 func TestLoadQualifiedRejectsMalformedCurrentSnapshot(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "chatgpt.json")
 	data := `{
-  "version": 4,
-  "profile": "openai.chatgpt.mobile.v1",
+  "version": 5,
+  "profile": "openai.chatgpt.statsig.v1",
   "updated_at": "2026-08-15T00:00:00Z",
   "qualified": ["US 01", "US 01"],
   "nodes": {}

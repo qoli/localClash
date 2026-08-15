@@ -293,18 +293,21 @@ MCP subscription bootstrap tools:
   logged HTTP/1.1 64 KiB range chunks. Recovery requires a consistent total,
   exact byte counts, matching 256-byte overlaps, and repeated first/last boundary
   reads; any mismatch fails without writing a partial or stale artifact.
-  If the compiled intent declares `capability: openai.chatgpt.mobile.v1`, refresh
+  If the compiled intent declares `capability: openai.chatgpt.statsig.v1`, refresh
   also rebuilds that exit through an isolated temporary Mihomo. Every qualified
-  node must return the expected IP eligibility fingerprint (`HTTP 403`,
-  `type: dc`, and `cf_details` containing `Request is not allowed`) from both
-  `https://ios.chat.openai.com/` and `https://android.chat.openai.com/`. The
-  expected 403 response is positive evidence. An explicit disallowed-ISP or
-  unsupported-region response removes the node immediately; a TLS reset,
-  timeout, or unexpected response is retried and uses the persisted
-  consecutive-failure threshold for an already-qualified node. This check is
-  independent from the active core's cached `alive` state. Capability probe
-  failures and a sudden collapse of an existing qualified set are reported
-  explicitly and leave the previous generated config unchanged.
+  node must complete `POST https://ab.chatgpt.com/v1/initialize`, return HTTP
+  200 with Brotli encoding, and expose a non-empty `derived_fields.country`.
+  localClash streams the response through bounded Brotli and JSON readers rather
+  than retaining the multi-megabyte Statsig document. Probes use 16 workers;
+  only unsuccessful nodes are retried. A TLS reset, timeout, rejection, malformed
+  response, missing country, or response-limit breach is recorded explicitly and
+  uses the persisted consecutive-failure threshold where applicable. The check
+  is independent from the active core's cached `alive` state.
+
+  MCP refresh renders `config.yaml.candidate`, validates it with `mihomo -t`, and
+  promotes both the capability snapshot and generated config only after the test
+  passes. The running core is not silently mutated; callers use the existing
+  confirm-required `restart_runtime` hot reload after reviewing the refresh result.
 
 Subscription tools do not ask the agent for subscription config, runtime
 artifact, or merged output paths. The caller supplies only subscription source

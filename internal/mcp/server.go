@@ -42,17 +42,20 @@ import (
 )
 
 type Server struct {
-	state                *appinit.RuntimeState
-	startedAt            time.Time
-	taskCtx              context.Context
-	taskCancel           context.CancelFunc
-	taskWG               sync.WaitGroup
-	configPatchDraftMu   sync.Mutex
-	configPatchDraftGen  int64
-	configPatchDraftSlot *configPatchDraftSlot
-	watchdogNoticeMu     sync.Mutex
-	watchdogNotices      map[string]time.Time
-	rebuildChatGPT       func(context.Context, []map[string]any, string, string, string) (chatgptavailable.Result, error)
+	state                 *appinit.RuntimeState
+	startedAt             time.Time
+	taskCtx               context.Context
+	taskCancel            context.CancelFunc
+	taskWG                sync.WaitGroup
+	configPatchDraftMu    sync.Mutex
+	subscriptionRefreshMu sync.Mutex
+	configPatchDraftGen   int64
+	configPatchDraftSlot  *configPatchDraftSlot
+	watchdogNoticeMu      sync.Mutex
+	watchdogNotices       map[string]time.Time
+	rebuildChatGPT        func(context.Context, []map[string]any, string, string, string, string) (chatgptavailable.Result, error)
+	testMihomoConfig      func(context.Context, mihomotest.TestOptions) (mihomotest.TestResult, error)
+	promoteMihomoConfig   func(string, string, string) (mihomotest.PromoteResult, error)
 }
 
 var routerTakeoverStatus = routertakeover.Status
@@ -79,12 +82,14 @@ func NewServerWithState(state appinit.RuntimeState) *Server {
 func newServer(state *appinit.RuntimeState) *Server {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Server{
-		state:           state,
-		startedAt:       time.Now().UTC(),
-		taskCtx:         ctx,
-		taskCancel:      cancel,
-		watchdogNotices: map[string]time.Time{},
-		rebuildChatGPT:  chatgptavailable.RebuildWithMihomo,
+		state:               state,
+		startedAt:           time.Now().UTC(),
+		taskCtx:             ctx,
+		taskCancel:          cancel,
+		watchdogNotices:     map[string]time.Time{},
+		rebuildChatGPT:      chatgptavailable.RebuildCandidateWithMihomo,
+		testMihomoConfig:    mihomotest.Test,
+		promoteMihomoConfig: mihomotest.PromoteConfig,
 	}
 }
 
@@ -2228,6 +2233,8 @@ func (s *Server) callSubscriptionsConfigure(args json.RawMessage) (toolResult, e
 }
 
 func (s *Server) callSubscriptionsRefresh(ctx context.Context, args json.RawMessage) (toolResult, error) {
+	s.subscriptionRefreshMu.Lock()
+	defer s.subscriptionRefreshMu.Unlock()
 	var req struct {
 		IDs        []string `json:"ids"`
 		Force      bool     `json:"force"`
@@ -2378,6 +2385,10 @@ type localClashRefreshImpact struct {
 	Error               string                       `json:"error,omitempty"`
 	MissingNodes        []string                     `json:"missing_nodes,omitempty"`
 	GeneratedConfig     string                       `json:"generated_config,omitempty"`
+	CandidateValidated  bool                         `json:"candidate_validated"`
+	ConfigPromoted      bool                         `json:"config_promoted"`
+	CapabilityPromoted  bool                         `json:"capability_promoted"`
+	HotReloadReady      bool                         `json:"hot_reload_ready"`
 	SelectionPath       string                       `json:"selection_path,omitempty"`
 	ProxyGroups         []localClashProxyGroupImpact `json:"proxy_groups,omitempty"`
 	Capabilities        []chatgptavailable.Result    `json:"capabilities,omitempty"`
@@ -2453,18 +2464,41 @@ func (s *Server) evaluateLocalClashAfterRefresh(ctx context.Context, configPath,
 
 	capabilityNodes := map[string][]string{}
 	profiles := configuredCapabilityProfiles(config)
+	var capabilityCandidatePath string
+	var capabilitySnapshotPath string
+	var capabilityTransactionDir string
 	if len(profiles) > 0 {
 		if len(profiles) != 1 || profiles[0] != chatgptavailable.ProfileID {
 			err := fmt.Errorf("unsupported proxy-group capabilities: %s", strings.Join(profiles, ", "))
+			if len(profiles) == 1 && profiles[0] == chatgptavailable.LegacyProfileID {
+				err = fmt.Errorf("legacy ChatGPT capability %q is no longer supported; refresh the localclash-default policy-template patches before subscription refresh", chatgptavailable.LegacyProfileID)
+			}
 			impact.State = "capability_probe_failed"
 			impact.RequiresAgentReplan = true
 			impact.Error = err.Error()
-			impact.NextActions = []string{"remove the unsupported capability or update localClash with an adapter for it"}
+			impact.NextActions = []string{"refresh the localclash-default policy-template patches", "remove any remaining unsupported capability before retrying subscription refresh"}
 			return impact
 		}
+		if err := os.MkdirAll(capabilityRoot, 0o755); err != nil {
+			impact.State = "capability_probe_failed"
+			impact.RequiresAgentReplan = true
+			impact.Error = fmt.Errorf("create capability transaction root: %w", err).Error()
+			return impact
+		}
+		capabilityTransactionDir, err = os.MkdirTemp(capabilityRoot, ".chatgpt-refresh-*")
+		if err != nil {
+			impact.State = "capability_probe_failed"
+			impact.RequiresAgentReplan = true
+			impact.Error = fmt.Errorf("create capability transaction: %w", err).Error()
+			return impact
+		}
+		defer os.RemoveAll(capabilityTransactionDir)
+		capabilitySnapshotPath = filepath.Join(capabilityRoot, "chatgpt-available.json")
+		capabilityCandidatePath = filepath.Join(capabilityTransactionDir, "chatgpt-available.json")
 		finish = startTaskStage(ctx, "evaluate_localclash_impact.qualify_chatgpt", map[string]any{
 			"profile":     chatgptavailable.ProfileID,
 			"proxy_count": len(subscriptionNodes),
+			"candidate":   capabilityCandidatePath,
 		})
 		proxies, err := subscriptionProxyMaps(subscriptionDoc)
 		if err == nil {
@@ -2473,7 +2507,8 @@ func (s *Server) evaluateLocalClashAfterRefresh(ctx context.Context, configPath,
 				proxies,
 				corePath,
 				capabilityRoot,
-				filepath.Join(capabilityRoot, "chatgpt-available.json"),
+				capabilityCandidatePath,
+				capabilitySnapshotPath,
 			)
 			err = rebuildErr
 			if err == nil {
@@ -2537,11 +2572,13 @@ func (s *Server) evaluateLocalClashAfterRefresh(ctx context.Context, configPath,
 	impact.Valid = true
 	impact.ProxyGroups = proxyGroupImpacts(config, resolved.Config)
 
-	finish = startTaskStage(ctx, "evaluate_localclash_impact.render_after_refresh", map[string]any{"output": outputPath, "subscription_source": renderSubscriptionSource(subscriptionDoc)})
+	candidateOutputPath := outputPath + ".candidate"
+	defer os.Remove(candidateOutputPath)
+	finish = startTaskStage(ctx, "evaluate_localclash_impact.render_after_refresh", map[string]any{"output": candidateOutputPath, "subscription_source": renderSubscriptionSource(subscriptionDoc)})
 	_, err = configrender.Render(configrender.Options{
 		SourcePath:         subscriptionPath,
 		Source:             subscriptionDoc,
-		OutputPath:         outputPath,
+		OutputPath:         candidateOutputPath,
 		Selection:          &resolved.Selection,
 		RulesCacheDir:      rulesCache,
 		RuntimeProfilePath: presetPath,
@@ -2550,15 +2587,90 @@ func (s *Server) evaluateLocalClashAfterRefresh(ctx context.Context, configPath,
 	})
 	if err != nil {
 		finishTaskStage(finish, err, nil)
+		impact.State = "candidate_render_failed"
+		impact.Valid = false
 		impact.RequiresAgentReplan = true
 		impact.Error = err.Error()
 		return impact
 	}
 	finishTaskStage(finish, nil, nil)
 
+	attestationPath := outputPath + ".candidate-attestation.json"
+	defer os.Remove(attestationPath)
+	finish = startTaskStage(ctx, "evaluate_localclash_impact.test_candidate", map[string]any{"config": candidateOutputPath})
+	validation, err := s.testMihomoConfig(ctx, mihomotest.TestOptions{
+		ValidationOptions: mihomotest.ValidationOptions{
+			CorePath:   corePath,
+			ConfigPath: candidateOutputPath,
+			WorkDir:    filepath.Dir(outputPath),
+			CachePath:  validationCachePath("", filepath.Dir(outputPath)),
+			Timeout:    90 * time.Second,
+			Force:      true,
+		},
+		Record:             true,
+		AttestationPath:    attestationPath,
+		PromotedConfigPath: outputPath,
+	})
+	if err != nil || !validation.Passed {
+		if err == nil {
+			err = errors.New("candidate Mihomo config test did not pass")
+		}
+		finishTaskStage(finish, err, map[string]any{"passed": validation.Passed})
+		impact.State = "candidate_config_test_failed"
+		impact.Valid = false
+		impact.RequiresAgentReplan = true
+		impact.Error = err.Error()
+		return impact
+	}
+	finishTaskStage(finish, nil, map[string]any{"passed": true, "config_sha256": validation.ConfigSHA256})
+	impact.CandidateValidated = true
+
+	var rollbackCapability func() error
+	if capabilityCandidatePath != "" {
+		finish = startTaskStage(ctx, "evaluate_localclash_impact.promote_capability", map[string]any{"candidate": capabilityCandidatePath, "promoted": capabilitySnapshotPath})
+		rollbackCapability, err = promoteCapabilitySnapshot(capabilityCandidatePath, capabilitySnapshotPath, capabilityTransactionDir)
+		if err != nil {
+			finishTaskStage(finish, err, nil)
+			impact.State = "capability_promote_failed"
+			impact.Valid = false
+			impact.RequiresAgentReplan = true
+			impact.Error = err.Error()
+			return impact
+		}
+		finishTaskStage(finish, nil, nil)
+		impact.CapabilityPromoted = true
+	}
+
+	finish = startTaskStage(ctx, "evaluate_localclash_impact.promote_config", map[string]any{"candidate": candidateOutputPath, "promoted": outputPath})
+	promotion, err := s.promoteMihomoConfig(candidateOutputPath, outputPath, attestationPath)
+	if err != nil {
+		if rollbackCapability != nil {
+			if rollbackErr := rollbackCapability(); rollbackErr != nil {
+				err = fmt.Errorf("promote candidate config: %w; rollback capability snapshot: %v", err, rollbackErr)
+			}
+		}
+		finishTaskStage(finish, err, nil)
+		impact.State = "config_promote_failed"
+		impact.Valid = false
+		impact.RequiresAgentReplan = true
+		impact.Error = err.Error()
+		return impact
+	}
+	finishTaskStage(finish, nil, map[string]any{"config_sha256": promotion.ConfigSHA256})
+	impact.ConfigPromoted = true
+	if err := promoteCandidateAttestation(attestationPath, mihomotest.DefaultAttestationPath(filepath.Dir(outputPath))); err != nil {
+		impact.State = "attestation_promote_failed"
+		impact.Valid = false
+		impact.RequiresAgentReplan = true
+		impact.Error = err.Error()
+		return impact
+	}
+
 	finish = startTaskStage(ctx, "evaluate_localclash_impact.write_resolved_config", map[string]any{"config": configPath})
 	if err := localconfig.Write(configPath, resolved.Config); err != nil {
 		finishTaskStage(finish, err, nil)
+		impact.State = "resolved_config_write_failed"
+		impact.Valid = false
 		impact.RequiresAgentReplan = true
 		impact.Error = err.Error()
 		return impact
@@ -2568,12 +2680,19 @@ func (s *Server) evaluateLocalClashAfterRefresh(ctx context.Context, configPath,
 	finish = startTaskStage(ctx, "evaluate_localclash_impact.write_selection", map[string]any{"selection": selectionPath})
 	if err := localconfig.WriteSelection(selectionPath, resolved.Selection); err != nil {
 		finishTaskStage(finish, err, nil)
+		impact.State = "selection_write_failed"
+		impact.Valid = false
 		impact.RequiresAgentReplan = true
 		impact.Error = err.Error()
 		return impact
 	}
 	finishTaskStage(finish, nil, nil)
 	impact.AppliedAuto = true
+	impact.HotReloadReady = true
+	impact.NextActions = []string{
+		"after confirmation, call restart_runtime with strategy=hot_reload to load the promoted config",
+		"verify /proxies/ChatGPT-available after hot reload",
+	}
 	return impact
 }
 
@@ -2583,6 +2702,49 @@ func configuredCapabilityProfiles(config localconfig.Config) []string {
 		profiles = append(profiles, group.Capability)
 	}
 	return chatgptavailable.Profiles(profiles)
+}
+
+func promoteCapabilitySnapshot(candidate, promoted, transactionDir string) (func() error, error) {
+	if _, err := chatgptavailable.LoadQualified(candidate); err != nil {
+		return nil, fmt.Errorf("validate candidate capability snapshot: %w", err)
+	}
+	backup := filepath.Join(transactionDir, "previous-chatgpt-available.json")
+	previousExists := false
+	if _, err := os.Stat(promoted); err == nil {
+		if err := os.Rename(promoted, backup); err != nil {
+			return nil, fmt.Errorf("backup current capability snapshot: %w", err)
+		}
+		previousExists = true
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("inspect current capability snapshot: %w", err)
+	}
+	if err := os.Rename(candidate, promoted); err != nil {
+		if previousExists {
+			_ = os.Rename(backup, promoted)
+		}
+		return nil, fmt.Errorf("promote candidate capability snapshot: %w", err)
+	}
+	return func() error {
+		if err := os.Remove(promoted); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("remove promoted capability snapshot: %w", err)
+		}
+		if previousExists {
+			if err := os.Rename(backup, promoted); err != nil {
+				return fmt.Errorf("restore previous capability snapshot: %w", err)
+			}
+		}
+		return nil
+	}, nil
+}
+
+func promoteCandidateAttestation(candidate, promoted string) error {
+	if _, err := mihomotest.ReadAttestation(candidate); err != nil {
+		return fmt.Errorf("validate candidate config-test attestation: %w", err)
+	}
+	if err := os.Rename(candidate, promoted); err != nil {
+		return fmt.Errorf("promote config-test attestation: %w", err)
+	}
+	return nil
 }
 
 func configuredCapabilityNodesFromSnapshot(config localconfig.Config, capabilityRoot string) (map[string][]string, error) {

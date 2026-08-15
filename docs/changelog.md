@@ -14,6 +14,18 @@ localClash 有兩條獨立的發佈渠道：
 Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package 的路由器，
 可以在 LuCI 頁面裡直接更新 Core。
 
+## Unreleased
+
+- `ChatGPT-available` 改用 ChatGPT 前端實際使用的
+  `ab.chatgpt.com/v1/initialize` Statsig 初始化作為線路能力探測；要求 HTTP
+  200、Brotli 回應、有效 JSON 及 `derived_fields.country`，並在 snapshot
+  記錄服務觀察地區、狀態、延遲及壓縮／解壓字節。
+- 探測預設使用 16 個工作節點，第一輪成功即停止，僅重試失敗節點；Brotli
+  JSON 以有界串流解析，不在記憶體保留完整多 MB 回應。
+- MCP 訂閱刷新改為先 render candidate、執行 `mihomo -t`，再 promote
+  capability snapshot 與正式配置；失敗會保留原配置，runtime hot reload
+  仍使用既有的顯式確認操作。
+
 ## 目前最新版本
 
 | 渠道 | 最新版本 | 發佈時間 |

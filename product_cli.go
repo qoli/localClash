@@ -242,6 +242,9 @@ func refreshProductCapabilities(ctx context.Context, state appinit.RuntimeState,
 		return []chatgptavailable.Result{}, nil
 	}
 	if len(profiles) != 1 || profiles[0] != chatgptavailable.ProfileID {
+		if len(profiles) == 1 && profiles[0] == chatgptavailable.LegacyProfileID {
+			return nil, fmt.Errorf("legacy ChatGPT capability %q is no longer supported; refresh the localclash-default policy-template patches before subscription refresh", chatgptavailable.LegacyProfileID)
+		}
 		return nil, fmt.Errorf("unsupported proxy-group capabilities: %s", strings.Join(profiles, ", "))
 	}
 	proxies, err := productSubscriptionProxyMaps(subscriptionDoc)

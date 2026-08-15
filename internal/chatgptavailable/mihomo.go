@@ -18,20 +18,23 @@ import (
 	"sync"
 	"time"
 
+	"github.com/andybalholm/brotli"
 	"gopkg.in/yaml.v3"
 )
 
 const (
-	iosEligibilityURL     = "https://ios.chat.openai.com/"
-	androidEligibilityURL = "https://android.chat.openai.com/"
+	statsigInitializeURL = "https://ab.chatgpt.com/v1/initialize"
+	// Statsig client SDK keys are public application identifiers, not OpenAI account credentials.
+	statsigClientKey            = "client-zUdXdSTygXJdzoE0sWTkP8GKTVsUMF2IRM7ShVO2JAG"
+	statsigMaxCompressedBytes   = 1024 * 1024
+	statsigMaxDecompressedBytes = 4 * 1024 * 1024
 )
 
 const (
-	eligibilityEligible           = "eligible"
-	eligibilityDisallowedISP      = "disallowed_isp"
-	eligibilityUnsupportedRegion  = "unsupported_region"
-	eligibilityUnexpectedResponse = "unexpected_response"
-	eligibilityTransportFailure   = "transport_failure"
+	statsigReachable          = "reachable"
+	statsigRejected           = "rejected"
+	statsigUnexpectedResponse = "unexpected_response"
+	statsigTransportFailure   = "transport_failure"
 )
 
 type MihomoOptions struct {
@@ -41,13 +44,20 @@ type MihomoOptions struct {
 	Attempts       int
 	RequestTimeout time.Duration
 	RetryDelay     time.Duration
+	Endpoint       string
+	ClientKey      string
 }
 
 type MihomoProber struct {
 	options MihomoOptions
+	probe   func(context.Context, int, string, string, time.Duration) statsigProbeResult
 }
 
 func RebuildWithMihomo(ctx context.Context, proxies []map[string]any, corePath, runtimeParent, snapshotPath string) (Result, error) {
+	return RebuildCandidateWithMihomo(ctx, proxies, corePath, runtimeParent, snapshotPath, snapshotPath)
+}
+
+func RebuildCandidateWithMihomo(ctx context.Context, proxies []map[string]any, corePath, runtimeParent, snapshotPath, previousSnapshotPath string) (Result, error) {
 	prober, err := NewMihomoProber(MihomoOptions{
 		CorePath:      corePath,
 		RuntimeParent: runtimeParent,
@@ -55,7 +65,7 @@ func RebuildWithMihomo(ctx context.Context, proxies []map[string]any, corePath, 
 	if err != nil {
 		return Result{}, err
 	}
-	return Rebuild(ctx, proxies, prober, Options{SnapshotPath: snapshotPath})
+	return Rebuild(ctx, proxies, prober, Options{SnapshotPath: snapshotPath, PreviousSnapshotPath: previousSnapshotPath})
 }
 
 func NewMihomoProber(options MihomoOptions) (*MihomoProber, error) {
@@ -74,7 +84,7 @@ func NewMihomoProber(options MihomoOptions) (*MihomoProber, error) {
 		return nil, errors.New("ChatGPT capability probe runtime parent is required")
 	}
 	if options.Concurrency <= 0 {
-		options.Concurrency = 40
+		options.Concurrency = 16
 	}
 	if options.Attempts <= 0 {
 		options.Attempts = 3
@@ -85,7 +95,13 @@ func NewMihomoProber(options MihomoOptions) (*MihomoProber, error) {
 	if options.RetryDelay <= 0 {
 		options.RetryDelay = 500 * time.Millisecond
 	}
-	return &MihomoProber{options: options}, nil
+	if strings.TrimSpace(options.Endpoint) == "" {
+		options.Endpoint = statsigInitializeURL
+	}
+	if strings.TrimSpace(options.ClientKey) == "" {
+		options.ClientKey = statsigClientKey
+	}
+	return &MihomoProber{options: options, probe: probeStatsig}, nil
 }
 
 func (p *MihomoProber) Probe(ctx context.Context, candidates []Candidate) ([]Observation, error) {
@@ -151,29 +167,21 @@ func (p *MihomoProber) probeCandidate(ctx context.Context, candidate Candidate, 
 	observation := Observation{Fingerprint: candidate.Fingerprint}
 	for attempt := 1; attempt <= p.options.Attempts; attempt++ {
 		observation.Attempts = attempt
-		iosResult := make(chan eligibilityProbeResult, 1)
-		androidResult := make(chan eligibilityProbeResult, 1)
-		go func() {
-			iosResult <- probeEligibility(ctx, port, iosEligibilityURL, p.options.RequestTimeout)
-		}()
-		go func() {
-			androidResult <- probeEligibility(ctx, port, androidEligibilityURL, p.options.RequestTimeout)
-		}()
-		ios := <-iosResult
-		android := <-androidResult
-		observation.IOSEligibility = ios.decision
-		observation.IOSEligibilityStatus = ios.httpStatus
-		observation.AndroidEligibility = android.decision
-		observation.AndroidEligibilityStatus = android.httpStatus
-		available, rejected, probeError := evaluateProbeAttempt(ios, android)
-		observation.EligibilityRejected = rejected
-		if available {
+		result := p.probe(ctx, port, p.options.Endpoint, p.options.ClientKey, p.options.RequestTimeout)
+		observation.StatsigStatus = result.decision
+		observation.StatsigHTTPStatus = result.httpStatus
+		observation.StatsigCountry = result.country
+		observation.ContentEncoding = result.contentEncoding
+		observation.CompressedBytes += result.compressedBytes
+		observation.DecompressedBytes += result.decompressedBytes
+		observation.ServiceRejected = result.explicitReject
+		if result.err == nil && result.decision == statsigReachable {
 			observation.Available = true
 			observation.Error = ""
 			break
 		}
-		observation.Error = probeError
-		if observation.EligibilityRejected {
+		observation.Error = result.err.Error()
+		if observation.ServiceRejected {
 			break
 		}
 		if attempt < p.options.Attempts {
@@ -189,27 +197,21 @@ func (p *MihomoProber) probeCandidate(ctx context.Context, candidate Candidate, 
 	return observation
 }
 
-func evaluateProbeAttempt(ios, android eligibilityProbeResult) (bool, bool, string) {
-	rejected := ios.explicitReject || android.explicitReject
-	available := ios.err == nil && android.err == nil &&
-		ios.decision == eligibilityEligible && android.decision == eligibilityEligible
-	if available {
-		return true, false, ""
-	}
-	return false, rejected, joinProbeErrors(ios, android)
+type statsigProbeResult struct {
+	decision          string
+	httpStatus        int
+	explicitReject    bool
+	country           string
+	contentEncoding   string
+	compressedBytes   int64
+	decompressedBytes int64
+	err               error
 }
 
-type eligibilityProbeResult struct {
-	decision       string
-	httpStatus     int
-	explicitReject bool
-	err            error
-}
-
-func probeEligibility(parent context.Context, port int, endpoint string, timeout time.Duration) eligibilityProbeResult {
+func probeStatsig(parent context.Context, port int, endpoint, clientKey string, timeout time.Duration) statsigProbeResult {
 	proxyURL, err := url.Parse("http://127.0.0.1:" + strconv.Itoa(port))
 	if err != nil {
-		return transportFailure(err)
+		return statsigTransportError(err)
 	}
 	transport := &http.Transport{
 		Proxy:               http.ProxyURL(proxyURL),
@@ -218,79 +220,178 @@ func probeEligibility(parent context.Context, port int, endpoint string, timeout
 	}
 	defer transport.CloseIdleConnections()
 	client := &http.Client{Transport: transport}
+	return requestStatsig(parent, client, endpoint, clientKey, timeout)
+}
+
+func requestStatsig(parent context.Context, client *http.Client, endpoint, clientKey string, timeout time.Duration) statsigProbeResult {
+	requestURL, err := url.Parse(endpoint)
+	if err != nil {
+		return statsigTransportError(fmt.Errorf("parse Statsig initialize URL: %w", err))
+	}
+	query := requestURL.Query()
+	query.Set("k", clientKey)
+	query.Set("st", "localclash")
+	query.Set("sv", "1")
+	requestURL.RawQuery = query.Encode()
 	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, requestURL.String(), strings.NewReader("{}"))
 	if err != nil {
-		return transportFailure(err)
+		return statsigTransportError(err)
 	}
 	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Accept-Encoding", "br")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Statsig-Api-Key", clientKey)
 	req.Header.Set("User-Agent", "localClash-chatgpt-capability/1")
 	resp, err := client.Do(req)
 	if err != nil {
-		return transportFailure(err)
+		return statsigTransportError(err)
 	}
 	defer resp.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 4097))
+	result := statsigProbeResult{
+		httpStatus:      resp.StatusCode,
+		contentEncoding: strings.ToLower(strings.TrimSpace(resp.Header.Get("Content-Encoding"))),
+	}
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		result.decision = statsigRejected
+		result.explicitReject = true
+		result.err = fmt.Errorf("Statsig initialize rejected the probe (HTTP %d)", resp.StatusCode)
+		return result
+	}
+	if resp.StatusCode != http.StatusOK {
+		result.decision = statsigUnexpectedResponse
+		result.err = fmt.Errorf("Statsig initialize returned HTTP %d", resp.StatusCode)
+		return result
+	}
+	if result.contentEncoding != "br" {
+		result.decision = statsigUnexpectedResponse
+		result.err = fmt.Errorf("Statsig initialize did not return required Brotli encoding (content-encoding=%q)", result.contentEncoding)
+		return result
+	}
+	compressed := &countingReader{reader: io.LimitReader(resp.Body, statsigMaxCompressedBytes+1)}
+	decompressed := &countingReader{reader: io.LimitReader(brotli.NewReader(compressed), statsigMaxDecompressedBytes+1)}
+	country, decodeErr := readStatsigCountry(decompressed)
+	result.compressedBytes = compressed.count
+	result.decompressedBytes = decompressed.count
+	if compressed.count > statsigMaxCompressedBytes {
+		result.decision = statsigUnexpectedResponse
+		result.err = fmt.Errorf("Statsig initialize compressed response exceeds %d bytes", statsigMaxCompressedBytes)
+		return result
+	}
+	if decompressed.count > statsigMaxDecompressedBytes {
+		result.decision = statsigUnexpectedResponse
+		result.err = fmt.Errorf("Statsig initialize decompressed response exceeds %d bytes", statsigMaxDecompressedBytes)
+		return result
+	}
+	if decodeErr != nil {
+		result.decision = statsigUnexpectedResponse
+		result.err = fmt.Errorf("decode Statsig initialize response: %w", decodeErr)
+		return result
+	}
+	if country == "" {
+		result.decision = statsigUnexpectedResponse
+		result.err = errors.New("Statsig initialize response is missing derived_fields.country")
+		return result
+	}
+	result.decision = statsigReachable
+	result.country = country
+	return result
+}
+
+func statsigTransportError(err error) statsigProbeResult {
+	return statsigProbeResult{decision: statsigTransportFailure, err: err}
+}
+
+func readStatsigCountry(reader io.Reader) (string, error) {
+	decoder := json.NewDecoder(reader)
+	token, err := decoder.Token()
 	if err != nil {
-		return eligibilityProbeResult{decision: eligibilityTransportFailure, httpStatus: resp.StatusCode, err: err}
+		return "", err
 	}
-	if len(body) > 4096 {
-		return eligibilityProbeResult{decision: eligibilityUnexpectedResponse, httpStatus: resp.StatusCode, err: errors.New("response body exceeds 4096 bytes")}
+	if token != json.Delim('{') {
+		return "", errors.New("Statsig initialize response must be a JSON object")
 	}
-	return classifyEligibility(resp.StatusCode, body)
-}
-
-func transportFailure(err error) eligibilityProbeResult {
-	return eligibilityProbeResult{decision: eligibilityTransportFailure, err: err}
-}
-
-func classifyEligibility(httpStatus int, body []byte) eligibilityProbeResult {
-	lowerBody := strings.ToLower(string(body))
-	if strings.Contains(lowerBody, "unsupported_country_region_territory") ||
-		strings.Contains(lowerBody, "unsupported country") {
-		return eligibilityProbeResult{
-			decision: eligibilityUnsupportedRegion, httpStatus: httpStatus, explicitReject: true,
-			err: errors.New("OpenAI rejected the exit region"),
+	var country string
+	for decoder.More() {
+		keyToken, err := decoder.Token()
+		if err != nil {
+			return "", err
+		}
+		key, ok := keyToken.(string)
+		if !ok {
+			return "", errors.New("Statsig initialize response contains a non-string object key")
+		}
+		if key == "derived_fields" {
+			var fields struct {
+				Country string `json:"country"`
+			}
+			if err := decoder.Decode(&fields); err != nil {
+				return "", err
+			}
+			country = strings.ToUpper(strings.TrimSpace(fields.Country))
+			continue
+		}
+		if err := skipJSONValue(decoder); err != nil {
+			return "", err
 		}
 	}
-	if strings.Contains(lowerBody, "disallowed isp") || strings.Contains(lowerBody, "vpn_detected") {
-		return eligibilityProbeResult{
-			decision: eligibilityDisallowedISP, httpStatus: httpStatus, explicitReject: true,
-			err: errors.New("OpenAI rejected the exit ISP"),
+	if _, err := decoder.Token(); err != nil {
+		return "", err
+	}
+	if token, err := decoder.Token(); err != io.EOF {
+		if err != nil {
+			return "", err
 		}
+		return "", fmt.Errorf("unexpected JSON token after Statsig initialize response: %v", token)
 	}
-	var payload struct {
-		CFDetails string `json:"cf_details"`
-		Type      string `json:"type"`
+	if country == "" {
+		return "", errors.New("Statsig initialize response is missing derived_fields.country")
 	}
-	if err := json.Unmarshal(body, &payload); err != nil {
-		return eligibilityProbeResult{
-			decision:   eligibilityUnexpectedResponse,
-			httpStatus: httpStatus,
-			err:        fmt.Errorf("response does not match expected OpenAI mobile IP eligibility JSON: %w", err),
-		}
-	}
-	if httpStatus == http.StatusForbidden && strings.EqualFold(strings.TrimSpace(payload.Type), "dc") &&
-		strings.Contains(strings.ToLower(payload.CFDetails), "request is not allowed") {
-		return eligibilityProbeResult{decision: eligibilityEligible, httpStatus: httpStatus}
-	}
-	return eligibilityProbeResult{
-		decision:   eligibilityUnexpectedResponse,
-		httpStatus: httpStatus,
-		err:        fmt.Errorf("response does not match expected OpenAI mobile IP eligibility fingerprint (HTTP %d, type=%q)", httpStatus, strings.TrimSpace(payload.Type)),
-	}
+	return country, nil
 }
 
-func joinProbeErrors(ios, android eligibilityProbeResult) string {
-	parts := make([]string, 0, 2)
-	if ios.err != nil {
-		parts = append(parts, fmt.Sprintf("ios(decision=%q,http_status=%d): %v", ios.decision, ios.httpStatus, ios.err))
+func skipJSONValue(decoder *json.Decoder) error {
+	token, err := decoder.Token()
+	if err != nil {
+		return err
 	}
-	if android.err != nil {
-		parts = append(parts, fmt.Sprintf("android(decision=%q,http_status=%d): %v", android.decision, android.httpStatus, android.err))
+	delim, ok := token.(json.Delim)
+	if !ok {
+		return nil
 	}
-	return strings.Join(parts, "; ")
+	switch delim {
+	case '{':
+		for decoder.More() {
+			if _, err := decoder.Token(); err != nil {
+				return err
+			}
+			if err := skipJSONValue(decoder); err != nil {
+				return err
+			}
+		}
+	case '[':
+		for decoder.More() {
+			if err := skipJSONValue(decoder); err != nil {
+				return err
+			}
+		}
+	default:
+		return fmt.Errorf("unexpected JSON delimiter %q", delim)
+	}
+	_, err = decoder.Token()
+	return err
+}
+
+type countingReader struct {
+	reader io.Reader
+	count  int64
+}
+
+func (r *countingReader) Read(data []byte) (int, error) {
+	n, err := r.reader.Read(data)
+	r.count += int64(n)
+	return n, err
 }
 
 func reservePorts(count int) ([]int, error) {

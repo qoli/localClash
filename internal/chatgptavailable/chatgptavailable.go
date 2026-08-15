@@ -15,8 +15,9 @@ import (
 )
 
 const (
-	ProfileID                   = "openai.chatgpt.mobile.v1"
-	SnapshotVersion             = 4
+	ProfileID                   = "openai.chatgpt.statsig.v1"
+	LegacyProfileID             = "openai.chatgpt.mobile.v1"
+	SnapshotVersion             = 5
 	ConsecutiveFailureThreshold = 3
 )
 
@@ -30,16 +31,18 @@ type Candidate struct {
 }
 
 type Observation struct {
-	Fingerprint              string        `json:"fingerprint"`
-	Available                bool          `json:"available"`
-	EligibilityRejected      bool          `json:"eligibility_rejected,omitempty"`
-	Attempts                 int           `json:"attempts"`
-	Duration                 time.Duration `json:"-"`
-	IOSEligibility           string        `json:"ios_ip_eligibility,omitempty"`
-	IOSEligibilityStatus     int           `json:"ios_ip_eligibility_http_status,omitempty"`
-	AndroidEligibility       string        `json:"android_ip_eligibility,omitempty"`
-	AndroidEligibilityStatus int           `json:"android_ip_eligibility_http_status,omitempty"`
-	Error                    string        `json:"error,omitempty"`
+	Fingerprint       string        `json:"fingerprint"`
+	Available         bool          `json:"available"`
+	ServiceRejected   bool          `json:"service_rejected,omitempty"`
+	Attempts          int           `json:"attempts"`
+	Duration          time.Duration `json:"-"`
+	StatsigStatus     string        `json:"statsig_status,omitempty"`
+	StatsigHTTPStatus int           `json:"statsig_http_status,omitempty"`
+	StatsigCountry    string        `json:"statsig_country,omitempty"`
+	ContentEncoding   string        `json:"content_encoding,omitempty"`
+	CompressedBytes   int64         `json:"compressed_bytes,omitempty"`
+	DecompressedBytes int64         `json:"decompressed_bytes,omitempty"`
+	Error             string        `json:"error,omitempty"`
 }
 
 type Prober interface {
@@ -47,20 +50,22 @@ type Prober interface {
 }
 
 type NodeState struct {
-	Name                     string `json:"name"`
-	Available                bool   `json:"available"`
-	ObservedAvailable        bool   `json:"observed_available"`
-	EligibilityRejected      bool   `json:"eligibility_rejected,omitempty"`
-	ConsecutiveFailures      int    `json:"consecutive_failures"`
-	Attempts                 int    `json:"attempts"`
-	IOSEligibility           string `json:"ios_ip_eligibility,omitempty"`
-	IOSEligibilityStatus     int    `json:"ios_ip_eligibility_http_status,omitempty"`
-	AndroidEligibility       string `json:"android_ip_eligibility,omitempty"`
-	AndroidEligibilityStatus int    `json:"android_ip_eligibility_http_status,omitempty"`
-	Error                    string `json:"error,omitempty"`
-	CheckedAt                string `json:"checked_at"`
-	LastAvailableAt          string `json:"last_available_at,omitempty"`
-	DurationMS               int64  `json:"duration_ms"`
+	Name                string `json:"name"`
+	Available           bool   `json:"available"`
+	ObservedAvailable   bool   `json:"observed_available"`
+	ServiceRejected     bool   `json:"service_rejected,omitempty"`
+	ConsecutiveFailures int    `json:"consecutive_failures"`
+	Attempts            int    `json:"attempts"`
+	StatsigStatus       string `json:"statsig_status,omitempty"`
+	StatsigHTTPStatus   int    `json:"statsig_http_status,omitempty"`
+	StatsigCountry      string `json:"statsig_country,omitempty"`
+	ContentEncoding     string `json:"content_encoding,omitempty"`
+	CompressedBytes     int64  `json:"compressed_bytes,omitempty"`
+	DecompressedBytes   int64  `json:"decompressed_bytes,omitempty"`
+	Error               string `json:"error,omitempty"`
+	CheckedAt           string `json:"checked_at"`
+	LastAvailableAt     string `json:"last_available_at,omitempty"`
+	DurationMS          int64  `json:"duration_ms"`
 }
 
 type Snapshot struct {
@@ -85,8 +90,9 @@ type Result struct {
 }
 
 type Options struct {
-	SnapshotPath string
-	Now          func() time.Time
+	SnapshotPath         string
+	PreviousSnapshotPath string
+	Now                  func() time.Time
 }
 
 func Rebuild(ctx context.Context, proxies []map[string]any, prober Prober, opts Options) (Result, error) {
@@ -109,7 +115,11 @@ func Rebuild(ctx context.Context, proxies []map[string]any, prober Prober, opts 
 		return Result{}, errors.New("ChatGPT capability qualification requires at least one subscription proxy")
 	}
 
-	previous, previousExists, err := readSnapshot(opts.SnapshotPath)
+	previousPath := strings.TrimSpace(opts.PreviousSnapshotPath)
+	if previousPath == "" {
+		previousPath = opts.SnapshotPath
+	}
+	previous, previousExists, err := readSnapshot(previousPath)
 	if err != nil {
 		return Result{}, err
 	}
@@ -153,18 +163,20 @@ func Rebuild(ctx context.Context, proxies []map[string]any, prober Prober, opts 
 			retainedPreviouslyQualified++
 		}
 		state := NodeState{
-			Name:                     candidate.Name,
-			Available:                observation.Available,
-			ObservedAvailable:        observation.Available,
-			EligibilityRejected:      observation.EligibilityRejected,
-			Attempts:                 observation.Attempts,
-			IOSEligibility:           observation.IOSEligibility,
-			IOSEligibilityStatus:     observation.IOSEligibilityStatus,
-			AndroidEligibility:       observation.AndroidEligibility,
-			AndroidEligibilityStatus: observation.AndroidEligibilityStatus,
-			Error:                    observation.Error,
-			CheckedAt:                now.Format(time.RFC3339Nano),
-			DurationMS:               observation.Duration.Milliseconds(),
+			Name:              candidate.Name,
+			Available:         observation.Available,
+			ObservedAvailable: observation.Available,
+			ServiceRejected:   observation.ServiceRejected,
+			Attempts:          observation.Attempts,
+			StatsigStatus:     observation.StatsigStatus,
+			StatsigHTTPStatus: observation.StatsigHTTPStatus,
+			StatsigCountry:    observation.StatsigCountry,
+			ContentEncoding:   observation.ContentEncoding,
+			CompressedBytes:   observation.CompressedBytes,
+			DecompressedBytes: observation.DecompressedBytes,
+			Error:             observation.Error,
+			CheckedAt:         now.Format(time.RFC3339Nano),
+			DurationMS:        observation.Duration.Milliseconds(),
 		}
 		if observation.Available {
 			state.LastAvailableAt = now.Format(time.RFC3339Nano)
@@ -177,7 +189,7 @@ func Rebuild(ctx context.Context, proxies []map[string]any, prober Prober, opts 
 			if state.LastAvailableAt == "" && previousState.Available {
 				state.LastAvailableAt = previousState.CheckedAt
 			}
-			if !observation.EligibilityRejected && previousState.Available && state.ConsecutiveFailures < ConsecutiveFailureThreshold {
+			if !observation.ServiceRejected && previousState.Available && state.ConsecutiveFailures < ConsecutiveFailureThreshold {
 				state.Available = true
 				for _, name := range byFingerprint[candidate.Fingerprint] {
 					retainedSet[name] = true

@@ -54,11 +54,12 @@ Ordinary proxy-oriented business groups default to `⚡ 自动选择` and keep
 semantics can still choose a different first exit. `🤖 ChatGPT` defaults to the
 United States regional exit and places `ChatGPT-available` last as an opt-in
 choice. That localClash-owned automatic exit is rebuilt during
-`subscriptions_refresh` from nodes that return the expected ChatGPT IP
-fingerprint (`HTTP 403`, `type: dc`, and `Request is not allowed`) from both the
-iOS and Android root endpoints. Explicit ISP or region rejection removes a node
-immediately; connection resets, timeouts, and unexpected responses are retried
-and use failure hysteresis for previously-qualified nodes. The regional exits
+`subscriptions_refresh` from nodes that successfully initialize ChatGPT's
+Statsig control plane at `ab.chatgpt.com/v1/initialize`. Qualification requires
+HTTP 200, Brotli encoding, valid JSON, and a non-empty service-observed
+`derived_fields.country`. Rejections, connection resets, timeouts, malformed
+responses, and bounded-size violations are recorded explicitly; transient
+failures use hysteresis for previously-qualified nodes. The regional exits
 remain available before that opt-in choice. `🚦 QUIC` defaults to `REJECT`; game platform/Apple/Microsoft/speed-test
 defaulting to direct; `🧲 BT/PT 下载` defaulting to direct while exposing automatic,
 manual, and regional proxy exits for Dashboard overrides; or Bahamut defaulting
@@ -69,10 +70,10 @@ display locale quirks do not change on-disk template bytes.
 
 Capability groups are derived configuration, not Mihomo health-check aliases.
 localClash starts an isolated temporary Mihomo, assigns one loopback mixed
-listener to each distinct proxy definition, and checks the two service endpoints
-through each listener. Endpoint checks use bounded concurrency so subscriptions
-with hundreds of nodes can finish within the refresh window. It does not mutate
-or depend on the active core's `alive` state. The resulting secret-safe snapshot
+listener to each distinct proxy definition, and sends the Statsig initialize
+request through each listener. Endpoint checks use 16-worker bounded concurrency,
+so subscriptions with hundreds of nodes can finish within the refresh window. It
+does not mutate or depend on the active core's `alive` state. The resulting secret-safe snapshot
 is stored below `.runtime/capabilities/`; raw proxy credentials are never written
 there. Probe infrastructure errors fail the localClash refresh impact explicitly. If an
 existing non-empty qualified set suddenly collapses to zero, the snapshot and
@@ -80,13 +81,16 @@ generated config are not replaced, so a transient carrier outage cannot silently
 rewrite the policy graph.
 
 The product CLI `subscription refresh --json` and MCP `subscriptions_refresh`
-both rebuild the configured capability snapshot. Snapshot schema v4 records the
+both rebuild the configured capability snapshot. Snapshot schema v5 records the
 ordered qualified node names as derived state so a following `config render
 --json` or MCP `config_render` can resolve the same capability even after the
 patch registry recompiles `localclash-intent.json`. A missing, legacy, malformed,
 or unsupported capability snapshot fails explicitly and requires another
 subscription refresh. An optional capability may resolve to an explicit empty
 set; required capability groups still fail when no node qualifies.
+MCP subscription refresh renders a candidate config, runs isolated `mihomo -t`,
+and only then promotes the candidate snapshot and config. Applying the promoted
+config to an active runtime remains the explicit confirm-required hot-reload step.
 
 Qualification uses asymmetric hysteresis. A new proxy enters the group only
 after a successful observation. A previously qualified proxy remains eligible

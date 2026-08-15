@@ -14,7 +14,7 @@ func TestResolveCapabilityProxyGroup(t *testing.T) {
 		ProxyGroups: map[string]ProxyGroup{
 			"ChatGPT-available": {
 				Mode:          "smart",
-				Capability:    "openai.chatgpt.mobile.v1",
+				Capability:    "openai.chatgpt.statsig.v1",
 				SmartPriority: priority,
 				Optional:      true,
 			},
@@ -27,7 +27,7 @@ func TestResolveCapabilityProxyGroup(t *testing.T) {
 			{Name: "JP 01"},
 		},
 		CapabilityNodes: map[string][]string{
-			"openai.chatgpt.mobile.v1": {"US 01"},
+			"openai.chatgpt.statsig.v1": {"US 01"},
 		},
 	})
 	if err != nil {
@@ -61,11 +61,11 @@ func TestResolveRejectsSmartPriorityOnManualGroup(t *testing.T) {
 func TestResolveOptionalCapabilityAllowsExplicitEmptyQualification(t *testing.T) {
 	resolved, err := Resolve(ResolveOptions{
 		Config: Config{ProxyGroups: map[string]ProxyGroup{
-			"ChatGPT-available": {Mode: "auto", Capability: "openai.chatgpt.mobile.v1", Optional: true},
+			"ChatGPT-available": {Mode: "auto", Capability: "openai.chatgpt.statsig.v1", Optional: true},
 		}},
 		SubscriptionNodes: []SubscriptionNode{{Name: "US 01"}},
 		CapabilityNodes: map[string][]string{
-			"openai.chatgpt.mobile.v1": {},
+			"openai.chatgpt.statsig.v1": {},
 		},
 	})
 	if err != nil {
@@ -80,11 +80,11 @@ func TestResolveOptionalCapabilityAllowsExplicitEmptyQualification(t *testing.T)
 func TestResolveRequiredCapabilityRejectsEmptyQualification(t *testing.T) {
 	_, err := Resolve(ResolveOptions{
 		Config: Config{ProxyGroups: map[string]ProxyGroup{
-			"Required": {Mode: "auto", Capability: "openai.chatgpt.mobile.v1"},
+			"Required": {Mode: "auto", Capability: "openai.chatgpt.statsig.v1"},
 		}},
 		SubscriptionNodes: []SubscriptionNode{{Name: "US 01"}},
 		CapabilityNodes: map[string][]string{
-			"openai.chatgpt.mobile.v1": {},
+			"openai.chatgpt.statsig.v1": {},
 		},
 	})
 	if err == nil || !strings.Contains(err.Error(), "has no nodes") {
@@ -97,7 +97,7 @@ func TestResolveCapabilityUsesPersistedSelectionOutsideRefresh(t *testing.T) {
 		ProxyGroups: map[string]ProxyGroup{
 			"ChatGPT-available": {
 				Mode:          "smart",
-				Capability:    "openai.chatgpt.mobile.v1",
+				Capability:    "openai.chatgpt.statsig.v1",
 				SelectedNodes: []string{"US 01"},
 				Optional:      true,
 			},
@@ -115,7 +115,7 @@ func TestResolveCapabilityUsesPersistedSelectionOutsideRefresh(t *testing.T) {
 func TestResolveCapabilityRequiresFreshOrPersistedSelection(t *testing.T) {
 	_, err := Resolve(ResolveOptions{
 		Config: Config{ProxyGroups: map[string]ProxyGroup{
-			"ChatGPT-available": {Mode: "smart", Capability: "openai.chatgpt.mobile.v1", Optional: true},
+			"ChatGPT-available": {Mode: "smart", Capability: "openai.chatgpt.statsig.v1", Optional: true},
 		}},
 		SubscriptionNodes: []SubscriptionNode{{Name: "US 01"}},
 	})
@@ -129,13 +129,13 @@ func TestResolveCapabilityRejectsMixedSelectors(t *testing.T) {
 		Config: Config{ProxyGroups: map[string]ProxyGroup{
 			"ChatGPT-available": {
 				Mode:       "smart",
-				Capability: "openai.chatgpt.mobile.v1",
+				Capability: "openai.chatgpt.statsig.v1",
 				Nodes:      []string{"US 01"},
 			},
 		}},
 		SubscriptionNodes: []SubscriptionNode{{Name: "US 01"}},
 		CapabilityNodes: map[string][]string{
-			"openai.chatgpt.mobile.v1": {"US 01"},
+			"openai.chatgpt.statsig.v1": {"US 01"},
 		},
 	})
 	if err == nil || !strings.Contains(err.Error(), "cannot be combined") {
@@ -147,7 +147,7 @@ func TestResolveCapabilityDoesNotMutateInputConfig(t *testing.T) {
 	config := Config{ProxyGroups: map[string]ProxyGroup{
 		"ChatGPT-available": {
 			Mode:       "auto",
-			Capability: "openai.chatgpt.mobile.v1",
+			Capability: "openai.chatgpt.statsig.v1",
 			Optional:   true,
 		},
 	}}
@@ -155,7 +155,7 @@ func TestResolveCapabilityDoesNotMutateInputConfig(t *testing.T) {
 		Config:            config,
 		SubscriptionNodes: []SubscriptionNode{{Name: "US 01"}},
 		CapabilityNodes: map[string][]string{
-			"openai.chatgpt.mobile.v1": {"US 01"},
+			"openai.chatgpt.statsig.v1": {"US 01"},
 		},
 	})
 	if err != nil {

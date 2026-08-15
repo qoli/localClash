@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/gob"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -1120,6 +1121,7 @@ packs:
 			GeneratedConfig:     generated,
 		},
 	})
+	stubMihomoCandidateTest(t, refreshServer)
 	resp := callHandleWithServer(t, refreshServer, map[string]any{
 		"jsonrpc": "2.0",
 		"id":      1,
@@ -1145,6 +1147,21 @@ packs:
 	}
 	if !strings.Contains(readMCPFile(t, localClashConfig), "SG 02") {
 		t.Fatalf("localclash config was not updated: %s", readMCPFile(t, localClashConfig))
+	}
+}
+
+func stubMihomoCandidateTest(t *testing.T, server *Server) {
+	t.Helper()
+	server.testMihomoConfig = func(_ context.Context, opts mihomotest.TestOptions) (mihomotest.TestResult, error) {
+		sha, err := mihomotest.ConfigSHA256(opts.ConfigPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		attestation := mihomotest.Attestation{Version: 1, Config: opts.ConfigPath, PromotedConfig: opts.PromotedConfigPath, WorkDir: opts.WorkDir, Core: opts.CorePath, ConfigSHA256: sha, Passed: true, TestedAt: "2026-08-15T00:00:00Z"}
+		if err := mihomotest.WriteAttestation(opts.AttestationPath, attestation); err != nil {
+			t.Fatal(err)
+		}
+		return mihomotest.TestResult{ValidationResult: mihomotest.ValidationResult{Passed: true, ConfigPath: opts.ConfigPath, ConfigSHA256: sha}}, nil
 	}
 }
 
@@ -1187,11 +1204,11 @@ sources:
     url: %s/sub
 `, subscriptionServer.URL))
 	writeMCPFile(t, intent, `{
-  "version": 4,
+  "version": 5,
   "proxy_groups": {
     "ChatGPT-available": {
       "mode": "smart",
-      "capability": "openai.chatgpt.mobile.v1",
+      "capability": "openai.chatgpt.statsig.v1",
       "optional": true
     }
   },
@@ -1219,13 +1236,14 @@ sources:
 		GeneratedConfig:     generated,
 		CorePath:            filepath.Join(dir, "unused-fake-core"),
 	}})
-	server.rebuildChatGPT = func(_ context.Context, proxies []map[string]any, _, runtimeParent, snapshotPath string) (chatgptavailable.Result, error) {
+	server.rebuildChatGPT = func(_ context.Context, proxies []map[string]any, _, runtimeParent, snapshotPath, previousSnapshotPath string) (chatgptavailable.Result, error) {
 		if len(proxies) != 2 || proxies[0]["name"] != "US 01" || proxies[1]["name"] != "JP 01" {
 			t.Fatalf("probe proxies = %+v", proxies)
 		}
-		if runtimeParent != capabilityRoot || snapshotPath != filepath.Join(capabilityRoot, "chatgpt-available.json") {
-			t.Fatalf("capability paths = %q / %q", runtimeParent, snapshotPath)
+		if runtimeParent != capabilityRoot || filepath.Dir(snapshotPath) == capabilityRoot || previousSnapshotPath != filepath.Join(capabilityRoot, "chatgpt-available.json") {
+			t.Fatalf("capability paths = runtime %q candidate %q previous %q", runtimeParent, snapshotPath, previousSnapshotPath)
 		}
+		writeMCPFile(t, snapshotPath, fmt.Sprintf(`{"version":5,"profile":%q,"updated_at":"2026-08-15T00:00:00Z","qualified":["US 01"],"nodes":{}}`, chatgptavailable.ProfileID))
 		return chatgptavailable.Result{
 			Profile:          chatgptavailable.ProfileID,
 			SnapshotPath:     snapshotPath,
@@ -1235,6 +1253,17 @@ sources:
 			QualifiedCount:   1,
 			UnavailableCount: 1,
 		}, nil
+	}
+	server.testMihomoConfig = func(_ context.Context, opts mihomotest.TestOptions) (mihomotest.TestResult, error) {
+		sha, err := mihomotest.ConfigSHA256(opts.ConfigPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		attestation := mihomotest.Attestation{Version: 1, Config: opts.ConfigPath, PromotedConfig: opts.PromotedConfigPath, WorkDir: opts.WorkDir, Core: opts.CorePath, ConfigSHA256: sha, Passed: true, TestedAt: "2026-08-15T00:00:00Z"}
+		if err := mihomotest.WriteAttestation(opts.AttestationPath, attestation); err != nil {
+			t.Fatal(err)
+		}
+		return mihomotest.TestResult{ValidationResult: mihomotest.ValidationResult{Passed: true, ConfigPath: opts.ConfigPath, ConfigSHA256: sha}}, nil
 	}
 
 	resp := callHandleWithServer(t, server, map[string]any{
@@ -1260,7 +1289,7 @@ sources:
 		t.Fatalf("capabilities = %+v", capabilities)
 	}
 	resolvedIntent := readMCPFile(t, intent)
-	if !strings.Contains(resolvedIntent, `"capability": "openai.chatgpt.mobile.v1"`) || !strings.Contains(resolvedIntent, `"US 01"`) {
+	if !strings.Contains(resolvedIntent, `"capability": "openai.chatgpt.statsig.v1"`) || !strings.Contains(resolvedIntent, `"US 01"`) {
 		t.Fatalf("resolved intent missing capability selection: %s", resolvedIntent)
 	}
 	config := readMCPYAML(t, generated)
@@ -1279,11 +1308,11 @@ func TestSubscriptionsRefreshCapabilityCollapseLeavesGeneratedConfigUnchanged(t 
 	intent := filepath.Join(dir, "localclash-intent.json")
 	generated := filepath.Join(dir, "config.yaml")
 	writeMCPFile(t, intent, `{
-  "version": 4,
+  "version": 5,
   "proxy_groups": {
     "ChatGPT-available": {
       "mode": "smart",
-      "capability": "openai.chatgpt.mobile.v1",
+      "capability": "openai.chatgpt.statsig.v1",
       "selected_nodes": ["US 01"],
       "optional": true
     }
@@ -1292,7 +1321,7 @@ func TestSubscriptionsRefreshCapabilityCollapseLeavesGeneratedConfigUnchanged(t 
 	writeMCPFile(t, generated, "sentinel: previous-generated-config\n")
 
 	server := NewServer()
-	server.rebuildChatGPT = func(context.Context, []map[string]any, string, string, string) (chatgptavailable.Result, error) {
+	server.rebuildChatGPT = func(context.Context, []map[string]any, string, string, string, string) (chatgptavailable.Result, error) {
 		return chatgptavailable.Result{}, fmt.Errorf("%w: carrier outage candidate", chatgptavailable.ErrQualificationCollapse)
 	}
 	impact := server.evaluateLocalClashAfterRefresh(
@@ -1315,6 +1344,41 @@ func TestSubscriptionsRefreshCapabilityCollapseLeavesGeneratedConfigUnchanged(t 
 	}
 	if got := readMCPFile(t, generated); got != "sentinel: previous-generated-config\n" {
 		t.Fatalf("generated config changed after collapse: %q", got)
+	}
+}
+
+func TestSubscriptionsRefreshCandidateConfigFailurePreservesPromotedConfig(t *testing.T) {
+	dir := t.TempDir()
+	intent := filepath.Join(dir, "localclash-intent.json")
+	generated := filepath.Join(dir, ".runtime", "mihomo", "config.yaml")
+	rulesCache := filepath.Join(dir, "rules")
+	writeMCPPackIndex(t, rulesCache, rules.PackCache{Version: 1, Source: "blackmatrix7", Adapter: "blackmatrix7", Renderable: true, Packs: []rules.Pack{mcpBlackmatrixPack("OpenAI", "ChatGPT")}})
+	writeMCPFile(t, intent, `{
+  "version": 5,
+  "proxy_groups": {
+    "AI": {"mode": "manual", "nodes": ["US 01"]}
+  }
+}`)
+	writeMCPFile(t, generated, "sentinel: previous-generated-config\n")
+	server := NewServer()
+	server.testMihomoConfig = func(context.Context, mihomotest.TestOptions) (mihomotest.TestResult, error) {
+		return mihomotest.TestResult{ValidationResult: mihomotest.ValidationResult{Passed: false}}, errors.New("candidate rejected")
+	}
+	impact := server.evaluateLocalClashAfterRefresh(
+		context.Background(), intent, filepath.Join(dir, "selection.gob"), filepath.Join(dir, "subscription.gob"),
+		filepath.Join(dir, "subscriptions.json"), filepath.Join(dir, "subscriptions"), rulesCache,
+		filepath.Join(dir, "runtime.json"), generated, filepath.Join(dir, "mihomo"), filepath.Join(dir, "capabilities"),
+		[]localconfig.SubscriptionNode{{Name: "US 01"}},
+		map[string]any{"proxies": []any{map[string]any{"name": "US 01", "type": "ss", "server": "us.example.com", "port": 443, "cipher": "aes-128-gcm", "password": "secret"}}},
+	)
+	if impact.State != "candidate_config_test_failed" || impact.ConfigPromoted || !impact.RequiresAgentReplan || !strings.Contains(impact.Error, "candidate rejected") {
+		t.Fatalf("impact = %+v, want explicit candidate validation failure", impact)
+	}
+	if got := readMCPFile(t, generated); got != "sentinel: previous-generated-config\n" {
+		t.Fatalf("promoted config changed after candidate failure: %q", got)
+	}
+	if _, err := os.Stat(generated + ".candidate"); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("candidate config was not cleaned up: %v", err)
 	}
 }
 

@@ -287,7 +287,7 @@ func TestRunProductConfigRenderUsesQualifiedCapabilitySnapshot(t *testing.T) {
 proxy_groups:
   ChatGPT-available:
     mode: auto
-    capability: openai.chatgpt.mobile.v1
+    capability: openai.chatgpt.statsig.v1
     optional: true
 custom_rules:
   - id: chatgpt_test
@@ -297,8 +297,8 @@ custom_rules:
         value: openai.com
 `)
 	writeMainTestFile(t, filepath.Join(".runtime", "capabilities", "chatgpt-available.json"), `{
-  "version": 4,
-  "profile": "openai.chatgpt.mobile.v1",
+  "version": 5,
+  "profile": "openai.chatgpt.statsig.v1",
   "updated_at": "2026-08-15T00:00:00Z",
   "qualified": ["US 01"],
   "nodes": {}
@@ -354,7 +354,7 @@ func TestRunProductSubscriptionRefreshBuildsCapabilityForFollowingRender(t *test
 proxy_groups:
   ChatGPT-available:
     mode: auto
-    capability: openai.chatgpt.mobile.v1
+    capability: openai.chatgpt.statsig.v1
     optional: true
 custom_rules:
   - id: chatgpt_test
@@ -377,8 +377,8 @@ custom_rules:
 			t.Fatalf("capability paths = %q / %q", runtimeParent, snapshotPath)
 		}
 		writeMainTestFile(t, snapshotPath, `{
-  "version": 4,
-  "profile": "openai.chatgpt.mobile.v1",
+  "version": 5,
+  "profile": "openai.chatgpt.statsig.v1",
   "updated_at": "2026-08-15T00:00:00Z",
   "qualified": ["US 01"],
   "nodes": {}
