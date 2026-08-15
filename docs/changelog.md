@@ -18,10 +18,44 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
-| localClash Core | [v0.1.55](https://github.com/qoli/localClash/releases/tag/v0.1.55) | 2026-08-15 UTC+8 |
+| localClash Core | [v0.1.56](https://github.com/qoli/localClash/releases/tag/v0.1.56) | 2026-08-15 UTC+8 |
 | localclash-luci | [v0.1.0-47](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-47) | 2026-08-14 UTC+8 |
 
 ## 2026-08-15
+
+### localClash Core v0.1.56
+
+Changes:
+
+- `ChatGPT-available` 在 Smart Core 下新增組別專屬的地區標籤與權重：正常情況
+  依序偏好美國、日本、新加坡、台灣及其他節點；若較低順位節點的實際品質明顯
+  較好，Smart 仍可讓它勝出，而不是形成固定 fallback 鏈。
+- 新增 typed `smart_priority` 產品設定與 MCP `proxy_group_build` 支援；localClash
+  會驗證標籤、正數權重及 proxy-name pattern，再安全轉譯成 Mihomo Alpha 的
+  `policy-priority`，避免使用者直接維護容易出錯的分隔字串。
+- 權重只套用到聲明它的 proxy group，不會污染其他 Smart／自動組；Meta Core
+  仍保留 `url-test` 行為且不輸出 Smart-only 欄位。同步修正 proxy group 經
+  plan summary round-trip 時可能遺失 `optional` 的問題。
+
+Release:
+
+- [qoli/localClash v0.1.56](https://github.com/qoli/localClash/releases/tag/v0.1.56)
+
+Release assets:
+
+- `localclash-linux-amd64`
+- `localclash-linux-arm64`
+- `localclash-base-assets.tar.gz`
+- `localclash-release-manifest.json`
+- 對應的 `.sha256` checksum 文件
+
+Verification:
+
+- 本地 `go test ./...`、`go vet ./...`、release broadcast 回歸測試、策略模板
+  JSON 及 diff 靜態檢查通過。
+- 測試覆蓋 Smart Core group-scoped priority、其他 Smart 組不繼承權重、Meta Core
+  不輸出 Smart-only 欄位、MCP／plan round-trip，以及 regex 與 Mihomo delimiter
+  escaping 的錯誤邊界。
 
 ### localClash Core v0.1.55
 
