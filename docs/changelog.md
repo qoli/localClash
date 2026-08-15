@@ -56,6 +56,15 @@ Verification:
 - 測試覆蓋 Smart Core group-scoped priority、其他 Smart 組不繼承權重、Meta Core
   不輸出 Smart-only 欄位、MCP／plan round-trip，以及 regex 與 Mihomo delimiter
   escaping 的錯誤邊界。
+- GitHub Release workflow
+  [31865994731](https://github.com/qoli/localClash/actions/runs/31865994731) 的
+  Linux tests、兩架構 binary、base assets 及 Release 建立全部成功。
+- 7 個公開資產重新下載後，精確檔名與全部 SHA-256 均通過；兩個靜態 Linux
+  binaries 分別為 x86-64／ARM64，均內嵌 `v0.1.56` 與發版 commit
+  `a8f22c3`。manifest 宣告 `v0.1.56`，所有 URL、檔案大小及 checksum 均指向
+  並符合同版本；base assets 內亦包含美國、日本、新加坡、台灣及其他的完整
+  `ChatGPT-available` Smart priority。annotated tag、發佈時的遠端 `main` 與
+  發版 commit 同為 `a8f22c3`。
 
 ### localClash Core v0.1.55
 
