@@ -935,6 +935,9 @@ func refreshSource(ctx context.Context, source Source, userAgent string, stage f
 }
 
 func fetchSource(ctx context.Context, source Source, userAgent string, stage func(string, map[string]any) func(error, map[string]any)) (subscriptionDoc, error) {
+	client := subscriptionHTTPClient()
+	defer client.CloseIdleConnections()
+
 	identity := sourceStageFields(source)
 	finish := stage("build_subscription_request", mergeStageFields(identity, map[string]any{"method": http.MethodGet, "user_agent": userAgent}))
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, sourcePrimaryURI(source), nil)
@@ -948,7 +951,7 @@ func fetchSource(ctx context.Context, source Source, userAgent string, stage fun
 	finish(nil, nil)
 
 	finish = stage("fetch_subscription_response", identity)
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		err = fmt.Errorf("%s request failed: %s", sourceLogLabel(source), safeTransportError(err, source))
 		finish(err, map[string]any{"failure_kind": "transport"})
@@ -995,7 +998,7 @@ func fetchSource(ctx context.Context, source Source, userAgent string, stage fun
 		initialErr := err
 		partialSum := sha256.Sum256(body)
 		_ = resp.Body.Close()
-		recovered, recovery, recoveryErr := recoverSubscriptionWithRanges(ctx, source, userAgent, stage, initialErr, len(body))
+		recovered, recovery, recoveryErr := recoverSubscriptionWithRanges(ctx, client, source, userAgent, stage, initialErr, len(body))
 		if recoveryErr != nil {
 			err = fmt.Errorf("%s response could not be read: %v; range chunk recovery failed: %w", sourceLogLabel(source), initialErr, recoveryErr)
 			finish(err, map[string]any{
@@ -1049,7 +1052,7 @@ type rangeResponse struct {
 	Validator    string
 }
 
-func recoverSubscriptionWithRanges(ctx context.Context, source Source, userAgent string, stage func(string, map[string]any) func(error, map[string]any), trigger error, partialBytes int) ([]byte, rangeRecoverySummary, error) {
+func recoverSubscriptionWithRanges(ctx context.Context, client *http.Client, source Source, userAgent string, stage func(string, map[string]any) func(error, map[string]any), trigger error, partialBytes int) ([]byte, rangeRecoverySummary, error) {
 	identity := sourceStageFields(source)
 	finish := stage("range_chunk_recovery", mergeStageFields(identity, map[string]any{
 		"trigger_error": trigger.Error(),
@@ -1058,9 +1061,6 @@ func recoverSubscriptionWithRanges(ctx context.Context, source Source, userAgent
 		"overlap_bytes": subscriptionRangeOverlap,
 		"protocol":      "HTTP/1.1",
 	}))
-	client := subscriptionRangeHTTPClient()
-	defer client.CloseIdleConnections()
-
 	firstEnd := subscriptionRangeChunkSize - 1
 	first, err := fetchSubscriptionRange(ctx, client, source, userAgent, 0, firstEnd, "assemble", 1, "", "", stage)
 	if err != nil {
@@ -1238,7 +1238,9 @@ func fetchSubscriptionRange(ctx context.Context, client *http.Client, source Sou
 	return rangeResponse{Body: body, Start: actualStart, End: actualEnd, Total: total, ValidatorKey: responseValidatorKey, Validator: responseValidator}, nil
 }
 
-func subscriptionRangeHTTPClient() *http.Client {
+// subscriptionHTTPClient pins all subscription requests to HTTP/1.1 so the
+// initial download and verified Range recovery share one transport policy.
+func subscriptionHTTPClient() *http.Client {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	if transport.TLSClientConfig == nil {
 		transport.TLSClientConfig = &tls.Config{}

@@ -744,7 +744,59 @@ func TestRefreshRangeRecoveryAcceptsClampedSmallPayload(t *testing.T) {
 	}
 }
 
-func TestSubscriptionRangeHTTPClientDoesNotInheritHTTP2ALPN(t *testing.T) {
+func TestRefreshUsesHTTP1ForInitialSubscriptionRequest(t *testing.T) {
+	const body = `proxies:
+  - name: HK 01
+    type: ss
+    server: hk.example
+    password: secret
+`
+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/sub" {
+			if r.Proto != "HTTP/1.1" {
+				t.Errorf("subscription request protocol = %s, want HTTP/1.1", r.Proto)
+			}
+			_, _ = w.Write([]byte(body))
+			return
+		}
+		_, _ = w.Write([]byte("warm"))
+	}))
+	server.EnableHTTP2 = true
+	server.StartTLS()
+	defer server.Close()
+
+	originalDefaultTransport := http.DefaultTransport
+	base := server.Client().Transport.(*http.Transport).Clone()
+	base.ForceAttemptHTTP2 = true
+	http.DefaultTransport = base
+	defer func() {
+		http.DefaultTransport = originalDefaultTransport
+	}()
+
+	warmResponse, err := (&http.Client{Transport: base}).Get(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if warmResponse.ProtoMajor != 2 {
+		t.Fatalf("warm response protocol = %s, want HTTP/2", warmResponse.Proto)
+	}
+	_ = warmResponse.Body.Close()
+
+	paths := writeRefreshConfig(t, []Source{{URI: server.URL + "/sub?token=secret-token"}})
+	result, err := Refresh(context.Background(), RefreshOptions{
+		ConfigPath: paths.config,
+		RuntimeDir: paths.runtimeDir,
+		MergedPath: paths.merged,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Merged.ProxiesCount != 1 {
+		t.Fatalf("merged proxies = %d, want 1", result.Merged.ProxiesCount)
+	}
+}
+
+func TestSubscriptionHTTPClientDoesNotInheritHTTP2ALPN(t *testing.T) {
 	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/sub" && r.Header.Get("Range") != "bytes=0-3" {
 			t.Errorf("Range = %q, want bytes=0-3", r.Header.Get("Range"))
@@ -778,7 +830,7 @@ func TestSubscriptionRangeHTTPClientDoesNotInheritHTTP2ALPN(t *testing.T) {
 		t.Fatal(err)
 	}
 	req.Header.Set("Range", "bytes=0-3")
-	response, err := subscriptionRangeHTTPClient().Do(req)
+	response, err := subscriptionHTTPClient().Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
