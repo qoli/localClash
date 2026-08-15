@@ -291,7 +291,7 @@ func readSnapshot(path string) (Snapshot, bool, error) {
 	if err := json.Unmarshal(data, &snapshot); err != nil {
 		return Snapshot{}, false, fmt.Errorf("decode ChatGPT capability snapshot: %w", err)
 	}
-	if snapshot.Profile == ProfileID && snapshot.Version > 0 && snapshot.Version < SnapshotVersion {
+	if snapshot.Profile == LegacyProfileID || (snapshot.Profile == ProfileID && snapshot.Version > 0 && snapshot.Version < SnapshotVersion) {
 		return Snapshot{}, false, nil
 	}
 	if snapshot.Version != SnapshotVersion {

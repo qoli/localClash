@@ -244,17 +244,28 @@ func TestBuildCandidatesDeduplicatesEquivalentProxyDefinitions(t *testing.T) {
 }
 
 func TestReadSnapshotTreatsLegacyQualificationsAsAbsent(t *testing.T) {
-	for _, version := range []int{1, 2, 3, 4} {
-		t.Run(fmt.Sprintf("v%d", version), func(t *testing.T) {
+	tests := []struct {
+		name    string
+		version int
+		profile string
+	}{
+		{name: "mobile-v1", version: 1, profile: LegacyProfileID},
+		{name: "statsig-v1", version: 1, profile: ProfileID},
+		{name: "statsig-v2", version: 2, profile: ProfileID},
+		{name: "statsig-v3", version: 3, profile: ProfileID},
+		{name: "statsig-v4", version: 4, profile: ProfileID},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "chatgpt.json")
 			legacy := fmt.Sprintf(`{
   "version": %d,
-  "profile": "openai.chatgpt.statsig.v1",
+  "profile": %q,
   "updated_at": "2026-08-14T00:00:00Z",
   "nodes": {
     "old": {"name":"HK 01","available":true,"observed_available":true,"attempts":1,"checked_at":"2026-08-14T00:00:00Z","duration_ms":1}
   }
-}`, version)
+}`, test.version, test.profile)
 			if err := os.WriteFile(path, []byte(legacy), 0o600); err != nil {
 				t.Fatal(err)
 			}
