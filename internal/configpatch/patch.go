@@ -23,6 +23,7 @@ import (
 	"localclash/internal/policytemplate"
 	"localclash/internal/rules"
 	"localclash/internal/runtimeprofile"
+	"localclash/internal/smartpolicy"
 )
 
 const (
@@ -704,7 +705,7 @@ func mergeOverlay(config *localconfig.Config, indexes mergeIndexes, provenance m
 	overlay := record.Patch.Overlay
 	for _, group := range overlay.ProxyGroups {
 		id := strings.TrimSpace(group.ID)
-		value := localconfig.ProxyGroup{Mode: group.Mode, Match: group.Match, Nodes: append([]string{}, group.Nodes...), Capability: group.Capability, Optional: group.Optional, Reason: group.Reason, Boundary: group.Boundary}
+		value := localconfig.ProxyGroup{Mode: group.Mode, Match: group.Match, Nodes: append([]string{}, group.Nodes...), Capability: group.Capability, SmartPriority: smartpolicy.Clone(group.SmartPriority), Optional: group.Optional, Reason: group.Reason, Boundary: group.Boundary}
 		if err := putMapObject(config.ProxyGroups, indexes.proxyGroups, provenance, "proxy_groups["+id+"]", patchID, id, value); err != nil {
 			return err
 		}
@@ -1285,14 +1286,15 @@ func overlayFromConfig(config localconfig.Config) configplan.OverlayIntent {
 	for _, id := range proxyIDs {
 		group := config.ProxyGroups[id]
 		overlay.ProxyGroups = append(overlay.ProxyGroups, configplan.OverlayProxyGroupIntent{
-			ID:         id,
-			Nodes:      append([]string{}, group.Nodes...),
-			Match:      group.Match,
-			Capability: group.Capability,
-			Mode:       group.Mode,
-			Optional:   group.Optional,
-			Reason:     group.Reason,
-			Boundary:   group.Boundary,
+			ID:            id,
+			Nodes:         append([]string{}, group.Nodes...),
+			Match:         group.Match,
+			Capability:    group.Capability,
+			Mode:          group.Mode,
+			SmartPriority: smartpolicy.Clone(group.SmartPriority),
+			Optional:      group.Optional,
+			Reason:        group.Reason,
+			Boundary:      group.Boundary,
 		})
 	}
 	policyIDs := make([]string, 0, len(config.PolicyGroups))

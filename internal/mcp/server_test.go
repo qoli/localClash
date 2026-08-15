@@ -1681,9 +1681,13 @@ func TestToolsCallProxyGroupBuildReturnsReusableIntent(t *testing.T) {
 			"name": "proxy_group_build",
 			"arguments": map[string]any{
 				"id":     "TempLine",
-				"mode":   "manual",
+				"mode":   "auto",
 				"nodes":  []string{"SG 01"},
 				"reason": "User explicitly selected this line.",
+				"smart_priority": []map[string]any{
+					{"label": "SG", "pattern": "SG", "factor": 3},
+					{"label": "Other", "pattern": ".*", "factor": 1},
+				},
 			},
 		},
 	})
@@ -1698,6 +1702,10 @@ func TestToolsCallProxyGroupBuildReturnsReusableIntent(t *testing.T) {
 	proxyGroup := content["proxy_group"].(map[string]any)
 	if proxyGroup["id"] != "TempLine" {
 		t.Fatalf("proxy_group = %+v, want reusable intent with id", proxyGroup)
+	}
+	priority := proxyGroup["smart_priority"].([]any)
+	if len(priority) != 2 || priority[0].(map[string]any)["label"] != "SG" {
+		t.Fatalf("smart_priority = %+v, want ordered SG and Other rules", priority)
 	}
 	nodes := content["selected_nodes"].([]any)
 	if len(nodes) != 1 || nodes[0] != "SG 01" {

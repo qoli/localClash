@@ -15,6 +15,7 @@ import (
 	"localclash/internal/resolverconfig"
 	rulespkg "localclash/internal/rules"
 	"localclash/internal/runtimeprofile"
+	"localclash/internal/smartpolicy"
 	"localclash/internal/wandns"
 
 	"gopkg.in/yaml.v3"
@@ -219,7 +220,10 @@ func Render(opts Options) (Result, error) {
 
 	if runtimeFile.Core == runtimeprofile.CoreSmart {
 		finish = stage("apply_smart_core_groups", nil)
-		applySmartCoreProxyGroups(dynamic, runtimeFile.Smart)
+		if err := applySmartCoreProxyGroups(dynamic, runtimeFile.Smart, selection); err != nil {
+			finish(err, nil)
+			return Result{}, err
+		}
 		finish(nil, nil)
 	}
 	finish = stage("apply_runtime_profile", map[string]any{"runtime_mode": runtimeFile.Mode, "core": runtimeFile.Core})
@@ -484,9 +488,11 @@ func buildLocalClashMetadata(selection *rulespkg.Selection, fragment *rulespkg.F
 		for _, id := range proxyGroupIDs {
 			group := selection.ProxyGroups[id]
 			metadata.Overlay.ProxyGroups = append(metadata.Overlay.ProxyGroups, configmeta.OverlayProxyGroup{
-				ID:    id,
-				Mode:  proxyGroupMode(group),
-				Nodes: append([]string(nil), group.Nodes...),
+				ID:            id,
+				Mode:          proxyGroupMode(group),
+				Nodes:         append([]string(nil), group.Nodes...),
+				SmartPriority: smartpolicy.Clone(group.SmartPriority),
+				Optional:      group.Optional,
 			})
 		}
 		policyGroupIDs := make([]string, 0, len(usedPolicyGroups))
@@ -794,10 +800,10 @@ func proxyGroupDisplaySortKey(name string) string {
 	return strings.TrimSpace(trimmed)
 }
 
-func applySmartCoreProxyGroups(config map[string]any, opts runtimeprofile.SmartOptions) {
+func applySmartCoreProxyGroups(config map[string]any, opts runtimeprofile.SmartOptions, selection *rulespkg.Selection) error {
 	groups, ok := config["proxy-groups"].([]map[string]any)
 	if !ok {
-		return
+		return nil
 	}
 	for _, group := range groups {
 		groupType := strings.ToLower(strings.TrimSpace(stringValue(group["type"])))
@@ -807,9 +813,20 @@ func applySmartCoreProxyGroups(config map[string]any, opts runtimeprofile.SmartO
 			groupType = "smart"
 		}
 		if groupType == "smart" {
+			name := strings.TrimSpace(stringValue(group["name"]))
+			if selection != nil {
+				if selected, exists := selection.ProxyGroups[name]; exists && len(selected.SmartPriority) > 0 {
+					compiled, err := smartpolicy.Compile(selected.SmartPriority)
+					if err != nil {
+						return fmt.Errorf("proxy group %q: %w", name, err)
+					}
+					group["policy-priority"] = compiled
+				}
+			}
 			applySmartGroupOptions(group, opts)
 		}
 	}
+	return nil
 }
 
 func applySmartGroupOptions(group map[string]any, opts runtimeprofile.SmartOptions) {

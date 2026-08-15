@@ -292,6 +292,13 @@ proxy-groups:
     policy-priority: ".*netflix.*:1.5"
 ```
 
+localClash intent should express proxy-name priorities with the typed
+`proxy_groups.<id>.smart_priority` rules documented in `docs/rule-sources.md`.
+The renderer owns conversion to Mihomo's opaque `policy-priority` string and
+applies it only to the named group. Ordered rules are first-match-wins, and a
+global runtime-profile `policy-priority` remains only a default for Smart groups
+that do not have group-scoped intent.
+
 ### Known issue: `localclash-user.json` Smart injection
 
 When `core: smart` is active, localClash injects Smart runtime defaults after the

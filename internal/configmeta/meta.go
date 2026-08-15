@@ -1,5 +1,7 @@
 package configmeta
 
+import "localclash/internal/smartpolicy"
+
 const Key = "x-localclash"
 
 type Metadata struct {
@@ -31,9 +33,11 @@ type OverlayPack struct {
 }
 
 type OverlayProxyGroup struct {
-	ID    string   `yaml:"id" json:"id"`
-	Mode  string   `yaml:"mode" json:"mode"`
-	Nodes []string `yaml:"nodes" json:"nodes"`
+	ID            string             `yaml:"id" json:"id"`
+	Mode          string             `yaml:"mode" json:"mode"`
+	Nodes         []string           `yaml:"nodes" json:"nodes"`
+	SmartPriority []smartpolicy.Rule `yaml:"smart_priority,omitempty" json:"smart_priority,omitempty"`
+	Optional      bool               `yaml:"optional,omitempty" json:"optional,omitempty"`
 }
 
 type OverlayPolicyGroup struct {

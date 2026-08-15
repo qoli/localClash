@@ -36,6 +36,7 @@ import (
 	"localclash/internal/routertakeover"
 	"localclash/internal/rules"
 	"localclash/internal/runtimeprofile"
+	"localclash/internal/smartpolicy"
 	"localclash/internal/subscriptions"
 	"localclash/internal/workspace"
 )
@@ -939,12 +940,13 @@ func (s *Server) applyConfigIntentInspectDefaults(subscription, rulesCache, runt
 
 func (s *Server) callProxyGroupBuild(args json.RawMessage) (toolResult, error) {
 	var req struct {
-		ID       string             `json:"id"`
-		Mode     string             `json:"mode"`
-		Match    *localconfig.Match `json:"match"`
-		Nodes    []string           `json:"nodes"`
-		Reason   string             `json:"reason"`
-		Boundary string             `json:"boundary"`
+		ID            string             `json:"id"`
+		Mode          string             `json:"mode"`
+		Match         *localconfig.Match `json:"match"`
+		Nodes         []string           `json:"nodes"`
+		SmartPriority []smartpolicy.Rule `json:"smart_priority"`
+		Reason        string             `json:"reason"`
+		Boundary      string             `json:"boundary"`
 	}
 	if err := decodeStrictToolInput(args, &req); err != nil {
 		return toolResult{}, err
@@ -954,18 +956,20 @@ func (s *Server) callProxyGroupBuild(args json.RawMessage) (toolResult, error) {
 		Mode                string
 		Match               *localconfig.Match
 		Nodes               []string
+		SmartPriority       []smartpolicy.Rule
 		Reason              string
 		Boundary            string
 		Subscription        string
 		SubscriptionConfig  string
 		SubscriptionRuntime string
 	}{
-		ID:       req.ID,
-		Mode:     req.Mode,
-		Match:    req.Match,
-		Nodes:    req.Nodes,
-		Reason:   req.Reason,
-		Boundary: req.Boundary,
+		ID:            req.ID,
+		Mode:          req.Mode,
+		Match:         req.Match,
+		Nodes:         req.Nodes,
+		SmartPriority: smartpolicy.Clone(req.SmartPriority),
+		Reason:        req.Reason,
+		Boundary:      req.Boundary,
 	}
 	s.applyConfigIntentInspectDefaults(&in.Subscription, nil, nil, &in.SubscriptionConfig, &in.SubscriptionRuntime)
 	id := strings.TrimSpace(in.ID)
@@ -973,11 +977,12 @@ func (s *Server) callProxyGroupBuild(args json.RawMessage) (toolResult, error) {
 		return toolResult{}, fmt.Errorf("id is required")
 	}
 	group := localconfig.ProxyGroup{
-		Mode:     in.Mode,
-		Match:    in.Match,
-		Nodes:    append([]string{}, in.Nodes...),
-		Reason:   in.Reason,
-		Boundary: in.Boundary,
+		Mode:          in.Mode,
+		Match:         in.Match,
+		Nodes:         append([]string{}, in.Nodes...),
+		SmartPriority: smartpolicy.Clone(in.SmartPriority),
+		Reason:        in.Reason,
+		Boundary:      in.Boundary,
 	}
 	resolved, err := localconfig.Resolve(localconfig.ResolveOptions{
 		Config:              localconfig.Config{ProxyGroups: map[string]localconfig.ProxyGroup{id: group}},
@@ -990,12 +995,13 @@ func (s *Server) callProxyGroupBuild(args json.RawMessage) (toolResult, error) {
 	}
 	resolvedGroup := resolved.Config.ProxyGroups[id]
 	proxyGroupIntent := configplan.OverlayProxyGroupIntent{
-		ID:       id,
-		Mode:     resolvedGroup.Mode,
-		Match:    resolvedGroup.Match,
-		Nodes:    append([]string{}, resolvedGroup.Nodes...),
-		Reason:   resolvedGroup.Reason,
-		Boundary: resolvedGroup.Boundary,
+		ID:            id,
+		Mode:          resolvedGroup.Mode,
+		Match:         resolvedGroup.Match,
+		Nodes:         append([]string{}, resolvedGroup.Nodes...),
+		SmartPriority: smartpolicy.Clone(resolvedGroup.SmartPriority),
+		Reason:        resolvedGroup.Reason,
+		Boundary:      resolvedGroup.Boundary,
 	}
 	return jsonToolResult(map[string]any{
 		"proxy_group":    proxyGroupIntent,

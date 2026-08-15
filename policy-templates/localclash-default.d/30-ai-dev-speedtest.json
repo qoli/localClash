@@ -7,6 +7,33 @@
       "ChatGPT-available": {
         "mode": "auto",
         "capability": "openai.chatgpt.mobile.v1",
+        "smart_priority": [
+          {
+            "label": "US",
+            "pattern": "(🇺🇸|美国|美國|(^|[^A-Za-z])US([^A-Za-z]|$)|United.?States|America)",
+            "factor": 5
+          },
+          {
+            "label": "JP",
+            "pattern": "(🇯🇵|日本|(^|[^A-Za-z])JP([^A-Za-z]|$)|Japan)",
+            "factor": 4
+          },
+          {
+            "label": "SG",
+            "pattern": "(🇸🇬|新加坡|狮城|獅城|(^|[^A-Za-z])SG([^A-Za-z]|$)|Singapore)",
+            "factor": 3
+          },
+          {
+            "label": "TW",
+            "pattern": "(🇹🇼|台湾|台灣|(^|[^A-Za-z])TW([^A-Za-z]|$)|Taiwan)",
+            "factor": 2
+          },
+          {
+            "label": "Other",
+            "pattern": ".*",
+            "factor": 1
+          }
+        ],
         "optional": true,
         "reason": "由 localClash 在訂閱更新時驗證 iOS 與 Android 根路徑的 ChatGPT IP 可用指紋後重建。",
         "boundary": "chatgpt_service_qualified_subscription_nodes"

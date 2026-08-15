@@ -9,6 +9,7 @@ import (
 
 	"localclash/internal/configmeta"
 	"localclash/internal/localconfig"
+	"localclash/internal/smartpolicy"
 
 	"gopkg.in/yaml.v3"
 )
@@ -113,6 +114,7 @@ type IntentProxyGroup struct {
 	Match         *localconfig.Match `json:"match,omitempty"`
 	Nodes         []string           `json:"nodes,omitempty"`
 	Capability    string             `json:"capability,omitempty"`
+	SmartPriority []smartpolicy.Rule `json:"smart_priority,omitempty"`
 	SelectedNodes []string           `json:"selected_nodes,omitempty"`
 	NodeCount     int                `json:"node_count"`
 	Reason        string             `json:"reason,omitempty"`
@@ -446,6 +448,7 @@ func proxyGroupIntents(groups map[string]localconfig.ProxyGroup, resolved []loca
 			Match:         group.Match,
 			Nodes:         append([]string{}, group.Nodes...),
 			Capability:    group.Capability,
+			SmartPriority: smartpolicy.Clone(group.SmartPriority),
 			SelectedNodes: selected,
 			NodeCount:     nodeCount,
 			Reason:        group.Reason,

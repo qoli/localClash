@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"localclash/internal/rules"
+	"localclash/internal/smartpolicy"
 )
 
 const ConfigSchemaVersion = 4
@@ -54,14 +55,15 @@ type GeneratedPatch struct {
 }
 
 type ProxyGroup struct {
-	Mode          string   `json:"mode" yaml:"mode"`
-	Match         *Match   `json:"match,omitempty" yaml:"match,omitempty"`
-	Nodes         []string `json:"nodes,omitempty" yaml:"nodes,omitempty"`
-	Capability    string   `json:"capability,omitempty" yaml:"capability,omitempty"`
-	SelectedNodes []string `json:"selected_nodes,omitempty" yaml:"selected_nodes,omitempty"`
-	Optional      bool     `json:"optional,omitempty" yaml:"optional,omitempty"`
-	Reason        string   `json:"reason,omitempty" yaml:"reason,omitempty"`
-	Boundary      string   `json:"boundary,omitempty" yaml:"boundary,omitempty"`
+	Mode          string             `json:"mode" yaml:"mode"`
+	Match         *Match             `json:"match,omitempty" yaml:"match,omitempty"`
+	Nodes         []string           `json:"nodes,omitempty" yaml:"nodes,omitempty"`
+	Capability    string             `json:"capability,omitempty" yaml:"capability,omitempty"`
+	SelectedNodes []string           `json:"selected_nodes,omitempty" yaml:"selected_nodes,omitempty"`
+	SmartPriority []smartpolicy.Rule `json:"smart_priority,omitempty" yaml:"smart_priority,omitempty"`
+	Optional      bool               `json:"optional,omitempty" yaml:"optional,omitempty"`
+	Reason        string             `json:"reason,omitempty" yaml:"reason,omitempty"`
+	Boundary      string             `json:"boundary,omitempty" yaml:"boundary,omitempty"`
 }
 
 type PolicyGroup struct {
@@ -226,15 +228,16 @@ type Resolved struct {
 }
 
 type ProxyGroupResult struct {
-	ID            string   `json:"id"`
-	Mode          string   `json:"mode"`
-	Match         *Match   `json:"match,omitempty"`
-	Capability    string   `json:"capability,omitempty"`
-	SelectedNodes []string `json:"selected_nodes"`
-	NodeCount     int      `json:"node_count"`
-	Optional      bool     `json:"optional,omitempty"`
-	Reason        string   `json:"reason,omitempty"`
-	Boundary      string   `json:"boundary,omitempty"`
+	ID            string             `json:"id"`
+	Mode          string             `json:"mode"`
+	Match         *Match             `json:"match,omitempty"`
+	Capability    string             `json:"capability,omitempty"`
+	SelectedNodes []string           `json:"selected_nodes"`
+	SmartPriority []smartpolicy.Rule `json:"smart_priority,omitempty"`
+	NodeCount     int                `json:"node_count"`
+	Optional      bool               `json:"optional,omitempty"`
+	Reason        string             `json:"reason,omitempty"`
+	Boundary      string             `json:"boundary,omitempty"`
 }
 
 type PolicyGroupResult struct {
@@ -398,6 +401,18 @@ func Resolve(opts ResolveOptions) (Resolved, error) {
 	for _, id := range groupIDs {
 		group := resolvedConfig.ProxyGroups[id]
 		mode := strings.ToLower(strings.TrimSpace(group.Mode))
+		if len(group.SmartPriority) > 0 {
+			if mode != "auto" && mode != "smart" {
+				err := fmt.Errorf("proxy group %q smart_priority requires auto or smart mode", id)
+				finish(err, nil)
+				return Resolved{}, err
+			}
+			if _, err := smartpolicy.Compile(group.SmartPriority); err != nil {
+				err = fmt.Errorf("proxy group %q: %w", id, err)
+				finish(err, nil)
+				return Resolved{}, err
+			}
+		}
 		var selected []string
 		var err error
 		finishGroup := stage("resolve_proxy_group", map[string]any{
@@ -434,7 +449,7 @@ func Resolve(opts ResolveOptions) (Resolved, error) {
 		group.Mode = mode
 		group.SelectedNodes = selected
 		resolvedConfig.ProxyGroups[id] = group
-		ruleGroup := rules.ProxyGroup{Nodes: selected, Optional: group.Optional}
+		ruleGroup := rules.ProxyGroup{Nodes: selected, SmartPriority: smartpolicy.Clone(group.SmartPriority), Optional: group.Optional}
 		switch mode {
 		case "manual":
 			ruleGroup.Manual = true
@@ -456,6 +471,7 @@ func Resolve(opts ResolveOptions) (Resolved, error) {
 			Match:         group.Match,
 			Capability:    group.Capability,
 			SelectedNodes: append([]string{}, selected...),
+			SmartPriority: smartpolicy.Clone(group.SmartPriority),
 			NodeCount:     len(selected),
 			Optional:      group.Optional,
 			Reason:        group.Reason,
@@ -622,6 +638,7 @@ func cloneProxyGroups(groups map[string]ProxyGroup) map[string]ProxyGroup {
 		if group.SelectedNodes != nil {
 			group.SelectedNodes = append([]string{}, group.SelectedNodes...)
 		}
+		group.SmartPriority = smartpolicy.Clone(group.SmartPriority)
 		cloned[id] = group
 	}
 	return cloned

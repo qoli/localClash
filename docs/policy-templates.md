@@ -95,6 +95,14 @@ the runtime automatic group can still avoid it while its transport is down. A
 successful observation resets the failure counter. This keeps an instantaneous
 carrier interruption from being mistaken for a durable ChatGPT capability change.
 
+When Smart Core is active, `ChatGPT-available` applies ordered proxy-name labels
+and weights: US `5`, JP `4`, SG `3`, TW `2`, and Other `1`. This is a soft
+preference layered onto Smart's learned quality, not a fallback chain or a hard
+regional lock: the normal bias favors the United States, while a materially
+better lower-priority node can still win. The priority belongs only to this
+service-qualified group and does not alter other automatic or Smart groups.
+Meta Core keeps the group as a normal `url-test` without emitting this option.
+
 The Cloudflare default is an explicit `GEOIP,cloudflare` exception before the
 terminal `MATCH,DIRECT` rule. It targets the Dashboard-visible `☁️ Cloudflare`
 business group, whose first exit is `⚡ 自动选择`; it intentionally does not add

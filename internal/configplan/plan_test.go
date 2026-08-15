@@ -16,9 +16,23 @@ import (
 	"localclash/internal/localconfig"
 	"localclash/internal/rules"
 	"localclash/internal/runtimeprofile"
+	"localclash/internal/smartpolicy"
 
 	"gopkg.in/yaml.v3"
 )
+
+func TestIntentFromSummaryPreservesProxyGroupSmartPriorityAndOptional(t *testing.T) {
+	priority := []smartpolicy.Rule{{Label: "US", Pattern: "US", Factor: 5}, {Label: "Other", Pattern: ".*", Factor: 1}}
+	intent := intentFromSummary(OverlaySummary{ProxyGroups: []OverlayProxyGroupSummary{{
+		ID: "ChatGPT-available", Mode: "auto", Nodes: []string{"US 01"}, SmartPriority: priority, Optional: true,
+	}}})
+	if len(intent.ProxyGroups) != 1 || !intent.ProxyGroups[0].Optional {
+		t.Fatalf("intent proxy groups = %+v, want optional group", intent.ProxyGroups)
+	}
+	if !reflect.DeepEqual(intent.ProxyGroups[0].SmartPriority, priority) {
+		t.Fatalf("smart priority = %#v, want %#v", intent.ProxyGroups[0].SmartPriority, priority)
+	}
+}
 
 func TestRenderBuiltInTargetPlanWritesArtifacts(t *testing.T) {
 	paths := writePlanFixture(t)

@@ -18,6 +18,7 @@ import (
 	"localclash/internal/mihomotest"
 	"localclash/internal/rules"
 	"localclash/internal/runtimeprofile"
+	"localclash/internal/smartpolicy"
 )
 
 type Options struct {
@@ -104,14 +105,15 @@ func (pack *OverlayPackIntent) UnmarshalJSON(data []byte) error {
 }
 
 type OverlayProxyGroupIntent struct {
-	ID         string             `json:"id" yaml:"id"`
-	Nodes      []string           `json:"nodes,omitempty" yaml:"nodes,omitempty"`
-	Match      *localconfig.Match `json:"match,omitempty" yaml:"match,omitempty"`
-	Capability string             `json:"capability,omitempty" yaml:"capability,omitempty"`
-	Mode       string             `json:"mode" yaml:"mode"`
-	Optional   bool               `json:"optional,omitempty" yaml:"optional,omitempty"`
-	Reason     string             `json:"reason,omitempty" yaml:"reason,omitempty"`
-	Boundary   string             `json:"boundary,omitempty" yaml:"boundary,omitempty"`
+	ID            string             `json:"id" yaml:"id"`
+	Nodes         []string           `json:"nodes,omitempty" yaml:"nodes,omitempty"`
+	Match         *localconfig.Match `json:"match,omitempty" yaml:"match,omitempty"`
+	Capability    string             `json:"capability,omitempty" yaml:"capability,omitempty"`
+	Mode          string             `json:"mode" yaml:"mode"`
+	SmartPriority []smartpolicy.Rule `json:"smart_priority,omitempty" yaml:"smart_priority,omitempty"`
+	Optional      bool               `json:"optional,omitempty" yaml:"optional,omitempty"`
+	Reason        string             `json:"reason,omitempty" yaml:"reason,omitempty"`
+	Boundary      string             `json:"boundary,omitempty" yaml:"boundary,omitempty"`
 }
 
 type OverlayPolicyGroupIntent struct {
@@ -216,7 +218,9 @@ type OverlayProxyGroupSummary struct {
 	Match         *localconfig.Match `json:"match,omitempty"`
 	Capability    string             `json:"capability,omitempty"`
 	Mode          string             `json:"mode"`
+	SmartPriority []smartpolicy.Rule `json:"smart_priority,omitempty"`
 	NodeCount     int                `json:"node_count"`
+	Optional      bool               `json:"optional,omitempty"`
 	Reason        string             `json:"reason,omitempty"`
 	Boundary      string             `json:"boundary,omitempty"`
 }
@@ -765,13 +769,14 @@ func configFromOverlay(overlay OverlayIntent) localconfig.Config {
 	}
 	for _, group := range overlay.ProxyGroups {
 		config.ProxyGroups[group.ID] = localconfig.ProxyGroup{
-			Mode:       group.Mode,
-			Match:      group.Match,
-			Nodes:      append([]string{}, group.Nodes...),
-			Capability: group.Capability,
-			Optional:   group.Optional,
-			Reason:     group.Reason,
-			Boundary:   group.Boundary,
+			Mode:          group.Mode,
+			Match:         group.Match,
+			Nodes:         append([]string{}, group.Nodes...),
+			Capability:    group.Capability,
+			SmartPriority: smartpolicy.Clone(group.SmartPriority),
+			Optional:      group.Optional,
+			Reason:        group.Reason,
+			Boundary:      group.Boundary,
 		}
 	}
 	for _, group := range overlay.PolicyGroups {
@@ -1014,7 +1019,9 @@ func overlaySummaryFromResolved(resolved localconfig.Resolved) OverlaySummary {
 			Match:         group.Match,
 			Capability:    group.Capability,
 			Mode:          group.Mode,
+			SmartPriority: smartpolicy.Clone(group.SmartPriority),
 			NodeCount:     group.NodeCount,
+			Optional:      group.Optional,
 			Reason:        group.Reason,
 			Boundary:      group.Boundary,
 		})
@@ -1226,6 +1233,14 @@ func buildSelection(opts Options, proxyNames []string) (rules.Selection, Overlay
 		if mode != "direct" && len(group.Nodes) == 0 && strings.TrimSpace(group.Capability) == "" {
 			return rules.Selection{}, OverlaySummary{}, nil, fmt.Errorf("proxy group %q nodes is required", id)
 		}
+		if len(group.SmartPriority) > 0 {
+			if mode != "auto" && mode != "smart" {
+				return rules.Selection{}, OverlaySummary{}, nil, fmt.Errorf("proxy group %q smart_priority requires auto or smart mode", id)
+			}
+			if _, err := smartpolicy.Compile(group.SmartPriority); err != nil {
+				return rules.Selection{}, OverlaySummary{}, nil, fmt.Errorf("proxy group %q: %w", id, err)
+			}
+		}
 		if strings.TrimSpace(group.Capability) != "" {
 			return rules.Selection{}, OverlaySummary{}, nil, fmt.Errorf("proxy group %q capability %q requires subscriptions_refresh before rendering a plan", id, group.Capability)
 		}
@@ -1237,7 +1252,7 @@ func buildSelection(opts Options, proxyNames []string) (rules.Selection, Overlay
 				return rules.Selection{}, OverlaySummary{}, nil, err
 			}
 		}
-		pg := rules.ProxyGroup{Nodes: nodes}
+		pg := rules.ProxyGroup{Nodes: nodes, SmartPriority: smartpolicy.Clone(group.SmartPriority), Optional: group.Optional}
 		switch mode {
 		case "manual":
 			pg.Manual = true
@@ -1249,7 +1264,7 @@ func buildSelection(opts Options, proxyNames []string) (rules.Selection, Overlay
 			pg.Direct = true
 		}
 		proxyGroups[id] = pg
-		proxyGroupSummaries = append(proxyGroupSummaries, OverlayProxyGroupSummary{ID: id, Nodes: append([]string(nil), nodes...), Mode: mode, NodeCount: len(nodes)})
+		proxyGroupSummaries = append(proxyGroupSummaries, OverlayProxyGroupSummary{ID: id, Nodes: append([]string(nil), nodes...), Mode: mode, SmartPriority: smartpolicy.Clone(group.SmartPriority), NodeCount: len(nodes), Optional: group.Optional})
 	}
 
 	policyGroups, policyGroupSummaries, err := buildPolicyGroupsFromOverlay(opts.Overlay.PolicyGroups, proxyGroups)
@@ -1482,13 +1497,15 @@ func intentFromSummary(summary OverlaySummary) OverlayIntent {
 	}
 	for _, group := range summary.ProxyGroups {
 		intent.ProxyGroups = append(intent.ProxyGroups, OverlayProxyGroupIntent{
-			ID:         group.ID,
-			Nodes:      append([]string{}, group.Nodes...),
-			Match:      group.Match,
-			Capability: group.Capability,
-			Mode:       group.Mode,
-			Reason:     group.Reason,
-			Boundary:   group.Boundary,
+			ID:            group.ID,
+			Nodes:         append([]string{}, group.Nodes...),
+			Match:         group.Match,
+			Capability:    group.Capability,
+			Mode:          group.Mode,
+			SmartPriority: smartpolicy.Clone(group.SmartPriority),
+			Optional:      group.Optional,
+			Reason:        group.Reason,
+			Boundary:      group.Boundary,
 		})
 	}
 	for _, group := range summary.PolicyGroups {

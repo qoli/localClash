@@ -57,6 +57,24 @@ failure hysteresis. A `capability` group cannot also declare `nodes` or `match`.
 `auto: true` or `manual: true`; enabling both is rejected because it would
 create competing runtime groups for the same target.
 
+An `auto` or `smart` proxy group may also declare ordered, group-scoped Smart
+priorities:
+
+```yaml
+smart_priority:
+  - {label: US, pattern: "(美国|US)", factor: 5}
+  - {label: JP, pattern: "(日本|JP)", factor: 4}
+  - {label: Other, pattern: ".*", factor: 1}
+```
+
+Rules are first-match-wins. `label` is durable localClash metadata; `pattern`
+matches the subscription proxy name and `factor` is a positive multiplier for
+Smart's learned weight. localClash validates and serializes these typed rules
+instead of exposing Mihomo's delimiter string. Patterns are restricted to the
+RE2-compatible subset and cannot contain semicolons. Under Smart Core, an
+`auto` group becomes `type: smart` and receives its own `policy-priority`.
+Under Meta Core it stays `url-test` and the Smart-only setting is not emitted.
+
 `policy_groups` are the optional business layer for ACL4SSR-style UX. Rules and
 packs can target a visible group such as `Steam`; that group then offers exits
 such as `HK`, `JP`, `⚡ 自动选择`, or `DIRECT` in Dashboard. Non-built-in exits must

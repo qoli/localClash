@@ -13,6 +13,7 @@ import (
 	"localclash/internal/resolverconfig"
 	"localclash/internal/rules"
 	"localclash/internal/runtimeprofile"
+	"localclash/internal/smartpolicy"
 
 	"gopkg.in/yaml.v3"
 )
@@ -735,6 +736,13 @@ proxy_groups:
   AI:
     nodes: ["🇯🇵日本01 | JP"]
     auto: true
+    smart_priority:
+      - label: US
+        pattern: "(美国|US)"
+        factor: 5
+      - label: Other
+        pattern: ".*"
+        factor: 1
   SmartOnly:
     nodes: ["🇯🇵日本01 | JP"]
     smart: true
@@ -781,6 +789,13 @@ enabled_packs:
 		if group["uselightgbm"] != true || group["prefer-asn"] != true {
 			t.Fatalf("%s smart options = %+v, want defaults", name, group)
 		}
+		if name == "AI" {
+			if got := group["policy-priority"]; got != `(美国|US):5;.*:1` {
+				t.Fatalf("AI policy-priority = %v, want group-scoped order", got)
+			}
+		} else if group["policy-priority"] != nil {
+			t.Fatalf("%s inherited AI policy-priority: %+v", name, group)
+		}
 	}
 	if config["lgbm-auto-update"] != true || config["lgbm-update-interval"] != 72 {
 		t.Fatalf("smart lgbm update = auto %v interval %v, want enabled 72h", config["lgbm-auto-update"], config["lgbm-update-interval"])
@@ -797,6 +812,36 @@ enabled_packs:
 	proxyGroups := overlay["proxy_groups"].([]any)
 	if got := proxyGroups[0].(map[string]any)["mode"]; got != "auto" {
 		t.Fatalf("metadata proxy group mode = %v, want original auto intent", got)
+	}
+
+	if _, err := runtimeprofile.Configure(profilePath, "", runtimeprofile.CoreMeta); err != nil {
+		t.Fatal(err)
+	}
+	metaResult, err := Render(Options{
+		SourcePath:         paths.subscription,
+		OutputPath:         filepath.Join(paths.dir, "meta.yaml"),
+		PacksSelectionPath: paths.selection,
+		RulesCacheDir:      paths.cacheDir,
+		RuntimeProfilePath: profilePath,
+		Force:              true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	meta := readTestYAML(t, metaResult.OutputPath)
+	ai := proxyGroupFromConfig(t, meta, "AI")
+	if ai["type"] != "url-test" || ai["policy-priority"] != nil {
+		t.Fatalf("Meta AI group = %+v, want url-test without Smart-only priority", ai)
+	}
+}
+
+func TestApplySmartCoreProxyGroupsRejectsInvalidDirectSelection(t *testing.T) {
+	config := map[string]any{"proxy-groups": []map[string]any{{"name": "AI", "type": "url-test"}}}
+	selection := &rules.Selection{ProxyGroups: map[string]rules.ProxyGroup{
+		"AI": {Auto: true, SmartPriority: []smartpolicy.Rule{{Label: "US", Pattern: "US;JP", Factor: 1}}},
+	}}
+	if err := applySmartCoreProxyGroups(config, runtimeprofile.SmartOptions{}, selection); err == nil {
+		t.Fatal("applySmartCoreProxyGroups() error = nil")
 	}
 }
 

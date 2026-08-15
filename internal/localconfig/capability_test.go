@@ -4,15 +4,19 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"localclash/internal/smartpolicy"
 )
 
 func TestResolveCapabilityProxyGroup(t *testing.T) {
+	priority := []smartpolicy.Rule{{Label: "US", Pattern: "US", Factor: 5}, {Label: "Other", Pattern: ".*", Factor: 1}}
 	config := Config{
 		ProxyGroups: map[string]ProxyGroup{
 			"ChatGPT-available": {
-				Mode:       "smart",
-				Capability: "openai.chatgpt.mobile.v1",
-				Optional:   true,
+				Mode:          "smart",
+				Capability:    "openai.chatgpt.mobile.v1",
+				SmartPriority: priority,
+				Optional:      true,
 			},
 		},
 	}
@@ -35,6 +39,22 @@ func TestResolveCapabilityProxyGroup(t *testing.T) {
 	}
 	if got := resolved.Selection.ProxyGroups["ChatGPT-available"].Nodes; !reflect.DeepEqual(got, []string{"US 01"}) {
 		t.Fatalf("selection nodes = %+v", got)
+	}
+	if got := resolved.Selection.ProxyGroups["ChatGPT-available"].SmartPriority; !reflect.DeepEqual(got, priority) {
+		t.Fatalf("selection smart priority = %#v, want %#v", got, priority)
+	}
+	resolved.Selection.ProxyGroups["ChatGPT-available"].SmartPriority[0].Factor = 99
+	if config.ProxyGroups["ChatGPT-available"].SmartPriority[0].Factor != 5 {
+		t.Fatalf("Resolve mutated input smart priority: %+v", config.ProxyGroups["ChatGPT-available"].SmartPriority)
+	}
+}
+
+func TestResolveRejectsSmartPriorityOnManualGroup(t *testing.T) {
+	_, err := Resolve(ResolveOptions{Config: Config{ProxyGroups: map[string]ProxyGroup{
+		"Manual": {Mode: "manual", Nodes: []string{"US 01"}, SmartPriority: []smartpolicy.Rule{{Label: "US", Pattern: "US", Factor: 5}}},
+	}}, SubscriptionNodes: []SubscriptionNode{{Name: "US 01"}}})
+	if err == nil || !strings.Contains(err.Error(), "requires auto or smart mode") {
+		t.Fatalf("error = %v, want smart_priority mode rejection", err)
 	}
 }
 

@@ -271,6 +271,16 @@ func inputSchemaForTool(name string) map[string]any {
 			"required": []string{"path", "edits"},
 		}
 	case "proxy_group_build":
+		smartPriorityRule := map[string]any{
+			"type":                 "object",
+			"additionalProperties": false,
+			"properties": map[string]any{
+				"label":   map[string]any{"type": "string", "description": "Stable human-readable region label; rule order is first-match-wins."},
+				"pattern": map[string]any{"type": "string", "description": "RE2-compatible proxy-name pattern. Semicolons are not supported by Mihomo policy-priority."},
+				"factor":  map[string]any{"type": "number", "exclusiveMinimum": 0, "description": "Positive multiplier applied to Smart's learned weight."},
+			},
+			"required": []string{"label", "pattern", "factor"},
+		}
 		matchIntent := map[string]any{
 			"type":                 "object",
 			"additionalProperties": false,
@@ -288,12 +298,13 @@ func inputSchemaForTool(name string) map[string]any {
 			"type":                 "object",
 			"additionalProperties": false,
 			"properties": map[string]any{
-				"id":       map[string]any{"type": "string", "description": "Reusable proxy group id, for example TempLine or SteamHK."},
-				"match":    matchIntent,
-				"nodes":    map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Exact subscription proxy names for a user-specified line. Use either match or nodes, not both."},
-				"mode":     map[string]any{"type": "string", "enum": []string{"manual", "auto", "smart", "direct"}, "description": "Desired proxy-group mode. manual becomes select; auto becomes url-test; smart becomes smart; direct becomes a named DIRECT-only exit."},
-				"reason":   map[string]any{"type": "string", "description": "Short durable reason used if selector repair needs user involvement."},
-				"boundary": map[string]any{"type": "string", "description": "Boundary note, for example name_based_hint_only."},
+				"id":             map[string]any{"type": "string", "description": "Reusable proxy group id, for example TempLine or SteamHK."},
+				"match":          matchIntent,
+				"nodes":          map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Exact subscription proxy names for a user-specified line. Use either match or nodes, not both."},
+				"mode":           map[string]any{"type": "string", "enum": []string{"manual", "auto", "smart", "direct"}, "description": "Desired proxy-group mode. manual becomes select; auto becomes url-test; smart becomes smart; direct becomes a named DIRECT-only exit."},
+				"smart_priority": map[string]any{"type": "array", "items": smartPriorityRule, "description": "Optional ordered Smart-core proxy-name priorities for this group only. Requires auto or smart mode; Meta core ignores them."},
+				"reason":         map[string]any{"type": "string", "description": "Short durable reason used if selector repair needs user involvement."},
+				"boundary":       map[string]any{"type": "string", "description": "Boundary note, for example name_based_hint_only."},
 			},
 			"required": []string{"id", "mode"},
 		}

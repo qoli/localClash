@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"localclash/internal/smartpolicy"
 	"unicode"
 
 	"gopkg.in/yaml.v3"
@@ -97,12 +99,13 @@ type Selection struct {
 }
 
 type ProxyGroup struct {
-	Nodes    []string `json:"nodes"`
-	Auto     bool     `json:"auto"`
-	Manual   bool     `json:"manual"`
-	Smart    bool     `json:"smart"`
-	Direct   bool     `json:"direct"`
-	Optional bool     `json:"optional,omitempty"`
+	Nodes         []string           `json:"nodes"`
+	SmartPriority []smartpolicy.Rule `json:"smart_priority,omitempty"`
+	Auto          bool               `json:"auto"`
+	Manual        bool               `json:"manual"`
+	Smart         bool               `json:"smart"`
+	Direct        bool               `json:"direct"`
+	Optional      bool               `json:"optional,omitempty"`
 }
 
 type PolicyGroup struct {
