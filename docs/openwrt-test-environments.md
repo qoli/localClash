@@ -261,6 +261,65 @@ Do not use either x86 target for:
 - validating a live router while the current network depends on it
 - assuming real-router DNS, filesystem, traffic, or CPU behavior
 
+## iStoreOS Firmware QEMU
+
+Use this target when the acceptance boundary specifically requires an actual
+iStoreOS firmware rather than the generic OpenWrt Docker rootfs. It boots the
+official pinned x86_64 combined image under QEMU, with an immutable raw base and
+a disposable qcow2 overlay.
+
+The default pinned baseline is:
+
+```text
+iStoreOS: 24.10.8, build 2026073111
+image: istoreos-24.10.8-2026073111-x86-64-squashfs-combined.img.gz
+SHA-256: 2ce609e2625f9ba67723ec29b0b509baa300c6b74f528596490d950909e09a9c
+runtime directory: .runtime/istoreos-qemu/
+```
+
+Prepare, boot, and wait for LuCI:
+
+```bash
+scripts/istoreos-test-env.sh prepare
+scripts/istoreos-test-env.sh start
+scripts/istoreos-test-env.sh wait
+```
+
+When network setup needs inspection, attach to the firmware console with
+`scripts/istoreos-test-env.sh console`; `Ctrl-C` detaches from the console
+without stopping the VM.
+
+The clean firmware reports that no root password is defined. Use the serial
+console for initial inspection; deliberately configure root authentication in
+the disposable overlay before relying on the SSH forward.
+
+Host-only endpoints:
+
+```text
+LuCI:       http://127.0.0.1:18089/
+SSH:        ssh -p 12223 root@127.0.0.1 (after configuring root auth)
+MCP:        http://127.0.0.1:18766/mcp
+Controller: http://127.0.0.1:19091/
+VNC:        vnc://127.0.0.1:5902
+```
+
+The first virtual NIC is the iStoreOS WAN with outbound QEMU user-mode NAT. The
+second is the iStoreOS LAN at `192.168.101.1`, as observed from the pinned
+firmware's loaded UCI state. No bridge, route, firewall, or DNS setting is added
+to the macOS host. On Apple Silicon the x86_64 guest uses QEMU TCG emulation, so
+boot and package operations are slower than the Docker target.
+
+Stop the guest while keeping test state, or reset only the writable overlay:
+
+```bash
+scripts/istoreos-test-env.sh stop
+scripts/istoreos-test-env.sh reset
+```
+
+Use this environment for iStore `.run` installation, iStoreOS-specific package
+dependencies, LuCI/procd behavior, firmware reboot, and takeover restoration.
+It is still x86_64 and must not be used as proof of ARM64 Smart-core behavior.
+
 For live-router Smart validation, use an isolated temporary runtime directory
 and copy only validation inputs such as `Model.bin`, geodata/mmdb files, and
 rule providers. Do not point `mihomo -t` at the live `.runtime/mihomo` directory
