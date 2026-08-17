@@ -20,8 +20,55 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
-| localClash Core | [v0.1.57](https://github.com/qoli/localClash/releases/tag/v0.1.57) | 2026-08-15 UTC+8 |
-| localclash-luci | [v0.1.0-50](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-50) | 2026-08-17 UTC+8 |
+| localClash Core | [v0.1.59](https://github.com/qoli/localClash/releases/tag/v0.1.59) | 2026-08-18 UTC+8 |
+| localclash-luci | [v0.1.0-51](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-51) | 2026-08-18 UTC+8 |
+
+## 2026-08-18
+
+### localClash Core v0.1.59
+
+Changes:
+
+- 網絡接管狀態改為單次、最長 8 秒的精確觀測；只讀指定 nft chain，不再掃描
+  完整 ruleset，並回傳耗時。
+- runtime 停止流程會把已自行結束的受管程序視為已停止，避免訊號競態誤報失敗。
+
+Release:
+
+- [qoli/localClash v0.1.59](https://github.com/qoli/localClash/releases/tag/v0.1.59)
+
+Verification:
+
+- `go test ./...`、`go vet ./...` 與重複 runtime stop 回歸測試通過；Release
+  workflow [32045482286](https://github.com/qoli/localClash/actions/runs/32045482286)
+  成功。
+- 7 個公開資產及 SHA-256 全部通過；兩架構 binary 分別確認為 x86-64／ARM64，
+  manifest 版本與資產 checksum 均為 `v0.1.59`。
+- 真實 OpenWrt 與 iStoreOS VM 的接管查詢各完成 20 次順序及 8 路併發 Arc
+  驗收，全部成功、沒有 XHR timeout。
+
+### localclash-luci v0.1.0-51
+
+Changes:
+
+- 接管查詢失敗或逾時時明確顯示「實際接管狀態未知」，不再沿用舊狀態。
+- Core 與 LuCI 更新檢查加入各自的 single-flight 鎖；重疊請求會立即明確回報
+  `*_update_check_in_progress`，不再堆積並耗盡 rpcd／Web worker。
+- iStoreOS 離線 bundle 的 Core 固定版本由 `v0.1.51` 更新為 `v0.1.59`。
+
+Release:
+
+- [qoli/localclash-luci v0.1.0-51](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-51)
+
+Verification:
+
+- main CI [32045815676](https://github.com/qoli/localclash-luci/actions/runs/32045815676)
+  與 Release workflow
+  [32045946477](https://github.com/qoli/localclash-luci/actions/runs/32045946477) 全部成功。
+- 13 個公開資產及 SHA-256 全部通過；x86_64／aarch64 iStore `.run` 均通過
+  `--info`、`--list`、`--check` 與 `--noexec` 驗證。
+- 真實 OpenWrt 的 20 次接管查詢中位數 531 ms、P95 620 ms；iStoreOS VM
+  中位數 501 ms、P95 524 ms，兩邊均為 20/20 成功且沒有接管 XHR timeout。
 
 ## 2026-08-17
 
