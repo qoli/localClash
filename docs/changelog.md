@@ -21,9 +21,34 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
 | localClash Core | [v0.1.57](https://github.com/qoli/localClash/releases/tag/v0.1.57) | 2026-08-15 UTC+8 |
-| localclash-luci | [v0.1.0-48](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-48) | 2026-08-17 UTC+8 |
+| localclash-luci | [v0.1.0-49](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-49) | 2026-08-17 UTC+8 |
 
 ## 2026-08-17
+
+### localclash-luci v0.1.0-49
+
+Changes:
+
+- 修正 Takeover Issue 報告模組的 LuCI loader export 契約；更新後「概述」頁可
+  正常顯示最底部的 Issue 回報區，不再因 `invalid constructor` 中止 render。
+- 新增模組型態回歸測試，除了驗證診斷內容、隱私 allowlist 與 GitHub URL
+  長度，也會確認資源輸出為 LuCI 可實例化的 constructor。
+
+Release:
+
+- [qoli/localclash-luci v0.1.0-49](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-49)
+
+Verification:
+
+- 本地 JavaScript、報告模組、rpcd/hotplug 及 release helper 測試通過；main CI
+  [31989973864](https://github.com/qoli/localclash-luci/actions/runs/31989973864)
+  及 Release workflow
+  [31990066454](https://github.com/qoli/localclash-luci/actions/runs/31990066454)
+  全部成功。
+- 13 個公開資產重新下載後，精確檔名與全部 SHA-256 均通過；x86_64／aarch64
+  iStore `.run` 亦通過 `--info`、`--list`、`--check` 與 `--noexec` 解包驗證。
+- 本版尚未安裝到真實路由器；公開資產與 loader 契約已驗證，但 LuCI 頁面仍需
+  在路由器更新後作實機回讀。
 
 ### localclash-luci v0.1.0-48
 
