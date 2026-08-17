@@ -47,8 +47,10 @@ Verification:
   全部成功。
 - 13 個公開資產重新下載後，精確檔名與全部 SHA-256 均通過；x86_64／aarch64
   iStore `.run` 亦通過 `--info`、`--list`、`--check` 與 `--noexec` 解包驗證。
-- 本版尚未安裝到真實路由器；公開資產與 loader 契約已驗證，但 LuCI 頁面仍需
-  在路由器更新後作實機回讀。
+- 真實 `opkg` 路由器由 `0.1.0-48` 更新至 `0.1.0-49` 後，package metadata、
+  rpcd 與實際模組內容回讀正確；Mihomo runtime 保持運行。Arc hard reload 後
+  概述頁正常 render，Takeover Issue 區與兩個回報按鈕均可見，console 不再出現
+  `factory yields invalid constructor`。
 
 ### localclash-luci v0.1.0-48
 
