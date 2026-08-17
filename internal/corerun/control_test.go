@@ -214,6 +214,25 @@ func TestStopTerminatesAllManagedCores(t *testing.T) {
 	waitForStoppedPIDs(t, done, meta.Process.Pid, smart.Process.Pid)
 }
 
+func TestStopRuntimePIDsTreatsAlreadyExitedProcessAsStopped(t *testing.T) {
+	cmd := exec.Command("/bin/sh", "-c", "exit 0")
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	pid := cmd.Process.Pid
+	if err := cmd.Wait(); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := stopRuntimePIDs([]int{pid}, StopResult{}, 100*time.Millisecond, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Stopped || !result.WasRunning || len(result.StoppedPIDs) != 1 || result.StoppedPIDs[0] != pid {
+		t.Fatalf("stop = %+v, want already-exited pid %d treated as stopped", result, pid)
+	}
+}
+
 func TestRestartValidatesConfigBeforeRestartingRuntime(t *testing.T) {
 	dir := t.TempDir()
 	workDir := filepath.Join(dir, "runtime")

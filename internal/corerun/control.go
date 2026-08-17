@@ -444,6 +444,9 @@ func stopRuntimePIDs(pids []int, result StopResult, timeout time.Duration, force
 			return result, err
 		}
 		if err := process.Signal(syscall.SIGTERM); err != nil {
+			if errors.Is(err, os.ErrProcessDone) || !processRunning(pid) || processZombie(pid) {
+				continue
+			}
 			return result, fmt.Errorf("send SIGTERM to pid %d: %w", pid, err)
 		}
 	}
@@ -467,6 +470,9 @@ func stopRuntimePIDs(pids []int, result StopResult, timeout time.Duration, force
 			return result, err
 		}
 		if err := process.Kill(); err != nil {
+			if errors.Is(err, os.ErrProcessDone) || !processRunning(pid) || processZombie(pid) {
+				continue
+			}
 			return result, fmt.Errorf("send SIGKILL to pid %d: %w", pid, err)
 		}
 	}
