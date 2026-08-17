@@ -570,6 +570,17 @@ func runProductTakeover(args []string, state appinit.RuntimeState) error {
 	case "status":
 		result, err := routertakeover.Status(ctx, opts)
 		if err != nil {
+			if errors.Is(err, context.DeadlineExceeded) {
+				return codedProductError{
+					code:    "router_takeover_status_timeout",
+					message: "router takeover status observation timed out; actual takeover state is unknown",
+					details: map[string]any{"timeout_seconds": int(routertakeover.StatusObservationTimeout / time.Second)},
+					nextActions: []string{
+						"retry router takeover status after router load decreases",
+						"inspect router logs and nft command latency if the timeout repeats",
+					},
+				}
+			}
 			return err
 		}
 		return printProductOK(productEnvelope{OK: true, Summary: "Router takeover status read.", Status: result, Changes: []string{}, Warnings: result.Warnings, NextActions: result.NextActions})

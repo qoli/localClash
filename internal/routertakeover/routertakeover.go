@@ -17,11 +17,12 @@ import (
 )
 
 const (
-	defaultFWMark     = "0x162"
-	defaultRouteTable = "0x162"
-	defaultRulePref   = "1888"
-	defaultStateDir   = "/tmp/localclash/router-takeover"
-	commandTimeout    = 75 * time.Second
+	defaultFWMark            = "0x162"
+	defaultRouteTable        = "0x162"
+	defaultRulePref          = "1888"
+	defaultStateDir          = "/tmp/localclash/router-takeover"
+	commandTimeout           = 75 * time.Second
+	StatusObservationTimeout = 8 * time.Second
 )
 
 type Options struct {
@@ -54,28 +55,33 @@ type Check struct {
 }
 
 type Result struct {
-	ProfileMode    string   `json:"profile_mode"`
-	RuntimeRunning bool     `json:"runtime_running"`
-	Effective      bool     `json:"effective"`
-	Applied        bool     `json:"applied,omitempty"`
-	Stopped        bool     `json:"stopped,omitempty"`
-	DryRun         bool     `json:"dry_run,omitempty"`
-	StateDir       string   `json:"state_dir"`
-	DNSPort        int      `json:"dns_port"`
-	RedirPort      int      `json:"redir_port"`
-	TunDevice      string   `json:"tun_device"`
-	LocalDNS       []string `json:"local_dns,omitempty"`
-	LocalDomains   []string `json:"local_domains,omitempty"`
-	Error          string   `json:"error,omitempty"`
-	Checks         []Check  `json:"checks"`
-	Warnings       []string `json:"warnings,omitempty"`
-	NextActions    []string `json:"next_actions,omitempty"`
-	Script         string   `json:"script,omitempty"`
+	ProfileMode           string   `json:"profile_mode"`
+	RuntimeRunning        bool     `json:"runtime_running"`
+	Effective             bool     `json:"effective"`
+	Applied               bool     `json:"applied,omitempty"`
+	Stopped               bool     `json:"stopped,omitempty"`
+	DryRun                bool     `json:"dry_run,omitempty"`
+	StateDir              string   `json:"state_dir"`
+	DNSPort               int      `json:"dns_port"`
+	RedirPort             int      `json:"redir_port"`
+	TunDevice             string   `json:"tun_device"`
+	LocalDNS              []string `json:"local_dns,omitempty"`
+	LocalDomains          []string `json:"local_domains,omitempty"`
+	Error                 string   `json:"error,omitempty"`
+	Checks                []Check  `json:"checks"`
+	Warnings              []string `json:"warnings,omitempty"`
+	NextActions           []string `json:"next_actions,omitempty"`
+	Script                string   `json:"script,omitempty"`
+	ObservationDurationMS int64    `json:"observation_duration_ms,omitempty"`
 }
 
 type commandRunner func(context.Context, string) (string, error)
 
 func Status(ctx context.Context, opts Options) (Result, error) {
+	return statusWithRunner(ctx, opts, defaultRunner)
+}
+
+func statusWithRunner(ctx context.Context, opts Options, runner commandRunner) (Result, error) {
 	opts = normalizeOptions(opts)
 	stage := routerTakeoverStageEmitter(opts.OnStage)
 	finish := stage("read_runtime_profile", map[string]any{"runtime_profile": opts.RuntimeProfile})
@@ -97,30 +103,35 @@ func Status(ctx context.Context, opts Options) (Result, error) {
 	finish(nil, map[string]any{"running": runtimeStatus.Running, "pid": runtimeStatus.PID})
 	result.Checks = append(result.Checks, check("profile_router", status.Mode == runtimeprofile.ModeRouter, fmt.Sprintf("active profile mode is %s", status.Mode), "router_takeover_* is only meaningful when runtime profile mode is router"))
 	result.Checks = append(result.Checks, check("runtime_running", runtimeStatus.Running, "localClash Mihomo runtime is running", "call run_runtime before router_takeover_apply"))
-	runner := defaultRunner
+	finish = stage("observe_router_state", map[string]any{"timeout_ms": StatusObservationTimeout.Milliseconds()})
+	started := time.Now()
+	observation, err := observeStatus(ctx, opts, runner)
+	result.ObservationDurationMS = time.Since(started).Milliseconds()
+	if err != nil {
+		finish(err, map[string]any{"duration_ms": result.ObservationDurationMS})
+		return Result{}, err
+	}
+	finish(nil, map[string]any{"duration_ms": result.ObservationDurationMS})
 	checks := []struct {
-		id      string
-		command string
-		ok      string
-		fail    string
+		id   string
+		ok   string
+		fail string
 	}{
-		{"fw4_available", "command -v fw4 >/dev/null 2>&1", "Firewall4/fw4 is available", "fw4 is unavailable"},
-		{"nft_available", "command -v nft >/dev/null 2>&1", "nft is available", "nft is unavailable"},
-		{"fw4_table", "nft list table inet fw4 >/dev/null 2>&1", "Firewall4 nft table inet fw4 is active", "Firewall4 nft table inet fw4 is not active"},
-		{"fw4_base_chains", "for chain in dstnat mangle_prerouting forward input srcnat; do nft list chain inet fw4 \"$chain\" >/dev/null 2>&1 || exit 1; done", "Firewall4 base chains are available", "Firewall4 base chains are missing"},
-		{"tun_interface", fmt.Sprintf("ip link show %s >/dev/null 2>&1", shellQuote(opts.TunDevice)), fmt.Sprintf("TUN device %s exists", opts.TunDevice), fmt.Sprintf("TUN device %s is missing", opts.TunDevice)},
-		{"fwmark_route_v4", fmt.Sprintf("ip rule show | grep -q 'fwmark %s' && ip route show table %s | grep -q %s", defaultFWMark, defaultRouteTable, shellQuote(opts.TunDevice)), "IPv4 fwmark route points to TUN", "IPv4 fwmark route is missing"},
-		{"nft_chains", "nft list chain inet fw4 localclash >/dev/null 2>&1 && nft list chain inet fw4 localclash_mangle >/dev/null 2>&1", "localClash nft takeover chains are installed", "localClash nft takeover chains are missing"},
-		{"tcp_redirect", "nft list chain inet fw4 dstnat 2>/dev/null | grep -q 'localClash TCP redirect'", "localClash TCP redir-host redirect is installed", "localClash TCP redir-host redirect is missing"},
-		{"udp_tun_mark", "nft list chain inet fw4 mangle_prerouting 2>/dev/null | grep -q 'localClash TUN mark'", "localClash UDP/ICMP TUN mark is installed", "localClash UDP/ICMP TUN mark is missing"},
-		{"dns_hijack", "nft list ruleset 2>/dev/null | grep -q 'localClash DNS hijack'", "localClash DNS hijack rule is installed", "localClash DNS hijack rule is missing"},
-		{"local_dns_bypass", "nft list ruleset 2>/dev/null | grep -q 'localClash local DNS bypass'", "localClash local DNS bypass is installed", "localClash local DNS bypass is missing"},
+		{"fw4_available", "Firewall4/fw4 is available", "fw4 is unavailable"},
+		{"nft_available", "nft is available", "nft is unavailable"},
+		{"fw4_table", "Firewall4 nft table inet fw4 is active", "Firewall4 nft table inet fw4 is not active"},
+		{"fw4_base_chains", "Firewall4 base chains are available", "Firewall4 base chains are missing"},
+		{"tun_interface", fmt.Sprintf("TUN device %s exists", opts.TunDevice), fmt.Sprintf("TUN device %s is missing", opts.TunDevice)},
+		{"fwmark_route_v4", "IPv4 fwmark route points to TUN", "IPv4 fwmark route is missing"},
+		{"nft_chains", "localClash nft takeover chains are installed", "localClash nft takeover chains are missing"},
+		{"tcp_redirect", "localClash TCP redir-host redirect is installed", "localClash TCP redir-host redirect is missing"},
+		{"udp_tun_mark", "localClash UDP/ICMP TUN mark is installed", "localClash UDP/ICMP TUN mark is missing"},
+		{"dns_hijack", "localClash DNS hijack rule is installed", "localClash DNS hijack rule is missing"},
+		{"local_dns_bypass", "localClash local DNS bypass is installed", "localClash local DNS bypass is missing"},
 	}
 	for _, item := range checks {
-		finish = stage("check_"+item.id, nil)
-		checkResult := commandCheck(ctx, runner, item.id, item.command, item.ok, item.fail)
+		checkResult := check(item.id, observation[item.id], item.ok, item.fail)
 		result.Checks = append(result.Checks, checkResult)
-		finish(nil, map[string]any{"ok": checkResult.OK})
 	}
 	finish = stage("check_local_dns_discovered", nil)
 	localDNSOK := len(result.LocalDNS) > 0
@@ -129,6 +140,110 @@ func Status(ctx context.Context, opts Options) (Result, error) {
 	result.Effective = allChecksOK(result.Checks)
 	result.NextActions = nextActions(result)
 	return result, nil
+}
+
+var statusObservationIDs = []string{
+	"fw4_available",
+	"nft_available",
+	"fw4_table",
+	"fw4_base_chains",
+	"tun_interface",
+	"fwmark_route_v4",
+	"nft_chains",
+	"tcp_redirect",
+	"udp_tun_mark",
+	"dns_hijack",
+	"local_dns_bypass",
+}
+
+func observeStatus(ctx context.Context, opts Options, runner commandRunner) (map[string]bool, error) {
+	observationCtx, cancel := context.WithTimeout(ctx, StatusObservationTimeout)
+	defer cancel()
+	output, err := runner(observationCtx, statusObservationScript(opts))
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(observationCtx.Err(), context.DeadlineExceeded) {
+			return nil, fmt.Errorf("router takeover status observation timed out after %s: %w", StatusObservationTimeout, context.DeadlineExceeded)
+		}
+		return nil, fmt.Errorf("router takeover status observation failed: %w", err)
+	}
+	return parseStatusObservation(output)
+}
+
+func parseStatusObservation(output string) (map[string]bool, error) {
+	wanted := make(map[string]bool, len(statusObservationIDs))
+	for _, id := range statusObservationIDs {
+		wanted[id] = true
+	}
+	result := make(map[string]bool, len(statusObservationIDs))
+	for _, line := range strings.Split(strings.TrimSpace(output), "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		parts := strings.SplitN(strings.TrimSpace(line), "=", 2)
+		if len(parts) != 2 || !wanted[parts[0]] || (parts[1] != "0" && parts[1] != "1") {
+			return nil, fmt.Errorf("invalid router takeover status observation line %q", line)
+		}
+		if _, exists := result[parts[0]]; exists {
+			return nil, fmt.Errorf("duplicate router takeover status observation %q", parts[0])
+		}
+		result[parts[0]] = parts[1] == "1"
+	}
+	for _, id := range statusObservationIDs {
+		if _, ok := result[id]; !ok {
+			return nil, fmt.Errorf("router takeover status observation missing %q", id)
+		}
+	}
+	return result, nil
+}
+
+func statusObservationScript(opts Options) string {
+	return fmt.Sprintf(`TUN_DEVICE=%s
+ROUTE_TABLE=%s
+contains() {
+	case "$1" in
+		*"$2"*) return 0 ;;
+		*) return 1 ;;
+	esac
+}
+fw4_available=0
+nft_available=0
+command -v fw4 >/dev/null 2>&1 && fw4_available=1
+command -v nft >/dev/null 2>&1 && nft_available=1
+tables="$(nft list tables 2>/dev/null)"; tables_rc=$?
+dstnat="$(nft list chain inet fw4 dstnat 2>/dev/null)"; dstnat_rc=$?
+mangle_prerouting="$(nft list chain inet fw4 mangle_prerouting 2>/dev/null)"; mangle_prerouting_rc=$?
+forward="$(nft list chain inet fw4 forward 2>/dev/null)"; forward_rc=$?
+input="$(nft list chain inet fw4 input 2>/dev/null)"; input_rc=$?
+srcnat="$(nft list chain inet fw4 srcnat 2>/dev/null)"; srcnat_rc=$?
+localclash="$(nft list chain inet fw4 localclash 2>/dev/null)"; localclash_rc=$?
+localclash_mangle="$(nft list chain inet fw4 localclash_mangle 2>/dev/null)"; localclash_mangle_rc=$?
+localclash_dns="$(nft list chain inet fw4 localclash_dns_redirect 2>/dev/null)"; localclash_dns_rc=$?
+ip_link="$(ip link show "$TUN_DEVICE" 2>/dev/null)"; ip_link_rc=$?
+ip_rules="$(ip rule show 2>/dev/null)"; ip_rules_rc=$?
+ip_routes="$(ip route show table "$ROUTE_TABLE" 2>/dev/null)"; ip_routes_rc=$?
+fw4_table=0
+[ "$tables_rc" -eq 0 ] && contains "$tables" "table inet fw4" && fw4_table=1
+fw4_base_chains=0
+[ "$dstnat_rc" -eq 0 ] && [ "$mangle_prerouting_rc" -eq 0 ] && [ "$forward_rc" -eq 0 ] && [ "$input_rc" -eq 0 ] && [ "$srcnat_rc" -eq 0 ] && fw4_base_chains=1
+tun_interface=0
+[ "$ip_link_rc" -eq 0 ] && tun_interface=1
+fwmark_route_v4=0
+[ "$ip_rules_rc" -eq 0 ] && [ "$ip_routes_rc" -eq 0 ] && contains "$ip_rules" "fwmark %s" && contains "$ip_routes" "$TUN_DEVICE" && fwmark_route_v4=1
+nft_chains=0
+[ "$localclash_rc" -eq 0 ] && [ "$localclash_mangle_rc" -eq 0 ] && nft_chains=1
+tcp_redirect=0
+contains "$dstnat" "localClash TCP redirect" && tcp_redirect=1
+udp_tun_mark=0
+contains "$mangle_prerouting" "localClash TUN mark" && udp_tun_mark=1
+dns_hijack=0
+[ "$localclash_dns_rc" -eq 0 ] && contains "$localclash_dns" "localClash DNS hijack" && dns_hijack=1
+local_dns_bypass=0
+[ "$localclash_dns_rc" -eq 0 ] && contains "$localclash_dns" "localClash local DNS bypass" && local_dns_bypass=1
+for id in %s; do
+	eval "value=\${$id}"
+	printf '%%s=%%s\n' "$id" "$value"
+done
+`, shellQuote(opts.TunDevice), shellQuote(defaultRouteTable), defaultFWMark, strings.Join(statusObservationIDs, " "))
 }
 
 func Apply(ctx context.Context, opts Options) (Result, error) {
@@ -394,13 +509,6 @@ func check(id string, ok bool, summary, errText string) Check {
 	return item
 }
 
-func commandCheck(ctx context.Context, runner commandRunner, id, command, okText, errText string) Check {
-	if _, err := runner(ctx, command); err != nil {
-		return check(id, false, okText, errText)
-	}
-	return check(id, true, okText, errText)
-}
-
 func allChecksOK(checks []Check) bool {
 	if len(checks) == 0 {
 		return false
@@ -451,6 +559,12 @@ func defaultRunner(ctx context.Context, command string) (string, error) {
 	cmd.Stderr = &out
 	if err := cmd.Run(); err != nil {
 		text := strings.TrimSpace(out.String())
+		if runCtx.Err() != nil {
+			if text != "" {
+				return text, fmt.Errorf("%w: %s", runCtx.Err(), text)
+			}
+			return "", runCtx.Err()
+		}
 		if text != "" {
 			return text, fmt.Errorf("%w: %s", err, text)
 		}

@@ -2,14 +2,120 @@ package routertakeover
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"localclash/internal/runtimeprofile"
 )
+
+func TestStatusUsesOneBoundedExactChainObservation(t *testing.T) {
+	dir := t.TempDir()
+	profilePath := filepath.Join(dir, runtimeprofile.DefaultPath)
+	if _, err := runtimeprofile.Configure(profilePath, runtimeprofile.ModeRouter, runtimeprofile.CoreSmart); err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	var script string
+	runner := func(_ context.Context, command string) (string, error) {
+		calls++
+		script = command
+		lines := make([]string, 0, len(statusObservationIDs))
+		for _, id := range statusObservationIDs {
+			lines = append(lines, id+"=1")
+		}
+		return strings.Join(lines, "\n"), nil
+	}
+
+	result, err := statusWithRunner(context.Background(), Options{RuntimeProfile: profilePath}, runner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 {
+		t.Fatalf("status observation runner calls = %d, want 1", calls)
+	}
+	if strings.Contains(script, "nft list ruleset") {
+		t.Fatalf("status observation must not scan the global nft ruleset:\n%s", script)
+	}
+	for _, want := range []string{
+		"nft list chain inet fw4 dstnat",
+		"nft list chain inet fw4 mangle_prerouting",
+		"nft list chain inet fw4 localclash_dns_redirect",
+	} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("status observation missing exact-chain probe %q:\n%s", want, script)
+		}
+	}
+	seen := map[string]bool{}
+	for _, item := range result.Checks {
+		seen[item.ID] = item.OK
+	}
+	for _, id := range statusObservationIDs {
+		if !seen[id] {
+			t.Fatalf("check %q not populated from observation: %+v", id, result.Checks)
+		}
+	}
+}
+
+func TestParseStatusObservationRejectsIncompleteOrMalformedOutput(t *testing.T) {
+	validLines := make([]string, 0, len(statusObservationIDs))
+	for _, id := range statusObservationIDs {
+		validLines = append(validLines, id+"=1")
+	}
+	tests := []struct {
+		name   string
+		output string
+	}{
+		{name: "missing", output: strings.Join(validLines[:len(validLines)-1], "\n")},
+		{name: "unknown", output: strings.Join(append(append([]string{}, validLines...), "other=1"), "\n")},
+		{name: "bad value", output: strings.Replace(strings.Join(validLines, "\n"), "fw4_available=1", "fw4_available=yes", 1)},
+		{name: "duplicate", output: strings.Join(append(append([]string{}, validLines...), validLines[0]), "\n")},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if _, err := parseStatusObservation(test.output); err == nil {
+				t.Fatalf("parseStatusObservation(%q) succeeded, want error", test.output)
+			}
+		})
+	}
+}
+
+func TestStatusObservationHonorsCallerDeadline(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	started := time.Now()
+	_, err := observeStatus(ctx, Options{TunDevice: "utun"}, func(ctx context.Context, _ string) (string, error) {
+		<-ctx.Done()
+		return "", ctx.Err()
+	})
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("observeStatus error = %v, want context deadline exceeded", err)
+	}
+	if elapsed := time.Since(started); elapsed > time.Second {
+		t.Fatalf("caller deadline was not honored promptly: %s", elapsed)
+	}
+}
+
+func TestDefaultRunnerPreservesDeadlineCause(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	_, err := defaultRunner(ctx, "sleep 2")
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("defaultRunner error = %v, want context deadline exceeded", err)
+	}
+}
+
+func TestStatusObservationScriptHasShellSyntax(t *testing.T) {
+	cmd := exec.Command("/bin/sh", "-n")
+	cmd.Stdin = strings.NewReader(statusObservationScript(Options{TunDevice: "utun"}))
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("status observation script has syntax error: %v\n%s", err, output)
+	}
+}
 
 // NOTE: These Go tests are not a functional acceptance gate for router takeover.
 // Any behavior change in this package must also be exercised in the Docker
