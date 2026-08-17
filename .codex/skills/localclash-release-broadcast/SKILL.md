@@ -48,6 +48,21 @@ notes and Telegram channel announcements.
    The renderer must reuse Arc's existing CDP browser context. It must never
    create an isolated browser context or independent Arc window; if the existing
    context is unavailable, generation must fail explicitly.
+   Publish the reviewed text and card through the fail-closed X publisher:
+   ```bash
+   scripts/x-post.py \
+     --account @llqoli \
+     --text-file telegram/out/x-post.txt \
+     --image telegram/out/localclash-x-release-card.png
+   scripts/x-post.py \
+     --account @llqoli \
+     --text-file telegram/out/x-post.txt \
+     --image telegram/out/localclash-x-release-card.png \
+     --publish
+   ```
+   The first command validates local inputs and duplicate state. The second is
+   a live side effect and requires explicit user authorization. Never bypass a
+   script failure with manual browser publishing or an automatic retry.
 6. Generate and inspect the Telegram announcement:
    ```bash
    scripts/telegram-channel-update.py --dry-run --no-write
@@ -87,6 +102,8 @@ corresponding x86_64/aarch64 router evidence exists.
   `telegram/out/`, or `telegram/sent/`.
 - Do commit `telegram/broadcast-state.json`; it is the durable Telegram
   announcement cursor.
+- Do commit `x/broadcast-state.json`; it records verified X content fingerprints
+  and status URLs to prevent duplicate publication.
 - Never print Telegram bot tokens.
 - Do not treat Core and LuCI releases as the same artifact. Core releases carry
   binaries, base assets, and `localclash-release-manifest.json`; LuCI releases

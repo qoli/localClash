@@ -46,3 +46,6 @@ __pycache__/
 /telegram/.token
 /telegram/out/
 /telegram/sent/
+
+# X.com publication lock; the verified receipt state remains tracked.
+/x/*.lock

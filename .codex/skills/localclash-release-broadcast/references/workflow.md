@@ -7,6 +7,8 @@
 - Telegram announcement cursor: `telegram/broadcast-state.json`
 - Telegram generator/poster: `scripts/telegram-channel-update.py`
 - X.com card generator: `scripts/x-release-card.py`
+- X.com verified publisher: `scripts/x-post.py`
+- X.com publication state: `x/broadcast-state.json`
 - Generated Telegram update body: `telegram/changelog.md`
 - Default Telegram image:
   `telegram/out/localclash-x-release-card.png`
@@ -25,6 +27,8 @@ Tracked source files:
 - `telegram/broadcast-state.json`
 - `scripts/telegram-channel-update.py`
 - `scripts/x-release-card.py`
+- `scripts/x-post.py`
+- `x/broadcast-state.json`
 - `docs/x-release-card-style.md`
 - `.codex/skills/localclash-release-broadcast/**`
 
@@ -216,3 +220,34 @@ Token lookup order:
 - The X.com image is a changelog summary only; do not include the Telegram fixed
   top, product feature introduction, or right-bottom explanatory filler.
 - Generate local working files under `telegram/out/` and keep them ignored.
+
+## X.com Publishing
+
+Write the exact reviewed post text to the ignored `telegram/out/` directory,
+then validate without publishing:
+
+```bash
+scripts/x-post.py \
+  --account @llqoli \
+  --text-file telegram/out/x-post.txt \
+  --image telegram/out/localclash-x-release-card.png
+```
+
+After explicit authorization, publish once:
+
+```bash
+scripts/x-post.py \
+  --account @llqoli \
+  --text-file telegram/out/x-post.txt \
+  --image telegram/out/localclash-x-release-card.png \
+  --publish
+```
+
+The publisher reuses Arc's existing CDP context, verifies the signed-in account,
+uploads exactly one image, enters text last, and compares the real
+`tweetTextarea.innerText` with the source file before clicking Post exactly
+once. It observes the `CreateTweet` response, verifies the resulting status DOM,
+then atomically records the content fingerprint and status URL in
+`x/broadcast-state.json`. Missing or malformed state, duplicate content,
+composer mismatch, unknown submission status, and failed post verification are
+hard failures. Do not retry an unknown submission state.
