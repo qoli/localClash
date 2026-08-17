@@ -21,9 +21,34 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
 | localClash Core | [v0.1.57](https://github.com/qoli/localClash/releases/tag/v0.1.57) | 2026-08-15 UTC+8 |
-| localclash-luci | [v0.1.0-49](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-49) | 2026-08-17 UTC+8 |
+| localclash-luci | [v0.1.0-50](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-50) | 2026-08-17 UTC+8 |
 
 ## 2026-08-17
+
+### localclash-luci v0.1.0-50
+
+Changes:
+
+- Takeover Issue 區新增「我已登入 GitHub」確認；「到 GitHub 回報 Issue」按鈕
+  預設停用，只有勾選後才可操作，取消勾選會立即再次停用。
+- click handler 會再次驗證 checkbox，診斷生成期間也會鎖住 checkbox；完成或
+  失敗後仍依當前勾選狀態恢復按鈕，避免繞過登入提示或被 busy 狀態誤啟用。
+
+Release:
+
+- [qoli/localclash-luci v0.1.0-50](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-50)
+
+Verification:
+
+- 本地 JavaScript、Takeover Issue 報告與全部 rpcd/hotplug 測試通過；main CI
+  [31991023311](https://github.com/qoli/localclash-luci/actions/runs/31991023311)
+  及 Release workflow
+  [31991123880](https://github.com/qoli/localclash-luci/actions/runs/31991123880)
+  全部成功。
+- 13 個公開資產重新下載後，精確檔名與全部 SHA-256 均通過；x86_64／aarch64
+  iStore `.run` 亦通過 `--info`、`--list`、`--check` 與 `--noexec` 解包驗證。
+- 正式 IPK 解包回讀已確認包含 checkbox、登入提示及預設 disabled gate；本版
+  尚未部署到真實路由器。
 
 ### localclash-luci v0.1.0-49
 
