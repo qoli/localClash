@@ -294,9 +294,27 @@ class ArcCDPPublisher:
                 f"Arc is signed into the wrong X account: expected /{account_name}, got {profile_href!r}"
             )
 
-        editor = page.locator('div[data-testid="tweetTextarea_0"]')
+        composer = page.locator('div[role="dialog"][aria-modal="true"]')
+        composer.wait_for(state="visible")
+        if composer.count() != 1:
+            raise ScriptError(
+                "X must expose exactly one active modal composer; "
+                f"found {composer.count()}."
+            )
+
+        editor = composer.locator('div[data-testid="tweetTextarea_0"]')
         editor.wait_for(state="visible")
-        file_input = page.locator('input[data-testid="fileInput"]').first
+        if editor.count() != 1:
+            raise ScriptError(
+                "X active modal composer must contain exactly one editor; "
+                f"found {editor.count()}."
+            )
+        file_input = composer.locator('input[data-testid="fileInput"]')
+        if file_input.count() != 1:
+            raise ScriptError(
+                "X active modal composer must contain exactly one file input; "
+                f"found {file_input.count()}."
+            )
         image_bytes = post.request.image.read_bytes()
         if sha256_bytes(image_bytes) != post.image_sha256:
             raise ScriptError("X post image changed after validation; refusing to publish.")
@@ -308,14 +326,19 @@ class ArcCDPPublisher:
                 "buffer": image_bytes,
             }
         )
-        image_preview = page.locator('div[data-testid="attachments"] img')
+        image_preview = composer.locator('div[data-testid="attachments"] img')
         image_preview.wait_for(state="visible")
 
         editor.click()
-        editor.press_sequentially(post.request.text)
+        editor.fill(post.request.text)
         actual_text = editor.evaluate("element => element.innerText")
-        post_button = page.locator('button[data-testid="tweetButton"]')
+        post_button = composer.locator('button[data-testid="tweetButton"]')
         post_button.wait_for(state="visible")
+        if post_button.count() != 1:
+            raise ScriptError(
+                "X active modal composer must contain exactly one Post button; "
+                f"found {post_button.count()}."
+            )
         validate_composer(
             expected_text=post.request.text,
             actual_inner_text=actual_text,

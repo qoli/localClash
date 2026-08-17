@@ -238,6 +238,24 @@ class XPostPublisherTests(unittest.TestCase):
         retry_loops = [node for node in ast.walk(tree) if isinstance(node, (ast.For, ast.While))]
         self.assertEqual(len(post_clicks), 1)
         self.assertEqual(retry_loops, [])
+        self.assertIn("editor.fill(post.request.text)", source)
+        self.assertNotIn("editor.press_sequentially", source)
+
+        self.assertIn(
+            "page.locator('div[role=\"dialog\"][aria-modal=\"true\"]')",
+            source,
+        )
+        for scoped_locator in (
+            "composer.locator('div[data-testid=\"tweetTextarea_0\"]')",
+            "composer.locator('input[data-testid=\"fileInput\"]')",
+            "composer.locator('div[data-testid=\"attachments\"] img')",
+            "composer.locator('button[data-testid=\"tweetButton\"]')",
+        ):
+            self.assertIn(scoped_locator, source)
+        self.assertNotIn(
+            "page.locator('div[data-testid=\"tweetTextarea_0\"]')",
+            source,
+        )
 
         adapter_source = inspect.getsource(self.module.ArcCDPPublisher.publish)
         adapter_tree = ast.parse(textwrap.dedent(adapter_source))
