@@ -21,7 +21,40 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
 | localClash Core | [v0.1.57](https://github.com/qoli/localClash/releases/tag/v0.1.57) | 2026-08-15 UTC+8 |
-| localclash-luci | [v0.1.0-47](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-47) | 2026-08-14 UTC+8 |
+| localclash-luci | [v0.1.0-48](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-48) | 2026-08-17 UTC+8 |
+
+## 2026-08-17
+
+### localclash-luci v0.1.0-48
+
+Changes:
+
+- 新增持久且有界的網絡接管事件日誌，保留 boot、觸發來源、hotplug 恢復、
+  apply／stop 結果及真實退出碼；並修正原先可能把 Core 失敗遮成成功的 shell
+  狀態處理。
+- 「查看接管日誌」會同時收集 IPv4／IPv6 policy route、`utun`、fw4/nft 規則、
+  7874／7892／9090 listener、近期 firewall/netifd 事件與 Core status，缺少材料時
+  明確標示報告不完整。
+- LuCI 概述頁最底部新增 Takeover Issue 回報區，可複製完整 Markdown 報告，或
+  打開 GitHub New Issue 並預填問題模板與最近診斷；GitHub 版資料採 allowlist
+  並遮罩網絡地址，避免貼出本地 DNS 或 domain。
+
+Release:
+
+- [qoli/localclash-luci v0.1.0-48](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-48)
+
+Verification:
+
+- 本地 JavaScript、rpcd/hotplug、DNS qualify、release asset 與離線 installer
+  測試通過；main CI
+  [31988538858](https://github.com/qoli/localclash-luci/actions/runs/31988538858)
+  及 Release workflow
+  [31988622872](https://github.com/qoli/localclash-luci/actions/runs/31988622872)
+  全部成功。
+- 13 個公開資產重新下載後，精確檔名與全部 SHA-256 均通過；x86_64／aarch64
+  iStore `.run` 亦通過 `--info`、`--list`、`--check` 與 `--noexec` 解包驗證。
+- 本版未在真實路由器部署或重現單獨 `fw4 reload`；其修復觸發仍依賴 WAN
+  `ifup`／`ifupdate` 或人工重新應用接管，本次重點是讓失效可追蹤及可回報。
 
 ## 2026-08-15
 
