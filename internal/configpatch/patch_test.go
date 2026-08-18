@@ -427,6 +427,100 @@ func TestDraftAndApplyCurrentDraftWritesRegistryAndArtifacts(t *testing.T) {
 	}
 }
 
+func TestApplyResolvesCapabilityProxyGroupsViaCallback(t *testing.T) {
+	dir := t.TempDir()
+	writeSubscriptionGob(t, filepath.Join(dir, "subscription.gob"))
+	writeTestPackIndex(t, filepath.Join(dir, ".runtime", "rules", "packs"))
+
+	const capability = "test.capability.v1"
+	operations := []Operation{{
+		Op:      "upsert_patch",
+		PatchID: "user.capability",
+		Title:   "Capability",
+		OrderID: "1000.000000",
+		Overlay: configplan.OverlayIntent{
+			ProxyGroups: []configplan.OverlayProxyGroupIntent{{
+				ID:         "Capability-available",
+				Mode:       "auto",
+				Capability: capability,
+			}},
+		},
+	}}
+
+	draft, err := Draft(context.Background(), DraftOptions{
+		RegistryDir:        filepath.Join(dir, "patches"),
+		ConfigPath:         filepath.Join(dir, "localclash-intent.json"),
+		SelectionPath:      filepath.Join(dir, "localclash-packs.gob"),
+		OutputPath:         filepath.Join(dir, "generated", "mihomo.yaml"),
+		Subscription:       filepath.Join(dir, "subscription.gob"),
+		RulesCache:         filepath.Join(dir, ".runtime", "rules", "packs"),
+		RuntimeProfilePath: filepath.Join(dir, "localclash-runtime.json"),
+		Operations:         operations,
+		Generation:         1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	applyOptions := func(resolve func(localconfig.Config) (map[string][]string, error)) ApplyOptions {
+		return ApplyOptions{
+			RegistryDir:            filepath.Join(dir, "patches"),
+			ConfigPath:             filepath.Join(dir, "localclash-intent.json"),
+			SelectionPath:          filepath.Join(dir, "localclash-packs.gob"),
+			OutputPath:             filepath.Join(dir, "generated", "mihomo.yaml"),
+			Subscription:           filepath.Join(dir, "subscription.gob"),
+			RulesCache:             filepath.Join(dir, ".runtime", "rules", "packs"),
+			RuntimeProfilePath:     filepath.Join(dir, "localclash-runtime.json"),
+			BackupDir:              filepath.Join(dir, ".runtime", "backups"),
+			Operations:             draft.Operations,
+			BaseHashes:             draft.BaseHashes,
+			BaseRegistryHash:       draft.BaseRegistryHash,
+			Test:                   false,
+			Generation:             1,
+			ResolveCapabilityNodes: resolve,
+		}
+	}
+
+	// A compiled patch overlay never carries selected_nodes, so without a
+	// resolver a capability proxy group is unresolvable and apply must fail.
+	if _, err := Apply(context.Background(), applyOptions(nil)); err == nil {
+		t.Fatal("apply without ResolveCapabilityNodes should fail for a capability proxy group")
+	} else if !strings.Contains(err.Error(), "unresolved capability") {
+		t.Fatalf("apply error = %v, want unresolved capability", err)
+	}
+
+	// The nodes returned by the callback are the ones actually resolved, so an
+	// unknown node name must surface as a resolution failure.
+	if _, err := Apply(context.Background(), applyOptions(func(localconfig.Config) (map[string][]string, error) {
+		return map[string][]string{capability: {"no-such-node"}}, nil
+	})); err == nil {
+		t.Fatal("apply should fail when a resolved capability node is missing from the subscription")
+	} else if !strings.Contains(err.Error(), "no-such-node") {
+		t.Fatalf("apply error = %v, want it to name the unresolved node", err)
+	}
+
+	resolverCalled := false
+	result, err := Apply(context.Background(), applyOptions(func(config localconfig.Config) (map[string][]string, error) {
+		resolverCalled = true
+		if _, ok := config.ProxyGroups["Capability-available"]; !ok {
+			t.Errorf("resolver received a config without the compiled capability group")
+		}
+		return map[string][]string{capability: {"SG 01"}}, nil
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !resolverCalled {
+		t.Fatal("ResolveCapabilityNodes was not called")
+	}
+	if !result.Applied {
+		t.Fatalf("apply result = %+v, want applied", result)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "patches", "user.capability_capability.json")); err != nil {
+		t.Fatalf("patch file missing: %v", err)
+	}
+}
+
 func writePatchJSON(t *testing.T, path string, patch Patch) {
 	t.Helper()
 	data, err := json.MarshalIndent(patch, "", "  ")
