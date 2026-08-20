@@ -20,8 +20,34 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
-| localClash Core | [v0.1.59](https://github.com/qoli/localClash/releases/tag/v0.1.59) | 2026-08-18 UTC+8 |
+| localClash Core | [v0.1.60](https://github.com/qoli/localClash/releases/tag/v0.1.60) | 2026-08-20 UTC+8 |
 | localclash-luci | [v0.1.0-51](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-51) | 2026-08-18 UTC+8 |
+
+## 2026-08-20
+
+### localClash Core v0.1.60
+
+Changes:
+
+- 預設策略新增 `📥 大模型下载` 業務分組，以 `🌐 全球直连` 為預設出口，並保留
+  自動選擇、美國及其他地區出口供下載速度或可達性異常時切換。
+- 使用精確 domain 規則覆蓋 Hugging Face Xet／CAS／CDN、ModelScope CDN 與
+  Ollama registry；不以整個 AI 平台或共用雲端儲存 suffix 分流，避免網站、API
+  及無關下載被錯誤納入。
+
+Release:
+
+- [qoli/localClash v0.1.60](https://github.com/qoli/localClash/releases/tag/v0.1.60)
+
+Verification:
+
+- `go test ./...`、`go vet ./...`、release broadcast 回歸測試及本地 release
+  asset build 通過；Release workflow
+  [32327279549](https://github.com/qoli/localClash/actions/runs/32327279549) 成功。
+- 7 個公開資產及三份 SHA-256 全部通過；兩架構 binary 分別確認為
+  x86-64／ARM64，manifest 版本與下載 URL 均為 `v0.1.60`。
+- 從公開 `localclash-base-assets.tar.gz` 解包讀回預設模板，確認新分組第一出口為
+  `🌐 全球直连`，並包含 `us.aws.cdn.hf.co` 等精確下載域名。
 
 ## 2026-08-18
 
