@@ -20,8 +20,53 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
-| localClash Core | [v0.1.60](https://github.com/qoli/localClash/releases/tag/v0.1.60) | 2026-08-20 UTC+8 |
-| localclash-luci | [v0.1.0-52](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-52) | 2026-08-20 UTC+8 |
+| localClash Core | [v0.1.61](https://github.com/qoli/localClash/releases/tag/v0.1.61) | 2026-08-21 UTC+8 |
+| localclash-luci | [v0.1.0-53](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-53) | 2026-08-21 UTC+8 |
+
+## 2026-08-21
+
+### localClash Core v0.1.61
+
+Changes:
+
+- 網絡接管改用 localClash 獨立擁有的 `fwmark`、route table 與 rule priority，
+  避免 OpenClash 停止或更新時清理共用路由身份，導致 UDP／ICMP 接管失效。
+- 首次更新會在確認 localClash 運行狀態與 nft ownership 後遷移舊路由身份；證據
+  不完整時明確拒絕遷移，不會猜測所有權或靜默清理。
+
+Release:
+
+- [qoli/localClash v0.1.61](https://github.com/qoli/localClash/releases/tag/v0.1.61)
+
+Verification:
+
+- `go test ./...`、`go vet ./...`、release broadcast 回歸測試與本地 release
+  asset build 通過；Release workflow
+  [32391198601](https://github.com/qoli/localClash/actions/runs/32391198601) 成功。
+- 7 個公開資產重新下載後，三份 SHA-256、amd64／arm64 binary 架構與 manifest
+  `v0.1.61` 均通過驗證。
+- iStoreOS 24.10.8 VM 以 OpenClash v0.47.088 重現舊路由身份被 stop 清理；遷移
+  至新身份後再次執行相同 stop，接管仍為 `effective=true`，標記流量仍指向 TUN。
+
+### localclash-luci v0.1.0-53
+
+Changes:
+
+- 接管診斷快照改讀 localClash 新的獨立 route table，並保留舊身份關鍵字供遷移
+  問題回報使用。
+- iStoreOS 離線 bundle 的 Core 固定版本由 `v0.1.59` 更新為 `v0.1.61`。
+
+Release:
+
+- [qoli/localclash-luci v0.1.0-53](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-53)
+
+Verification:
+
+- main CI [32391713906](https://github.com/qoli/localclash-luci/actions/runs/32391713906)
+  與 Release workflow
+  [32391901277](https://github.com/qoli/localclash-luci/actions/runs/32391901277) 全部成功。
+- 13 個公開資產重新下載後，精確數量與全部 SHA-256 均通過；x86_64／aarch64
+  iStore `.run` 亦通過 `--info`、`--list`、`--check` 與 `--noexec` 驗證。
 
 ## 2026-08-20
 
