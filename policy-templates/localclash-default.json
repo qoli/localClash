@@ -27,7 +27,7 @@
     {
       "id": "default.ai-dev-speedtest.v1",
       "path": "localclash-default.d/30-ai-dev-speedtest.json",
-      "description": "Add ChatGPT, AI, GitHub, and speed-test business groups."
+      "description": "Add ChatGPT, AI, large-model download, GitHub, and speed-test business groups."
     },
     {
       "id": "default.steam.v1",

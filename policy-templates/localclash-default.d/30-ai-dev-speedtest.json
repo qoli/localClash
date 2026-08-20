@@ -1,6 +1,6 @@
 {
   "id": "default.ai-dev-speedtest.v1",
-  "description": "Add ChatGPT, AI, GitHub, and speed-test business groups.",
+  "description": "Add ChatGPT, AI, large-model download, GitHub, and speed-test business groups.",
   "config": {
     "version": 3,
     "proxy_groups": {
@@ -71,6 +71,21 @@
         "reason": "非中国泛 AI 服务分类；OpenAI/ChatGPT 已由专属业务组先匹配。",
         "boundary": "business_to_exit_layer"
       },
+      "📥 大模型下载": {
+        "mode": "manual",
+        "exits": [
+          "🌐 全球直连",
+          "⚡ 自动选择",
+          "🇺🇸 美国节点",
+          "🇭🇰 香港节点",
+          "🇯🇵 日本节点",
+          "🇸🇬 新加坡节点",
+          "🇹🇼 台湾节点",
+          "🇰🇷 韩国节点"
+        ],
+        "reason": "大模型制品传输默认走全球直连，保留自动选择及地区出口处理下载速度或可达性问题。",
+        "boundary": "dedicated_model_artifact_delivery_hosts"
+      },
       "💻 GitHub": {
         "mode": "manual",
         "exits": [
@@ -104,6 +119,59 @@
         "boundary": "business_to_exit_layer"
       }
     },
+    "custom_rules": [
+      {
+        "id": "large-model-download-hosts",
+        "target": "📥 大模型下载",
+        "reason": "Route dedicated Hugging Face and ModelScope artifact-transfer hosts plus the Ollama model registry without capturing their websites, generic cloud storage, or shared GitHub release assets.",
+        "rules": [
+          {
+            "type": "domain",
+            "value": "cas-server.xethub.hf.co"
+          },
+          {
+            "type": "domain",
+            "value": "cas-server.xethub-eu.hf.co"
+          },
+          {
+            "type": "domain",
+            "value": "transfer.xethub.hf.co"
+          },
+          {
+            "type": "domain",
+            "value": "transfer.xethub-eu.hf.co"
+          },
+          {
+            "type": "domain",
+            "value": "us.aws.cdn.hf.co"
+          },
+          {
+            "type": "domain",
+            "value": "us.gcp.cdn.hf.co"
+          },
+          {
+            "type": "domain",
+            "value": "cdn-lfs-us-1.hf.co"
+          },
+          {
+            "type": "domain",
+            "value": "cdn-lfs-eu-1.hf.co"
+          },
+          {
+            "type": "domain",
+            "value": "cdn-lfs-cn-1.modelscope.cn"
+          },
+          {
+            "type": "domain",
+            "value": "cdn-lfs-ap-1.modelscope.ai"
+          },
+          {
+            "type": "domain",
+            "value": "registry.ollama.ai"
+          }
+        ]
+      }
+    ],
     "packs": [
       {
         "source": "v2fly-dlc",

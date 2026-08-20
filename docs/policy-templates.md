@@ -68,6 +68,18 @@ still initialize. Patch files
 intentionally keep emoji identifiers as YAML `\U...` escapes so OpenWrt/BusyBox
 display locale quirks do not change on-disk template bytes.
 
+`📥 大模型下载` also defaults to `🌐 全球直连`, followed by automatic and
+regional exits. Its exact-domain rules cover dedicated Hugging Face Xet/LFS/CDN
+hosts, observed ModelScope CDN hosts, and the Ollama model registry before the
+broader AI `GEOSITE` pack. The rules intentionally exclude `huggingface.co`,
+`modelscope.cn`, `modelscope.ai`, generic GitHub release hosts, and shared
+cloud-object-storage suffixes: domain matching cannot distinguish a model file
+URL path from unrelated traffic on those hosts. Hugging Face payload hosts can
+also carry datasets, CAS and model registries can serve metadata or uploads, and
+ModelScope CDN names may evolve, so the group is a conservative
+artifact-delivery boundary rather than a claim that every matched byte is an LLM
+weight download.
+
 Capability groups are derived configuration, not Mihomo health-check aliases.
 localClash starts an isolated temporary Mihomo, assigns one loopback mixed
 listener to each distinct proxy definition, and sends the Statsig initialize

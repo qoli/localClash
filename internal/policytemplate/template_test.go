@@ -182,8 +182,8 @@ func TestRealLocalClashDefaultTemplateIsLayered(t *testing.T) {
 	if summary.ID != TemplateLocalClashDefault || config.Version != localconfig.ConfigSchemaVersion {
 		t.Fatalf("template = %+v config version = %d, want current localclash default", summary, config.Version)
 	}
-	if len(config.ProxyGroups) != 9 || len(config.PolicyGroups) != 30 || len(config.Packs) != 35 || len(config.TransportRules) != 1 || len(config.CustomRules) != 2 {
-		t.Fatalf("default template counts: proxy_groups=%d policy_groups=%d packs=%d transport_rules=%d custom_rules=%d, want 9/30/35/1/2", len(config.ProxyGroups), len(config.PolicyGroups), len(config.Packs), len(config.TransportRules), len(config.CustomRules))
+	if len(config.ProxyGroups) != 9 || len(config.PolicyGroups) != 31 || len(config.Packs) != 35 || len(config.TransportRules) != 1 || len(config.CustomRules) != 3 {
+		t.Fatalf("default template counts: proxy_groups=%d policy_groups=%d packs=%d transport_rules=%d custom_rules=%d, want 9/31/35/1/3", len(config.ProxyGroups), len(config.PolicyGroups), len(config.Packs), len(config.TransportRules), len(config.CustomRules))
 	}
 	if got := packTarget(config.Packs, "v2fly-dlc", "category-pt"); got != "🧲 BT/PT 下载" {
 		t.Fatalf("default template category-pt target = %q, want 🧲 BT/PT 下载", got)
@@ -255,6 +255,7 @@ func TestRealLocalClashDefaultTemplateIsLayered(t *testing.T) {
 		"🕹 Bahamut":  {"🇹🇼 台湾节点", "🎯 手动选择", "🌐 全球直连"},
 		"🤖 ChatGPT":  {"🇺🇸 美国节点", "🇯🇵 日本节点", "🇸🇬 新加坡节点", "🎯 手动选择", "⚡ 自动选择", "🇹🇼 台湾节点", "🇰🇷 韩国节点", "ChatGPT-available"},
 		"🧠 AI":       {"⚡ 自动选择", "🎯 手动选择", "🇸🇬 新加坡节点", "🇭🇰 香港节点", "🇺🇸 美国节点", "🇯🇵 日本节点", "🇹🇼 台湾节点", "🇰🇷 韩国节点", "🌐 全球直连"},
+		"📥 大模型下载":    {"🌐 全球直连", "⚡ 自动选择", "🇺🇸 美国节点", "🇭🇰 香港节点", "🇯🇵 日本节点", "🇸🇬 新加坡节点", "🇹🇼 台湾节点", "🇰🇷 韩国节点"},
 		"🍎 Apple":    {"🌐 全球直连", "🎯 手动选择", "⚡ 自动选择", "🇭🇰 香港节点", "🇺🇸 美国节点", "🇯🇵 日本节点", "🇸🇬 新加坡节点", "🇹🇼 台湾节点", "🇰🇷 韩国节点"},
 		"🧲 BT/PT 下载": {"🌐 全球直连", "⚡ 自动选择", "🎯 手动选择", "🇭🇰 香港节点", "🇯🇵 日本节点", "🇺🇸 美国节点", "🇸🇬 新加坡节点", "🇹🇼 台湾节点", "🇰🇷 韩国节点"},
 	}
@@ -334,6 +335,31 @@ func TestRealLocalClashDefaultTemplateIsLayered(t *testing.T) {
 	}
 	if hasPack(config.Packs, "v2fly-dlc", "cloudflare") {
 		t.Fatal("default template must not add GEOSITE,cloudflare")
+	}
+	modelDownloadRule := customRuleByID(config.CustomRules, "large-model-download-hosts")
+	if modelDownloadRule == nil || modelDownloadRule.Target != "📥 大模型下载" {
+		t.Fatalf("large-model-download-hosts custom rule = %+v, want 📥 大模型下载", modelDownloadRule)
+	}
+	wantModelDownloadDomains := []string{
+		"cas-server.xethub.hf.co",
+		"cas-server.xethub-eu.hf.co",
+		"transfer.xethub.hf.co",
+		"transfer.xethub-eu.hf.co",
+		"us.aws.cdn.hf.co",
+		"us.gcp.cdn.hf.co",
+		"cdn-lfs-us-1.hf.co",
+		"cdn-lfs-eu-1.hf.co",
+		"cdn-lfs-cn-1.modelscope.cn",
+		"cdn-lfs-ap-1.modelscope.ai",
+		"registry.ollama.ai",
+	}
+	if len(modelDownloadRule.Rules) != len(wantModelDownloadDomains) {
+		t.Fatalf("large-model-download-hosts rules = %+v, want %d exact domains", modelDownloadRule.Rules, len(wantModelDownloadDomains))
+	}
+	for i, wantDomain := range wantModelDownloadDomains {
+		if got := modelDownloadRule.Rules[i]; got.Type != "domain" || got.Value != wantDomain || got.NoResolve {
+			t.Fatalf("large-model-download-hosts rule[%d] = %+v, want exact domain %q", i, got, wantDomain)
+		}
 	}
 	if got := config.Packs[len(config.Packs)-2].Target; got != "🌍 非中國網站" {
 		t.Fatalf("geolocation non-China target = %q, want 🌍 非中國網站", got)
