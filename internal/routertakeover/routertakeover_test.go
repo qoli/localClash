@@ -142,6 +142,19 @@ func TestApplyDryRunBuildsLocalClashOwnedScript(t *testing.T) {
 			t.Fatalf("dry-run output missing %q:\n%s\n%v", want, result.Script, result.NextActions)
 		}
 	}
+	for _, want := range []string{"FWMARK='0x6c63'", "ROUTE_TABLE='27747'", "RULE_PREF='1890'", "cleanup_legacy_localclash_route_identity"} {
+		if !strings.Contains(result.Script, want) {
+			t.Fatalf("runtime takeover script missing independent route identity %q:\n%s", want, result.Script)
+		}
+	}
+	if strings.Contains(result.Script, "FWMARK='0x162'\nROUTE_TABLE='0x162'\nRULE_PREF='1888'") {
+		t.Fatalf("runtime takeover must not keep the shared OpenClash route identity:\n%s", result.Script)
+	}
+	migrateIndex := strings.LastIndex(result.Script, "\ncleanup_legacy_localclash_route_identity\n")
+	trapIndex := strings.Index(result.Script, "trap 'cleanup_localclash_state' ERR")
+	if migrateIndex < 0 || trapIndex < 0 || migrateIndex > trapIndex {
+		t.Fatalf("legacy ownership migration must fail before destructive cleanup trap is armed:\n%s", result.Script)
+	}
 	if !strings.Contains(result.Script, `comment "localClash TCP redirect"`) {
 		t.Fatalf("nft comments must be quoted for nft parser, got:\n%s", result.Script)
 	}
@@ -184,6 +197,46 @@ func TestApplyDryRunBuildsLocalClashOwnedScript(t *testing.T) {
 	}
 	if strings.Contains(result.Script, "OpenClash") {
 		t.Fatalf("router takeover script should not special-case OpenClash:\n%s", result.Script)
+	}
+}
+
+func TestLegacyRouteIdentityMigrationFailsWithoutOwnershipState(t *testing.T) {
+	dir := t.TempDir()
+	binDir := filepath.Join(dir, "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	commands := map[string]string{
+		"fw4": "#!/bin/sh\nexit 0\n",
+		"nft": "#!/bin/sh\nexit 0\n",
+		"ip": `#!/bin/sh
+case "$*" in
+  "rule show") printf '1888: from all fwmark 0x162 lookup 354\n' ;;
+  "route show table 0x162") printf 'default dev utun scope link\n' ;;
+esac
+exit 0
+`,
+	}
+	for name, content := range commands {
+		if err := os.WriteFile(filepath.Join(binDir, name), []byte(content), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	script := "set -eu\n" +
+		"STATE_DIR=" + shellQuote(filepath.Join(dir, "state")) + "\n" +
+		"LEGACY_FWMARK='0x162'\n" +
+		"LEGACY_ROUTE_TABLE='0x162'\n" +
+		applyShellLibrary + "\ncleanup_legacy_localclash_route_identity\n"
+	cmd := exec.Command("/bin/sh")
+	cmd.Stdin = strings.NewReader(script)
+	cmd.Env = append(os.Environ(), "PATH="+binDir+":/usr/bin:/bin")
+	output, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("legacy migration without ownership state succeeded:\n%s", output)
+	}
+	if !strings.Contains(string(output), "exists without applied ownership state; refusing migration") {
+		t.Fatalf("legacy migration failure did not name the missing ownership state:\n%s", output)
 	}
 }
 

@@ -69,7 +69,7 @@ Current router flow:
 config_render
   -> Mihomo starts TUN with the three auto settings disabled
   -> explicit router_takeover_apply
-  -> localClash owns route table 0x162, rule pref 1888, fw4 rules, and DNS bypass
+  -> localClash owns route table 27747, fwmark 0x6c63, rule pref 1890, fw4 rules, and DNS bypass
 ```
 
 Proposed `router-auto` flow:

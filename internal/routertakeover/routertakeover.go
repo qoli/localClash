@@ -17,9 +17,11 @@ import (
 )
 
 const (
-	defaultFWMark            = "0x162"
-	defaultRouteTable        = "0x162"
-	defaultRulePref          = "1888"
+	defaultFWMark            = "0x6c63"
+	defaultRouteTable        = "27747"
+	defaultRulePref          = "1890"
+	legacyFWMark             = "0x162"
+	legacyRouteTable         = "0x162"
 	defaultStateDir          = "/tmp/localclash/router-takeover"
 	commandTimeout           = 75 * time.Second
 	StatusObservationTimeout = 8 * time.Second
@@ -609,6 +611,8 @@ func applyScript(opts Options) string {
 	script.line("FWMARK=" + shellQuote(defaultFWMark))
 	script.line("ROUTE_TABLE=" + shellQuote(defaultRouteTable))
 	script.line("RULE_PREF=" + shellQuote(defaultRulePref))
+	script.line("LEGACY_FWMARK=" + shellQuote(legacyFWMark))
+	script.line("LEGACY_ROUTE_TABLE=" + shellQuote(legacyRouteTable))
 	script.line("TUN_WAIT_SECONDS=30")
 	script.raw(applyShellLibrary)
 	script.raw(applyRoutingSetup)
@@ -652,6 +656,30 @@ cleanup_localclash_state() {
   while ip -6 rule del fwmark "$FWMARK" table "$ROUTE_TABLE" >/dev/null 2>&1; do :; done
   ip -6 route del default table "$ROUTE_TABLE" >/dev/null 2>&1 || true
   rm -f "$STATE_DIR/status" "$STATE_DIR/local_dns4" "$STATE_DIR/local_dns6" "$STATE_DIR/local_domains" "$STATE_DIR/local_dns4.tmp" "$STATE_DIR/local_dns6.tmp" "$STATE_DIR/local_domains.tmp" >/dev/null 2>&1 || true
+}
+
+legacy_localclash_route_identity_present() {
+  ip rule show 2>/dev/null | grep -F "fwmark $LEGACY_FWMARK" >/dev/null 2>&1 && return 0
+  ip route show table "$LEGACY_ROUTE_TABLE" 2>/dev/null | grep -q . && return 0
+  ip -6 rule show 2>/dev/null | grep -F "fwmark $LEGACY_FWMARK" >/dev/null 2>&1 && return 0
+  ip -6 route show table "$LEGACY_ROUTE_TABLE" 2>/dev/null | grep -q . && return 0
+  return 1
+}
+
+cleanup_legacy_localclash_route_identity() {
+  legacy_localclash_route_identity_present || return 0
+  if [ "$(cat "$STATE_DIR/status" 2>/dev/null || true)" != "applied" ]; then
+    echo "legacy localClash route identity $LEGACY_FWMARK/$LEGACY_ROUTE_TABLE exists without applied ownership state; refusing migration" >&2
+    return 1
+  fi
+  if ! nft list chain inet fw4 localclash >/dev/null 2>&1 || ! nft list chain inet fw4 localclash_mangle >/dev/null 2>&1; then
+    echo "legacy localClash route identity $LEGACY_FWMARK/$LEGACY_ROUTE_TABLE exists without localClash nft ownership evidence; refusing migration" >&2
+    return 1
+  fi
+  while ip rule del fwmark "$LEGACY_FWMARK" table "$LEGACY_ROUTE_TABLE" >/dev/null 2>&1; do :; done
+  ip route del default table "$LEGACY_ROUTE_TABLE" >/dev/null 2>&1 || true
+  while ip -6 rule del fwmark "$LEGACY_FWMARK" table "$LEGACY_ROUTE_TABLE" >/dev/null 2>&1; do :; done
+  ip -6 route del default table "$LEGACY_ROUTE_TABLE" >/dev/null 2>&1 || true
 }
 
 check_fw4_ready() {
@@ -819,6 +847,7 @@ add_dynamic_localdns6() {
 
 const applyRoutingSetup = `
 check_fw4_ready
+cleanup_legacy_localclash_route_identity
 trap 'cleanup_localclash_state' ERR
 cleanup_localclash_state
 wait_tun_ready
@@ -904,11 +933,27 @@ func stopScript(opts Options) string {
 	script.line("STATE_DIR=" + shellQuote(opts.StateDir))
 	script.line("FWMARK=" + shellQuote(defaultFWMark))
 	script.line("ROUTE_TABLE=" + shellQuote(defaultRouteTable))
+	script.line("LEGACY_FWMARK=" + shellQuote(legacyFWMark))
+	script.line("LEGACY_ROUTE_TABLE=" + shellQuote(legacyRouteTable))
 	script.raw(stopShellBody)
 	return script.String()
 }
 
 const stopShellBody = `
+legacy_rules="$(ip rule show 2>/dev/null || true)"
+legacy_routes="$(ip route show table "$LEGACY_ROUTE_TABLE" 2>/dev/null || true)"
+legacy_rules6="$(ip -6 rule show 2>/dev/null || true)"
+legacy_routes6="$(ip -6 route show table "$LEGACY_ROUTE_TABLE" 2>/dev/null || true)"
+if printf '%s\n' "$legacy_rules" "$legacy_rules6" | grep -F "fwmark $LEGACY_FWMARK" >/dev/null 2>&1 || [ -n "$legacy_routes" ] || [ -n "$legacy_routes6" ]; then
+  if [ "$(cat "$STATE_DIR/status" 2>/dev/null || true)" != "applied" ]; then
+    echo "legacy localClash route identity $LEGACY_FWMARK/$LEGACY_ROUTE_TABLE exists without applied ownership state; refusing cleanup" >&2
+    exit 1
+  fi
+  while ip rule del fwmark "$LEGACY_FWMARK" table "$LEGACY_ROUTE_TABLE" >/dev/null 2>&1; do :; done
+  ip route del default table "$LEGACY_ROUTE_TABLE" >/dev/null 2>&1 || true
+  while ip -6 rule del fwmark "$LEGACY_FWMARK" table "$LEGACY_ROUTE_TABLE" >/dev/null 2>&1; do :; done
+  ip -6 route del default table "$LEGACY_ROUTE_TABLE" >/dev/null 2>&1 || true
+fi
 for chain in dstnat nat_output mangle_prerouting mangle_output forward input srcnat; do
   nft -a list chain inet fw4 "$chain" 2>/dev/null | awk '/localClash/{print $NF}' | sort -rn | while read -r handle; do
     [ -n "$handle" ] && nft delete rule inet fw4 "$chain" handle "$handle" 2>/dev/null || true

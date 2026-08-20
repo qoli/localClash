@@ -90,7 +90,7 @@ The previous takeover validation succeeded when these conditions were present:
 ```text
 ubus call localclash takeover_apply: success
 takeover_status.effective: true
-policy rule: fwmark 0x162 lookup 354
+policy rule: fwmark 0x6c63 lookup 27747
 route table: default dev utun
 LuCI overview: network takeover effective
 ```
