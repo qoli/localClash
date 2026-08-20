@@ -14,6 +14,7 @@ import tempfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Protocol
+from urllib.parse import urlsplit, urlunsplit
 
 
 DEFAULT_CDP_URL = "http://localhost:9222"
@@ -81,6 +82,38 @@ def image_mime_type(image_type: str) -> str:
         "gif": "image/gif",
         "webp": "image/webp",
     }[image_type]
+
+
+def normalize_http_url(value: str) -> str:
+    parts = urlsplit(value)
+    path = parts.path.rstrip("/") or "/"
+    return urlunsplit((parts.scheme.lower(), parts.netloc.lower(), path, parts.query, ""))
+
+
+def missing_expected_link_targets(
+    expected_urls: list[str],
+    link_targets: list[str],
+    redirect_resolver: Any,
+) -> list[str]:
+    normalized_targets = {
+        normalize_http_url(target)
+        for target in link_targets
+        if urlsplit(target).scheme in {"http", "https"}
+    }
+    for short_url in dict.fromkeys(link_targets):
+        parts = urlsplit(short_url)
+        if parts.scheme not in {"http", "https"} or parts.netloc.lower() != "t.co":
+            continue
+        try:
+            resolved_url = redirect_resolver(short_url)
+        except Exception as exc:
+            raise ScriptError(f"Failed to resolve X short link {short_url}: {exc}") from exc
+        normalized_targets.add(normalize_http_url(resolved_url))
+    return [
+        expected_url
+        for expected_url in expected_urls
+        if normalize_http_url(expected_url) not in normalized_targets
+    ]
 
 
 def prepare_post(request: PublishRequest) -> PreparedPost:
@@ -405,9 +438,16 @@ class ArcCDPPublisher:
                 element.getAttribute('title')
             ]).filter(Boolean)"""
         )
-        for expected_url in expected_urls:
-            if expected_url not in link_targets:
-                raise ScriptError(f"Published X post is missing expected link target: {expected_url}")
+        missing_urls = missing_expected_link_targets(
+            expected_urls,
+            link_targets,
+            lambda short_url: page.request.get(
+                short_url,
+                fail_on_status_code=True,
+            ).url,
+        )
+        if missing_urls:
+            raise ScriptError(f"Published X post is missing expected link target: {missing_urls[0]}")
         if article.locator('a[href$="/photo/1"] img').count() != 1:
             raise ScriptError("Published X post does not contain exactly one image.")
 

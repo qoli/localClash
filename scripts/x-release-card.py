@@ -355,6 +355,7 @@ def render_html(data: CardData) -> str:
     released_channels = " + ".join(
         label for label, items in (("Core", data.core_items), ("LuCI", data.luci_items)) if items
     )
+    card_class = "card compact" if len(data.core_items) + len(data.luci_items) >= 5 else "card"
     return f"""<!DOCTYPE html>
 <html lang=\"zh-Hant\">
 <head>
@@ -549,11 +550,23 @@ def render_html(data: CardData) -> str:
     font-weight: 420;
     line-height: 1.36;
   }}
+  .card.compact .hero {{ padding: 62px 78px 46px; }}
+  .card.compact .title-row {{ margin-top: 52px; }}
+  .card.compact .summary {{ margin-top: 38px; font-size: 34px; line-height: 1.4; }}
+  .card.compact .stat {{ min-height: 170px; padding: 38px 48px 34px; }}
+  .card.compact .stat .value {{ margin-top: 22px; }}
+  .card.compact .stat .hint {{ margin-top: 13px; }}
+  .card.compact .section {{ padding: 46px 78px 40px; }}
+  .card.compact .changes {{ gap: 26px 56px; margin-top: 30px; }}
+  .card.compact .change {{ grid-template-columns: 78px 1fr; gap: 30px; }}
+  .card.compact .icon {{ width: 78px; height: 78px; }}
+  .card.compact .change h2 {{ font-size: 31px; }}
+  .card.compact .change p {{ margin-top: 8px; font-size: 25px; line-height: 1.28; }}
 </style>
 </head>
 <body>
   <main class=\"frame\">
-    <article class=\"card\">
+    <article class=\"{card_class}\">
       <header class=\"hero\">
         <div class=\"eyebrow\"><span class=\"dot\"></span>Release Notes</div>
         <div class=\"title-row\">

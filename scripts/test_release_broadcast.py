@@ -28,6 +28,23 @@ def load_script(name: str, filename: str):
 
 
 class ReleaseCardRendererSafetyTests(unittest.TestCase):
+    def test_combined_card_uses_compact_layout_for_five_items(self) -> None:
+        module = load_script("x_release_card_compact_test", "x-release-card.py")
+        item = module.ChangeItem("core", "Title", "Body", "cyan")
+        data = module.CardData(
+            core_latest="v0.1.60",
+            core_range="v0.1.60",
+            core_range_hint="0.1.60",
+            luci_latest="v0.1.0-52",
+            luci_range="v0.1.0-52",
+            luci_range_hint="latest",
+            summary="Summary",
+            core_items=[item, item],
+            luci_items=[item, item, item],
+        )
+
+        self.assertIn('<article class="card compact">', module.render_html(data))
+
     def test_card_can_select_one_release_channel(self) -> None:
         module = load_script("x_release_card_channel_test", "x-release-card.py")
         changelog = """# 更新日誌
@@ -110,6 +127,22 @@ class XPostPublisherTests(unittest.TestCase):
 
     def request(self, text: str = "release text"):
         return self.module.PublishRequest(account="@llqoli", text=text, image=self.image)
+
+    def test_tco_links_are_verified_by_their_resolved_targets(self) -> None:
+        core_url = "https://github.com/qoli/localClash/releases/tag/v0.1.60"
+        luci_url = "https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-52"
+        redirects = {
+            "https://t.co/core": core_url,
+            "https://t.co/luci": f"{luci_url}/",
+        }
+
+        missing = self.module.missing_expected_link_targets(
+            [core_url, luci_url],
+            list(redirects),
+            redirects.__getitem__,
+        )
+
+        self.assertEqual(missing, [])
 
     def test_publish_once_records_verified_receipt(self) -> None:
         module = self.module
