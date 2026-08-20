@@ -21,7 +21,7 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
 | localClash Core | [v0.1.60](https://github.com/qoli/localClash/releases/tag/v0.1.60) | 2026-08-20 UTC+8 |
-| localclash-luci | [v0.1.0-51](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-51) | 2026-08-18 UTC+8 |
+| localclash-luci | [v0.1.0-52](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-52) | 2026-08-20 UTC+8 |
 
 ## 2026-08-20
 
@@ -48,6 +48,34 @@ Verification:
   x86-64／ARM64，manifest 版本與下載 URL 均為 `v0.1.60`。
 - 從公開 `localclash-base-assets.tar.gz` 解包讀回預設模板，確認新分組第一出口為
   `🌐 全球直连`，並包含 `us.aws.cdn.hf.co` 等精確下載域名。
+
+### localclash-luci v0.1.0-52
+
+Changes:
+
+- 重新設計概述頁的資訊與視覺層級，以整體狀態面板、語義色彩及集中式主要操作，
+  讓運行、接管與異常狀態更容易辨識。
+- 精簡狀態摘要、更新區及操作按鈕；首次設定的 Core 與配置方案改為語義明確的
+  單選項，並改善桌面與移動端的響應式排列。
+- Agent／MCP 接入與 Issue 回報改為可折疊的幫助與診斷區，並修正展開項目標題、
+  輔助文字及切換圖示在桌面與移動端的對齊。
+
+Release:
+
+- [qoli/localclash-luci v0.1.0-52](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-52)
+
+Verification:
+
+- 本地 JavaScript、Takeover Issue、dnsqualify、全部 rpcd/hotplug 測試及完整
+  release asset build 通過；main CI
+  [32346112929](https://github.com/qoli/localclash-luci/actions/runs/32346112929) 與
+  Release workflow
+  [32346275948](https://github.com/qoli/localclash-luci/actions/runs/32346275948) 全部成功。
+- 13 個公開資產重新下載後，精確數量與全部 SHA-256 均通過；x86_64／aarch64
+  iStore `.run` 亦通過 `--info`、`--list`、`--check` 與 `--noexec` 驗證。
+- 在 OpenWrt Bootstrap 與 iStoreOS 24.10.8 x86_64／ArgonTheme 2.2.12.3 的
+  桌面及 390×844 移動端驗證：頁面與 UBus 請求正常、console 無錯誤，表格和
+  操作正確重排，沒有頁面級水平溢出或 localClash 對比度失敗。
 
 ## 2026-08-18
 
