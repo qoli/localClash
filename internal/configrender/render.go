@@ -47,8 +47,7 @@ type Result struct {
 	Core           string
 	ProxyCount     int
 	RuleCount      int
-	ResolverConfig *resolverconfig.Config `json:"resolver_config,omitempty"`
-	ResolverStatus resolverconfig.Status  `json:"resolver_status"`
+	ResolverStatus resolverconfig.Status `json:"resolver_status"`
 }
 
 type ruleSpec struct {
@@ -123,30 +122,19 @@ func Render(opts Options) (Result, error) {
 	}
 	finish(nil, map[string]any{"runtime_mode": runtimeFile.Mode, "core": runtimeFile.Core})
 
-	finish = stage("apply_dns_optimization", map[string]any{"resolver_config_path": opts.ResolverConfigPath})
-	resolverLoad, err := resolverconfig.Load(opts.ResolverConfigPath)
-	if err != nil {
-		finish(err, nil)
-		return Result{}, err
-	}
-	resolverConfig := resolverLoad.Config
+	finish = stage("apply_optional_resolver_overlay", map[string]any{"resolver_config_path": opts.ResolverConfigPath})
 	builtinRouter := runtimeFile.Mode == runtimeprofile.ModeRouter && profile.Path == "builtin:"+runtimeprofile.ModeRouter
-	if resolverConfig != nil {
-		if !builtinRouter {
-			err := errors.New("resolver config requires the builtin router runtime profile")
-			finish(err, nil)
-			return Result{}, err
-		}
-		if err := resolverconfig.Apply(profile.Mihomo, *resolverConfig); err != nil {
-			finish(err, nil)
-			return Result{}, err
-		}
+	resolverStatus := resolverconfig.Status{State: "disabled", Reason: "not_applicable"}
+	if builtinRouter {
+		resolverStatus = resolverconfig.ApplyOptional(opts.ResolverConfigPath, profile.Mihomo)
 	}
-	fields := map[string]any{"dnsqualify_config": resolverConfig != nil, "mode": "disabled", "state": resolverLoad.Status.State, "reason": resolverLoad.Status.Reason}
-	if resolverConfig != nil {
-		fields["mode"] = resolverconfig.ModeDNSQualify
-		fields["policy_count"] = len(resolverConfig.NameserverPolicy)
-		fields["expires_at"] = resolverConfig.ExpiresAt
+	fields := map[string]any{"overlay_applied": resolverStatus.Enabled, "state": resolverStatus.State, "reason": resolverStatus.Reason}
+	if resolverStatus.Detail != "" {
+		fields["detail"] = resolverStatus.Detail
+	}
+	if resolverStatus.Enabled {
+		fields["policy_count"] = resolverStatus.PolicyCount
+		fields["expires_at"] = resolverStatus.ExpiresAt
 	}
 	finish(nil, fields)
 
@@ -250,8 +238,7 @@ func Render(opts Options) (Result, error) {
 		Core:           runtimeFile.Core,
 		ProxyCount:     len(proxyNames),
 		RuleCount:      len(rendered["rules"].([]string)),
-		ResolverConfig: resolverConfig,
-		ResolverStatus: resolverLoad.Status,
+		ResolverStatus: resolverStatus,
 	}, nil
 }
 

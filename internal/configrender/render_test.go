@@ -460,9 +460,6 @@ enabled_packs: []
 	if got := dns["proxy-server-nameserver"].([]any); len(got) != 1 || got[0] != "https://223.5.5.5/dns-query" {
 		t.Fatalf("proxy-server-nameserver changed: %#v", got)
 	}
-	if result.ResolverConfig != nil {
-		t.Fatalf("render result DNS source = %+v", result)
-	}
 	if result.ResolverStatus.Enabled || result.ResolverStatus.Reason != "missing" {
 		t.Fatalf("missing resolver status = %+v", result.ResolverStatus)
 	}
@@ -508,23 +505,84 @@ enabled_packs: []
 	}
 }
 
-func TestRenderRejectsMalformedResolverConfigInsteadOfFallingBack(t *testing.T) {
+func TestRenderRejectsMalformedResolverOverlayAndKeepsSecureBaseline(t *testing.T) {
 	paths := writeRenderFixture(t)
 	profilePath := filepath.Join(paths.dir, "localclash-runtime.json")
 	if _, err := runtimeprofile.Configure(profilePath, runtimeprofile.ModeRouter, ""); err != nil {
 		t.Fatal(err)
 	}
+	writeFile(t, paths.selection, `version: 1
+proxy_groups:
+  "⚡ 自动选择":
+    nodes: ["🇯🇵日本01 | JP"]
+    auto: true
+policy_groups:
+  DNSProxy:
+    exits: ["⚡ 自动选择"]
+    manual: true
+enabled_packs: []
+`)
 	configPath := resolverconfig.DefaultPath(profilePath)
 	writeFile(t, configPath, `{"version":2,"unknown":true}`)
-	_, err := Render(Options{
-		SourcePath: paths.subscription, OutputPath: filepath.Join(paths.dir, "invalid.yaml"),
+	outputPath := filepath.Join(paths.dir, "rejected-baseline.yaml")
+	result, err := Render(Options{
+		SourcePath: paths.subscription, OutputPath: outputPath,
+		PacksSelectionPath: paths.selection, RulesCacheDir: paths.cacheDir,
 		RuntimeProfilePath: profilePath, Force: true,
 	})
-	if err == nil || !strings.Contains(err.Error(), "unknown field") {
-		t.Fatalf("render error = %v, want explicit malformed optimization failure", err)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if _, statErr := os.Stat(filepath.Join(paths.dir, "invalid.yaml")); !os.IsNotExist(statErr) {
-		t.Fatalf("invalid optimization unexpectedly produced output: %v", statErr)
+	if result.ResolverStatus.Enabled || result.ResolverStatus.State != "disabled" || result.ResolverStatus.Reason != "rejected" || !strings.Contains(result.ResolverStatus.Detail, "unknown field") {
+		t.Fatalf("rejected resolver status = %+v", result.ResolverStatus)
+	}
+	config := readTestYAML(t, outputPath)
+	policy := config["dns"].(map[string]any)["nameserver-policy"].(map[string]any)
+	if _, exists := policy["devstreaming-cdn.apple.com"]; exists {
+		t.Fatalf("rejected overlay mutated secure baseline: %#v", policy)
+	}
+}
+
+func TestRenderUnacceptableResolverOverlayUsesVisibleSecureBaseline(t *testing.T) {
+	paths := writeRenderFixture(t)
+	profilePath := filepath.Join(paths.dir, "localclash-runtime.json")
+	if _, err := runtimeprofile.Configure(profilePath, runtimeprofile.ModeRouter, ""); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, paths.selection, `version: 1
+proxy_groups:
+  "⚡ 自动选择":
+    nodes: ["🇯🇵日本01 | JP"]
+    auto: true
+policy_groups:
+  DNSProxy:
+    exits: ["⚡ 自动选择"]
+    manual: true
+enabled_packs: []
+`)
+	writeFile(t, resolverconfig.DefaultPath(profilePath), `{
+  "version": 2,
+  "scope": {"type":"domains"},
+  "resolver": {},
+  "ecs": {},
+  "measurement": {}
+}`)
+	outputPath := filepath.Join(paths.dir, "legacy-baseline.yaml")
+	result, err := Render(Options{
+		SourcePath: paths.subscription, OutputPath: outputPath,
+		PacksSelectionPath: paths.selection, RulesCacheDir: paths.cacheDir,
+		RuntimeProfilePath: profilePath, Force: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.ResolverStatus.Enabled || result.ResolverStatus.State != "disabled" || result.ResolverStatus.Reason != "rejected" || !strings.Contains(result.ResolverStatus.Detail, "unknown field") {
+		t.Fatalf("rejected resolver status = %+v", result.ResolverStatus)
+	}
+	config := readTestYAML(t, outputPath)
+	policy := config["dns"].(map[string]any)["nameserver-policy"].(map[string]any)
+	if _, exists := policy["devstreaming-cdn.apple.com"]; exists {
+		t.Fatalf("rejected resolver policy remained active: %#v", policy)
 	}
 }
 
@@ -564,7 +622,7 @@ enabled_packs: []
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.ResolverConfig != nil || result.ResolverStatus.Enabled || result.ResolverStatus.Reason != "expired" {
+	if result.ResolverStatus.Enabled || result.ResolverStatus.Reason != "expired" {
 		t.Fatalf("resolver result = %+v", result)
 	}
 	config := readTestYAML(t, outputPath)
@@ -612,10 +670,7 @@ enabled_packs: []
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.ResolverConfig == nil || len(result.ResolverConfig.NameserverPolicy) != len(domains) {
-		t.Fatalf("resolver config result = %+v", result)
-	}
-	if !result.ResolverStatus.Enabled || result.ResolverStatus.State != "active" {
+	if !result.ResolverStatus.Enabled || result.ResolverStatus.State != "active" || result.ResolverStatus.PolicyCount != len(domains) {
 		t.Fatalf("active resolver status = %+v", result.ResolverStatus)
 	}
 	config := readTestYAML(t, result.OutputPath)

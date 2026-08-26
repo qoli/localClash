@@ -12,90 +12,110 @@ import (
 )
 
 const (
-	Version        = 2
-	DefaultName    = "dnsqualify.json"
-	ModeDNSQualify = "dnsqualify_overlay"
+	version     = 2
+	defaultName = "dnsqualify.json"
 )
 
-var ErrExpired = errors.New("resolver qualification expired")
+var errExpired = errors.New("resolver qualification expired")
 
 type Status struct {
-	Enabled   bool   `json:"enabled"`
-	State     string `json:"state"`
-	Reason    string `json:"reason,omitempty"`
-	ExpiresAt string `json:"expires_at,omitempty"`
+	Enabled     bool   `json:"enabled"`
+	State       string `json:"state"`
+	Reason      string `json:"reason,omitempty"`
+	Detail      string `json:"detail,omitempty"`
+	PolicyCount int    `json:"policy_count,omitempty"`
+	ExpiresAt   string `json:"expires_at,omitempty"`
 }
 
-type LoadResult struct {
-	Config *Config
+type loadResult struct {
+	config *config
 	Status Status
 }
 
-type Config struct {
+type config struct {
 	Version          int                 `json:"version"`
 	ExpiresAt        string              `json:"expires_at"`
 	NameserverPolicy map[string][]string `json:"nameserver_policy"`
 }
 
 func DefaultPath(runtimeProfilePath string) string {
-	return filepath.Join(filepath.Dir(runtimeProfilePath), DefaultName)
+	return filepath.Join(filepath.Dir(runtimeProfilePath), defaultName)
 }
 
-// Load treats a missing file as the optional optimization being disabled. An
-// existing file is authoritative and must satisfy the complete v2 contract.
-func Load(path string) (LoadResult, error) {
+// ApplyOptional is the resolver overlay seam. Rejected input disables only the
+// optional overlay and never mutates the baseline Mihomo configuration.
+func ApplyOptional(path string, mihomo map[string]any) Status {
+	loaded, err := load(path)
+	if err != nil {
+		return rejected(err)
+	}
+	if loaded.config == nil {
+		return loaded.Status
+	}
+	if err := apply(mihomo, *loaded.config); err != nil {
+		return rejected(fmt.Errorf("apply resolver overlay %s: %w", path, err))
+	}
+	loaded.Status.PolicyCount = len(loaded.config.NameserverPolicy)
+	return loaded.Status
+}
+
+func rejected(err error) Status {
+	return Status{State: "disabled", Reason: "rejected", Detail: err.Error()}
+}
+
+func load(path string) (loadResult, error) {
 	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return LoadResult{Status: Status{State: "disabled", Reason: "missing"}}, nil
+		return loadResult{Status: Status{State: "disabled", Reason: "missing"}}, nil
 	}
 	if err != nil {
-		return LoadResult{}, fmt.Errorf("read resolver config %s: %w", path, err)
+		return loadResult{}, fmt.Errorf("read resolver config %s: %w", path, err)
 	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
-	var config Config
-	if err := decoder.Decode(&config); err != nil {
-		return LoadResult{}, fmt.Errorf("decode resolver config %s: %w", path, err)
+	var candidate config
+	if err := decoder.Decode(&candidate); err != nil {
+		return loadResult{}, fmt.Errorf("decode resolver config %s: %w", path, err)
 	}
 	var extra any
 	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
 		if err == nil {
-			return LoadResult{}, fmt.Errorf("decode resolver config %s: unexpected trailing JSON value", path)
+			return loadResult{}, fmt.Errorf("decode resolver config %s: unexpected trailing JSON value", path)
 		}
-		return LoadResult{}, fmt.Errorf("decode resolver config %s trailing data: %w", path, err)
+		return loadResult{}, fmt.Errorf("decode resolver config %s trailing data: %w", path, err)
 	}
-	if err := ValidateAt(config, time.Now()); err != nil {
-		if errors.Is(err, ErrExpired) {
-			return LoadResult{Status: Status{State: "disabled", Reason: "expired", ExpiresAt: config.ExpiresAt}}, nil
+	if err := validateAt(candidate, time.Now()); err != nil {
+		if errors.Is(err, errExpired) {
+			return loadResult{Status: Status{State: "disabled", Reason: "expired", ExpiresAt: candidate.ExpiresAt}}, nil
 		}
-		return LoadResult{}, fmt.Errorf("validate resolver config %s: %w", path, err)
+		return loadResult{}, fmt.Errorf("validate resolver config %s: %w", path, err)
 	}
-	return LoadResult{Config: &config, Status: Status{Enabled: true, State: "active", ExpiresAt: config.ExpiresAt}}, nil
+	return loadResult{config: &candidate, Status: Status{Enabled: true, State: "active", ExpiresAt: candidate.ExpiresAt}}, nil
 }
 
-func Validate(config Config) error {
-	return ValidateAt(config, time.Now())
+func validate(candidate config) error {
+	return validateAt(candidate, time.Now())
 }
 
-func ValidateAt(config Config, now time.Time) error {
-	if config.Version != Version {
-		return fmt.Errorf("unsupported resolver config version %d; want %d", config.Version, Version)
+func validateAt(candidate config, now time.Time) error {
+	if candidate.Version != version {
+		return fmt.Errorf("unsupported resolver config version %d; want %d", candidate.Version, version)
 	}
-	if len(config.NameserverPolicy) == 0 {
+	if len(candidate.NameserverPolicy) == 0 {
 		return errors.New("resolver nameserver_policy is required")
 	}
-	expires, err := time.Parse(time.RFC3339Nano, config.ExpiresAt)
+	expires, err := time.Parse(time.RFC3339Nano, candidate.ExpiresAt)
 	if err != nil {
 		return fmt.Errorf("invalid expires_at: %w", err)
 	}
 	if !now.Before(expires) {
-		return fmt.Errorf("%w at %s", ErrExpired, expires.Format(time.RFC3339Nano))
+		return fmt.Errorf("%w at %s", errExpired, expires.Format(time.RFC3339Nano))
 	}
 	return nil
 }
 
-func Apply(mihomo map[string]any, config Config) error {
-	if err := Validate(config); err != nil {
+func apply(mihomo map[string]any, candidate config) error {
+	if err := validate(candidate); err != nil {
 		return err
 	}
 	dns, ok := mihomo["dns"].(map[string]any)
@@ -106,12 +126,12 @@ func Apply(mihomo map[string]any, config Config) error {
 	if !ok {
 		return errors.New("runtime profile nameserver-policy is missing or invalid")
 	}
-	for domain := range config.NameserverPolicy {
+	for domain := range candidate.NameserverPolicy {
 		if _, exists := policy[domain]; exists {
-			return fmt.Errorf("dnsqualify nameserver-policy %q conflicts with existing policy", domain)
+			return fmt.Errorf("resolver overlay nameserver-policy %q conflicts with existing policy", domain)
 		}
 	}
-	for domain, servers := range config.NameserverPolicy {
+	for domain, servers := range candidate.NameserverPolicy {
 		policy[domain] = append([]string(nil), servers...)
 	}
 	return nil
