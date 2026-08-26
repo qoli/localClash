@@ -413,6 +413,14 @@ enabled_packs: []
 	if config["allow-lan"] != true {
 		t.Fatalf("allow-lan = %v, want true", config["allow-lan"])
 	}
+	listeners, ok := config["listeners"].([]any)
+	if !ok || len(listeners) != 1 {
+		t.Fatalf("listeners = %#v, want one DNSProxy measurement listener", config["listeners"])
+	}
+	listener, ok := listeners[0].(map[string]any)
+	if !ok || listener["name"] != "dnsproxy-local" || listener["type"] != "http" || listener["listen"] != "127.0.0.1" || listener["port"] != 7894 || listener["proxy"] != "DNSProxy" {
+		t.Fatalf("DNSProxy measurement listener = %#v", listeners[0])
+	}
 	if _, ok := config["proxies"].([]any); !ok {
 		t.Fatalf("proxies should remain generated dynamic config, got %T", config["proxies"])
 	}
