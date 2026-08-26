@@ -22,10 +22,59 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
-| localClash Core | [v0.1.63](https://github.com/qoli/localClash/releases/tag/v0.1.63) | 2026-08-26 UTC+8 |
-| localclash-luci | [v0.1.0-55](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-55) | 2026-08-26 UTC+8 |
+| localClash Core | [v0.1.64](https://github.com/qoli/localClash/releases/tag/v0.1.64) | 2026-08-26 UTC+8 |
+| localclash-luci | [v0.1.0-56](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-56) | 2026-08-27 UTC+8 |
+
+## 2026-08-27
+
+### localclash-luci v0.1.0-56
+
+Changes:
+
+- dnsqualify 的 Google ECS DoH 查詢改經 Mihomo 的 `DNSProxy` 專用本地入口，與
+  實際配置使用相同出口；入口不可用時任務明確失敗並保留現有配置，不會改為直連。
+- 離線 bundle 固定使用 Core v0.1.64 與 dnsqualify
+  `f395b2845d432d7d35b9776ce16b3efcdc39e76e`。
+
+Release:
+
+- [qoli/localclash-luci v0.1.0-56](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-56)
+
+Verification:
+
+- GitHub Actions 的 main CI run
+  [32984160705](https://github.com/qoli/localclash-luci/actions/runs/32984160705) 與
+  [32984481099](https://github.com/qoli/localclash-luci/actions/runs/32984481099)
+  停留在 queued 且沒有建立 job，因此本版沒有把 CI 狀態當成驗收依據。
+- 人工執行 JavaScript syntax／takeover report、shell syntax、12 項 Python unit
+  tests、dnsqualify `go test ./...`／`go vet ./...`、全部 rpcd regression tests、
+  IPK／APK／dnsqualify／iStore bundle build 與離線安裝測試，全部通過。
+- 公開 Release 的 13 個受管資產已重新下載；6 份 sidecar SHA256 全部通過，
+  x86_64／aarch64 `.run` 的 `--info`、`--list`、`--check` 與 `--noexec`
+  均通過。遠端標籤解引用後精確指向
+  `3864516b639ba294e3f051dd5d2ee7e153af2ee9`。
 
 ## 2026-08-26
+
+### localClash Core v0.1.64
+
+Changes:
+
+- Router profile 新增只監聽 `127.0.0.1:7894` 的 Mihomo HTTP listener，固定使用
+  `DNSProxy` proxy group，供外部 dnsqualify 子系統在 ECS qualification 時使用
+  與實際配置一致的代理出口；Core 不解析或執行 dnsqualify 的測量流程。
+
+Release:
+
+- [qoli/localClash v0.1.64](https://github.com/qoli/localClash/releases/tag/v0.1.64)
+
+Verification:
+
+- `go test ./...` 與 `go vet ./...` 通過；render regression test 確認專用 listener
+  的名稱、類型、loopback 位址、port 與 `DNSProxy` 綁定。
+- [Release workflow 32983568423](https://github.com/qoli/localClash/actions/runs/32983568423)
+  成功；公開 Release 的 7 個資產已回讀，三份 SHA256、amd64／arm64 binary 與
+  manifest `v0.1.64` 均通過驗證。
 
 ### localClash Core v0.1.63
 
