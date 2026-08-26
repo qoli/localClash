@@ -251,3 +251,19 @@ then atomically records the content fingerprint and status URL in
 `x/broadcast-state.json`. Missing or malformed state, duplicate content,
 composer mismatch, unknown submission status, and failed post verification are
 hard failures. Do not retry an unknown submission state.
+
+If `CreateTweet` returns a status URL but final DOM verification fails, inspect
+that exact status read-only. Only when the intended account, non-URL text,
+resolved link targets, and one image are all confirmed, record the existing
+post without another submission:
+
+```bash
+scripts/x-post.py \
+  --account @llqoli \
+  --text-file telegram/out/x-post.txt \
+  --image telegram/out/localclash-x-release-card.png \
+  --verify-existing-status https://x.com/llqoli/status/STATUS_ID
+```
+
+This recovery path must never call `CreateTweet`; if existing-post verification
+fails, leave `x/broadcast-state.json` untouched and do not retry publication.

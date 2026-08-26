@@ -2,8 +2,8 @@
   "schema_version": 1,
   "telegram": {
     "last_announced": {
-      "core": "v0.1.61",
-      "luci": "v0.1.0-53"
+      "core": "v0.1.63",
+      "luci": "v0.1.0-55"
     }
   }
 }

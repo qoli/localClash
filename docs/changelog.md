@@ -31,14 +31,9 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 
 Changes:
 
-- Resolver overlay 改為真正的可選 module：無法讀取、解碼、驗證或合併時，Core
-  會捨棄整份 overlay、回報 `disabled/rejected` 與原始原因，並繼續生成 secure
-  baseline，不再讓 dnsqualify 子系統失效中止一鍵更新或 Mihomo 啟動流程。
-- Config renderer 只依賴 `ApplyOptional` 與 generic `Status`；overlay 的版本、欄位、
-  load、validate 與 apply 都封裝在 resolverconfig implementation，Core caller 不再
-  辨識舊版 dnsqualify schema。
-- 被拒絕或發生 policy 衝突的 overlay 不會局部修改 baseline；只有完整通過 module
-  驗收的 overlay 才會套用。
+- Resolver overlay 改為真正的可選 module；無法讀取、驗證或合併時會捨棄整份
+  overlay、回報 `disabled/rejected` 與原因，並保留 secure baseline，避免一鍵更新或
+  Mihomo 啟動被 dnsqualify 子系統中止。
 
 Release:
 
@@ -74,14 +69,9 @@ Verification:
 
 Changes:
 
-- 內建 router profile 不再發現、競速或注入 WAN resolver；加密 DNS 基線改為
-  AliDNS DoH 主查詢與經 `DNSProxy` 的 lazy Google DoH fallback，污染判斷只保留
-  明確的 bogon／reserved CIDR，不再使用粗粒度 `geoip-code: CN`。
-- Core 改為只消費有版本與有效期的 `nameserver_policy` overlay，拒絕覆蓋既有
-  policy，並把完整生成配置交給 `mihomo -t`。STUN、HTTP provider、WAN、country、
-  ECS 與候選評分全部留在獨立 dnsqualify，不再進入 Core interface。
-- 缺少或過期的 overlay 會明確停用這項可選最佳化並保留加密基線；格式損壞或
-  policy 衝突仍會停止 render，不會產生看似有效的替代配置。
+- Router profile 不再注入 WAN resolver；預設使用加密 DNS 基線，Core 只接收有
+  版本與有效期的 `nameserver_policy` overlay，缺少或過期時保留基線，格式損壞或
+  policy 衝突則明確拒絕。
 
 Release:
 
@@ -102,13 +92,9 @@ Verification:
 
 Changes:
 
-- LuCI 改為只從獨立 `dnsqualify-report.json` 顯示 provider、STUN／JSON source、
-  country code 與 ECS provenance；交給 Core 的 overlay 僅保留 policy、版本與有效期。
-- 離線套件鎖定 dnsqualify source commit
-  `999fe9c0fc92894c90a0d429c669e3a83a011fd7`，公網 IP 依序採用中國境內 STUN，
-  再使用必須嚴格回報 `country_code == CN` 的 `ipapi.is` JSON 路徑。
-- 離線 bundle 鎖定 Core v0.1.62；RFC3339 expiry parser 明確支援 OpenWrt BusyBox、
-  GNU coreutils 與 Darwin `date`，無效時間或不支援的平台仍直接失敗。
+- DNS qualification provenance 改由獨立報告顯示，交給 Core 的 overlay 只保留
+  policy、版本與有效期；離線 bundle 鎖定 Core v0.1.62，並支援 OpenWrt BusyBox、
+  GNU coreutils 與 Darwin 的 expiry 解析。
 
 Release:
 

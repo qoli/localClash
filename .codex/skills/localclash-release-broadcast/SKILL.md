@@ -63,6 +63,10 @@ notes and Telegram channel announcements.
    The first command validates local inputs and duplicate state. The second is
    a live side effect and requires explicit user authorization. Never bypass a
    script failure with manual browser publishing or an automatic retry.
+   If X confirms creation with a status URL but final verification fails, inspect
+   that exact status read-only. When the intended text, resolved links, account,
+   and image are all confirmed, record it without resubmitting via
+   `--verify-existing-status <status-url>`; otherwise leave the state untouched.
 6. Generate and inspect the Telegram announcement:
    ```bash
    scripts/telegram-channel-update.py --dry-run --no-write

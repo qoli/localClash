@@ -59,6 +59,11 @@ class Publisher(Protocol):
         """Submit exactly once and return a verified receipt."""
 
 
+class ExistingPostVerifier(Protocol):
+    def verify_existing(self, post: PreparedPost, status_url: str) -> PublishReceipt:
+        """Verify an already-created post without submitting anything."""
+
+
 def sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
@@ -114,6 +119,23 @@ def missing_expected_link_targets(
         for expected_url in expected_urls
         if normalize_http_url(expected_url) not in normalized_targets
     ]
+
+
+def missing_expected_text_fragments(expected_text: str, actual_visible_text: str) -> list[str]:
+    fragments = [
+        re.sub(r"https?://\S+", "", line).strip()
+        for line in expected_text.splitlines()
+    ]
+    return [fragment for fragment in fragments if fragment and fragment not in actual_visible_text]
+
+
+def resolve_short_url_in_browser(context: Any, short_url: str) -> str:
+    resolver_page = context.new_page()
+    try:
+        resolver_page.goto(short_url, wait_until="domcontentloaded")
+        return resolver_page.url
+    finally:
+        resolver_page.close()
 
 
 def prepare_post(request: PublishRequest) -> PreparedPost:
@@ -223,25 +245,44 @@ def publish_once(
         state = load_state(state_path)
         assert_not_published(post, state)
         receipt = publisher.publish(post)
-        if receipt.account != post.request.account:
-            raise ScriptError(
-                "X may have been published but the receipt account is wrong; do not retry. "
-                f"expected {post.request.account}, got {receipt.account}"
-            )
-        if receipt.text_sha256 != post.text_sha256 or receipt.image_sha256 != post.image_sha256:
-            raise ScriptError(
-                "X may have been published but the receipt content is wrong; do not retry."
-            )
-        if receipt.fingerprint != post.fingerprint:
-            raise ScriptError(
-                "X may have been published but the receipt fingerprint is wrong; do not retry."
-            )
-        match = STATUS_URL_PATTERN.fullmatch(receipt.status_url)
-        if not match or match.group(1).lower() != post.request.account[1:].lower():
-            raise ScriptError(
-                "X may have been published but the receipt status URL is invalid; do not retry. "
-                f"status_url={receipt.status_url}"
-            )
+        validate_receipt(post, receipt)
+        record_receipt(state_path, state, receipt)
+        return receipt
+
+
+def validate_receipt(post: PreparedPost, receipt: PublishReceipt) -> None:
+    if receipt.account != post.request.account:
+        raise ScriptError(
+            "X may have been published but the receipt account is wrong; do not retry. "
+            f"expected {post.request.account}, got {receipt.account}"
+        )
+    if receipt.text_sha256 != post.text_sha256 or receipt.image_sha256 != post.image_sha256:
+        raise ScriptError("X may have been published but the receipt content is wrong; do not retry.")
+    if receipt.fingerprint != post.fingerprint:
+        raise ScriptError("X may have been published but the receipt fingerprint is wrong; do not retry.")
+    match = STATUS_URL_PATTERN.fullmatch(receipt.status_url)
+    if not match or match.group(1).lower() != post.request.account[1:].lower():
+        raise ScriptError(
+            "X may have been published but the receipt status URL is invalid; do not retry. "
+            f"status_url={receipt.status_url}"
+        )
+
+
+def verify_existing_once(
+    request: PublishRequest,
+    state_path: Path,
+    verifier: ExistingPostVerifier,
+    status_url: str,
+) -> PublishReceipt:
+    post = prepare_post(request)
+    load_state(state_path)
+    lock_path = state_path.with_name(f".{state_path.name}.lock")
+    with lock_path.open("a+", encoding="utf-8") as lock:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        state = load_state(state_path)
+        assert_not_published(post, state)
+        receipt = verifier.verify_existing(post, status_url)
+        validate_receipt(post, receipt)
         record_receipt(state_path, state, receipt)
         return receipt
 
@@ -314,6 +355,51 @@ class ArcCDPPublisher:
             raise
         except Exception as exc:
             raise ScriptError(f"Failed to publish X post through Arc CDP at {self.cdp_url}: {exc}") from exc
+
+    def verify_existing(self, post: PreparedPost, status_url: str) -> PublishReceipt:
+        match = STATUS_URL_PATTERN.fullmatch(status_url)
+        if not match or match.group(1).lower() != post.request.account[1:].lower():
+            raise ScriptError(
+                "Existing X status URL does not match the requested account: "
+                f"status_url={status_url}"
+            )
+        try:
+            from playwright.sync_api import sync_playwright
+        except ImportError as exc:
+            raise ScriptError("Python Playwright is required to verify an existing X post.") from exc
+
+        try:
+            with sync_playwright() as playwright:
+                browser = playwright.chromium.connect_over_cdp(self.cdp_url)
+                contexts_before = tuple(browser.contexts)
+                if not contexts_before:
+                    raise ScriptError(
+                        "Arc CDP has no existing browser context; refusing to create an independent window."
+                    )
+                context = contexts_before[0]
+                pages_before = len(context.pages)
+                page = context.new_page()
+                try:
+                    self._verify_status(page, post, status_url)
+                finally:
+                    page.close()
+                if len(context.pages) != pages_before:
+                    raise ScriptError("Arc CDP temporary X verification tab cleanup failed.")
+                if tuple(browser.contexts) != contexts_before:
+                    raise ScriptError("Arc CDP browser contexts changed while verifying the X post.")
+        except ScriptError:
+            raise
+        except Exception as exc:
+            raise ScriptError(f"Failed to verify X post through Arc CDP at {self.cdp_url}: {exc}") from exc
+
+        return PublishReceipt(
+            account=post.request.account,
+            status_url=status_url,
+            text_sha256=post.text_sha256,
+            image_sha256=post.image_sha256,
+            fingerprint=post.fingerprint,
+            verified=True,
+        )
 
     def _publish_in_page(self, page: Any, post: PreparedPost, timeout_error: type[Exception]) -> PublishReceipt:
         account_name = post.request.account[1:]
@@ -425,8 +511,7 @@ class ArcCDPPublisher:
         text = article.locator('div[data-testid="tweetText"]')
         text.wait_for(state="visible")
         actual_visible_text = text.evaluate("element => element.innerText")
-        expected_lines = [line for line in post.request.text.splitlines() if not line.startswith(("http://", "https://"))]
-        missing_lines = [line for line in expected_lines if line not in actual_visible_text]
+        missing_lines = missing_expected_text_fragments(post.request.text, actual_visible_text)
         if missing_lines:
             raise ScriptError(f"Published X post is missing expected text lines: {missing_lines!r}")
 
@@ -438,16 +523,24 @@ class ArcCDPPublisher:
                 element.getAttribute('title')
             ]).filter(Boolean)"""
         )
+        resolved_short_urls: dict[str, str] = {}
+
+        def resolve_and_record(short_url: str) -> str:
+            resolved_url = resolve_short_url_in_browser(page.context, short_url)
+            resolved_short_urls[short_url] = resolved_url
+            return resolved_url
+
         missing_urls = missing_expected_link_targets(
             expected_urls,
             link_targets,
-            lambda short_url: page.request.get(
-                short_url,
-                fail_on_status_code=True,
-            ).url,
+            resolve_and_record,
         )
         if missing_urls:
-            raise ScriptError(f"Published X post is missing expected link target: {missing_urls[0]}")
+            raise ScriptError(
+                "Published X post is missing expected link target: "
+                f"{missing_urls[0]}; link_targets={link_targets!r}; "
+                f"resolved_short_urls={resolved_short_urls!r}"
+            )
         if article.locator('a[href$="/photo/1"] img').count() != 1:
             raise ScriptError("Published X post does not contain exactly one image.")
 
@@ -466,10 +559,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--image", type=Path, required=True, help="Single image to attach to the post.")
     parser.add_argument("--state", type=Path, default=repo_root / DEFAULT_STATE_RELATIVE_PATH)
     parser.add_argument("--cdp-url", default=DEFAULT_CDP_URL)
-    parser.add_argument(
+    action = parser.add_mutually_exclusive_group()
+    action.add_argument(
         "--publish",
         action="store_true",
         help="Perform the single live submission. Without this flag only local validation runs.",
+    )
+    action.add_argument(
+        "--verify-existing-status",
+        metavar="URL",
+        help="Verify one already-created status and record its receipt without submitting a post.",
     )
     return parser.parse_args()
 
@@ -481,6 +580,15 @@ def main() -> int:
     state = load_state(args.state)
     assert_not_published(post, state)
     if not args.publish:
+        if args.verify_existing_status:
+            receipt = verify_existing_once(
+                request,
+                args.state,
+                ArcCDPPublisher(args.cdp_url),
+                args.verify_existing_status,
+            )
+            print(json.dumps(asdict(receipt), ensure_ascii=False, indent=2))
+            return 0
         print(
             json.dumps(
                 {

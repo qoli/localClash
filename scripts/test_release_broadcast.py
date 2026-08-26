@@ -144,6 +144,89 @@ class XPostPublisherTests(unittest.TestCase):
 
         self.assertEqual(missing, [])
 
+    def test_url_wrapping_does_not_fail_visible_text_verification(self) -> None:
+        expected = "\n".join(
+            (
+                "localClash 更新",
+                "Core: https://github.com/qoli/localClash/releases/tag/v0.1.63",
+                "LuCI: https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-55",
+            )
+        )
+        actual = "\n".join(
+            (
+                "localClash 更新",
+                "Core: https://github.com/qoli/localClash/releases/tag/",
+                "v0.1.63…",
+                "LuCI: https://github.com/qoli/localclash-luci/releases/",
+                "tag/v0.1.0-55…",
+            )
+        )
+
+        missing = self.module.missing_expected_text_fragments(expected, actual)
+
+        self.assertEqual(missing, [])
+
+    def test_browser_short_link_resolver_closes_temporary_page(self) -> None:
+        class FakePage:
+            url = "https://t.co/core"
+            closed = False
+
+            def goto(self, url, wait_until):
+                self.url = "https://github.com/qoli/localClash/releases/tag/v0.1.63"
+                self.wait_until = wait_until
+
+            def close(self):
+                self.closed = True
+
+        page = FakePage()
+
+        class FakeContext:
+            def new_page(self):
+                return page
+
+        resolved = self.module.resolve_short_url_in_browser(FakeContext(), "https://t.co/core")
+
+        self.assertEqual(
+            resolved,
+            "https://github.com/qoli/localClash/releases/tag/v0.1.63",
+        )
+        self.assertEqual(page.wait_until, "domcontentloaded")
+        self.assertTrue(page.closed)
+
+    def test_verify_existing_once_records_without_publishing(self) -> None:
+        module = self.module
+        request = self.request(
+            "Core: https://github.com/qoli/localClash/releases/tag/v0.1.63"
+        )
+        prepared = module.prepare_post(request)
+
+        class FakeVerifier:
+            calls = 0
+
+            def verify_existing(self, post, status_url):
+                self.calls += 1
+                return module.PublishReceipt(
+                    account=post.request.account,
+                    status_url=status_url,
+                    text_sha256=post.text_sha256,
+                    image_sha256=post.image_sha256,
+                    fingerprint=post.fingerprint,
+                    verified=True,
+                )
+
+        verifier = FakeVerifier()
+        receipt = module.verify_existing_once(
+            request,
+            self.state,
+            verifier,
+            "https://x.com/llqoli/status/2092603498739449955",
+        )
+
+        self.assertEqual(verifier.calls, 1)
+        self.assertEqual(receipt.status_url, "https://x.com/llqoli/status/2092603498739449955")
+        saved = json.loads(self.state.read_text(encoding="utf-8"))
+        self.assertEqual(saved["posts"], [module.asdict(receipt)])
+
     def test_publish_once_records_verified_receipt(self) -> None:
         module = self.module
         prepared = module.prepare_post(self.request())
