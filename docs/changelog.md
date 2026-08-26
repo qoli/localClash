@@ -50,6 +50,9 @@ Verification:
   無效 overlay 與 policy 衝突，確認它們只停用可選能力且不修改 secure baseline。
 - 以路由器一鍵更新日誌中的舊 `scope/resolver/ecs/measurement` 輸入重現
   `unknown field`，修正後 config render 成功並回報 generic `rejected` 狀態。
+- [Release workflow 32972044619](https://github.com/qoli/localClash/actions/runs/32972044619)
+  成功；公開 Release 的 7 個資產均已回讀，三份 SHA256、amd64／arm64 ELF
+  架構與 manifest `v0.1.63` 均通過驗證。
 
 ### localclash-luci v0.1.0-55
 
