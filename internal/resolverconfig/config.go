@@ -23,7 +23,9 @@ const (
 	ModeDNSQualify     = "qualified_ecs"
 	ScopeTypeDomains   = "domains"
 	ECSSTUNMainland    = "stun_xor_mapped_address_mainland"
+	ECSHTTPSIPAPIIS    = "https_json_ipapi_is"
 	MainlandSTUNServer = "stun.chat.bilibili.com:3478"
+	IPAPIISServer      = "api.ipapi.is:443"
 	DNSProxyGroup      = "DNSProxy"
 )
 
@@ -66,11 +68,12 @@ type Resolver struct {
 }
 
 type ECS struct {
-	Prefix    string `json:"prefix"`
-	Source    string `json:"source"`
-	Interface string `json:"interface"`
-	Server    string `json:"server"`
-	ServerIP  string `json:"server_ip"`
+	Prefix      string `json:"prefix"`
+	Source      string `json:"source"`
+	Interface   string `json:"interface"`
+	Server      string `json:"server"`
+	ServerIP    string `json:"server_ip"`
+	CountryCode string `json:"country_code,omitempty"`
 }
 
 type Measurement struct {
@@ -154,15 +157,15 @@ func ValidateAt(config Config, now time.Time) error {
 	if config.Resolver.Proxy != DNSProxyGroup {
 		return fmt.Errorf("qualified ECS resolver proxy must be %q", DNSProxyGroup)
 	}
-	if config.ECS.Source != ECSSTUNMainland {
-		return fmt.Errorf("ECS source must be %q", ECSSTUNMainland)
-	}
 	if strings.TrimSpace(config.ECS.Interface) == "" {
 		return errors.New("ECS WAN interface provenance is required")
 	}
 	serverIP, serverIPErr := netip.ParseAddr(config.ECS.ServerIP)
-	if config.ECS.Server != MainlandSTUNServer || serverIPErr != nil || !serverIP.Is4() || !isPublicECSAddress(serverIP) {
-		return errors.New("ECS mainland STUN server provenance is invalid")
+	if serverIPErr != nil || !serverIP.Is4() || !isPublicECSAddress(serverIP) {
+		return errors.New("ECS public-address observation server IP is invalid")
+	}
+	if err := validateECSProvenance(config.ECS.Source, config.ECS.Server, config.ECS.CountryCode); err != nil {
+		return err
 	}
 	prefix, err := netip.ParsePrefix(config.ECS.Prefix)
 	if err != nil || prefix != prefix.Masked() {
@@ -201,6 +204,28 @@ func ValidateAt(config Config, now time.Time) error {
 	}
 	if !now.Before(expires) {
 		return fmt.Errorf("%w at %s", ErrExpired, expires.Format(time.RFC3339Nano))
+	}
+	return nil
+}
+
+func validateECSProvenance(source, server, countryCode string) error {
+	switch source {
+	case ECSSTUNMainland:
+		if server != MainlandSTUNServer {
+			return errors.New("ECS mainland STUN server provenance is invalid")
+		}
+		if countryCode != "" {
+			return errors.New("ECS STUN provenance must not claim an unmeasured country code")
+		}
+	case ECSHTTPSIPAPIIS:
+		if server != IPAPIISServer {
+			return errors.New("ECS ipapi.is HTTPS server provenance is invalid")
+		}
+		if countryCode != "CN" {
+			return fmt.Errorf("ECS ipapi.is country code must be CN, got %q", countryCode)
+		}
+	default:
+		return fmt.Errorf("unsupported ECS public-address observation source %q", source)
 	}
 	return nil
 }

@@ -114,6 +114,33 @@ func TestLoadAndApplyQualifiedECSConfig(t *testing.T) {
 	}
 }
 
+func TestValidateAcceptsHTTPSJSONECSProvenanceOnlyForMainland(t *testing.T) {
+	now := time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC)
+	for _, test := range []struct {
+		name     string
+		source   string
+		server   string
+		serverIP string
+	}{
+		{name: "ipapi", source: ECSHTTPSIPAPIIS, server: IPAPIISServer, serverIP: "5.223.55.72"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			config := validConfig(now)
+			config.ECS.Source = test.source
+			config.ECS.Server = test.server
+			config.ECS.ServerIP = test.serverIP
+			config.ECS.CountryCode = "CN"
+			if err := ValidateAt(config, now); err != nil {
+				t.Fatal(err)
+			}
+			config.ECS.CountryCode = "HK"
+			if err := ValidateAt(config, now); err == nil || !strings.Contains(err.Error(), "country code must be CN") {
+				t.Fatalf("ValidateAt error = %v", err)
+			}
+		})
+	}
+}
+
 func TestApplyRejectsPolicyConflict(t *testing.T) {
 	now := time.Now()
 	config := validConfig(now)

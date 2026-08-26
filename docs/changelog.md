@@ -24,13 +24,14 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
   lazy Google DoH fallback through `DNSProxy`; fallback filtering keeps the
   reserved/bogon CIDRs but disables the coarse `geoip-code: CN` classifier.
 - `dnsqualify.json` is now a strict v2 exact-domain contract. Core validates
-  the sorted domain hash, Google DoH endpoint and `DNSProxy` egress, public-
-  egress mainland STUN source/server, ECS `/24` plus WAN-device provenance,
+  the sorted domain hash, Google DoH endpoint and `DNSProxy` egress, ordered
+  WAN-bound Bilibili STUN / ipapi.is JSON public-egress
+  provenance, strict `CN` country code for JSON observations, ECS `/24` plus WAN-device provenance,
   report hash, expiry, and policy conflicts before rendering. A WAN interface
   address, HTTP echo, or overseas STUN result is not accepted as public identity.
 - Missing or expired `dnsqualify.json` evidence visibly disables the optional
   optimization and renders the encrypted baseline. Legacy, malformed,
-  fake/private ECS, or conflicting configs still fail explicitly and do not
+  fake/private ECS, non-CN JSON observations, or conflicting configs still fail explicitly and do not
   produce a replacement Mihomo config.
 
 ## 目前最新版本

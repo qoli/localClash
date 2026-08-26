@@ -856,8 +856,8 @@ to explicit bogon/reserved CIDRs and does not treat non-CN GeoIP as pollution.
 Core contains no DNS quality probe, service catalog, candidate scorer, or
 `dnsqualify` command. When the optional v2 `dnsqualify.json` file exists beside
 the runtime profile, Core strictly validates its sorted domain scope and hash,
-encrypted resolver, `DNSProxy` egress, mainland STUN `XOR-MAPPED-ADDRESS`
-source/server, ECS prefix/WAN-device provenance, measurement provenance, and
+encrypted resolver, `DNSProxy` egress, ordered WAN-bound STUN or mainland-only
+ipapi.is JSON public-address source/server, ECS prefix/WAN-device provenance, measurement provenance, and
 expiry. It then applies Google DoH with ECS only to
 the measured exact domains. A missing file leaves optimization visibly disabled;
 an expired file visibly disables optimization while preserving the encrypted
