@@ -546,18 +546,15 @@ policy_groups:
 enabled_packs: []
 `)
 	domains := []string{"cdn.fastly.steamstatic.com", "devstreaming-cdn.apple.com"}
-	domainHash, err := resolverconfig.CanonicalDomainSHA256(domains)
-	if err != nil {
-		t.Fatal(err)
-	}
 	now := time.Now()
 	writeFile(t, resolverconfig.DefaultPath(profilePath), fmt.Sprintf(`{
   "version": 2,
-  "scope": {"type":"domains","id":"mainland-known-services-v2","domains":["cdn.fastly.steamstatic.com","devstreaming-cdn.apple.com"],"domain_sha256":%q},
-  "resolver": {"candidate_id":"google-doh-wan-ecs","source":"global_encrypted_ecs","transport":"doh","endpoint":"https://8.8.8.8/dns-query","proxy":"DNSProxy"},
-  "ecs": {"prefix":"114.114.114.0/24","source":"stun_xor_mapped_address_mainland","interface":"wan","server":"stun.chat.bilibili.com:3478","server_ip":"106.12.251.193"},
-  "measurement": {"report_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","report_finished_at":%q,"resolv_path":"/tmp/resolv.conf.d/resolv.conf.auto","generated_at":%q,"expires_at":%q}
-}`, domainHash, now.Add(-3*time.Minute).Format(time.RFC3339Nano), now.Add(-2*time.Minute).Format(time.RFC3339Nano), now.Add(-time.Minute).Format(time.RFC3339Nano)))
+  "expires_at": %q,
+  "nameserver_policy": {
+    "cdn.fastly.steamstatic.com": ["https://8.8.8.8/dns-query#DNSProxy"],
+    "devstreaming-cdn.apple.com": ["https://8.8.8.8/dns-query#DNSProxy"]
+  }
+}`, now.Add(-time.Minute).Format(time.RFC3339Nano)))
 	outputPath := filepath.Join(paths.dir, "expired-baseline.yaml")
 	result, err := Render(Options{
 		SourcePath: paths.subscription, OutputPath: outputPath,
@@ -599,34 +596,14 @@ enabled_packs: []
 	configPath := resolverconfig.DefaultPath(profilePath)
 	now := time.Now()
 	domains := []string{"cdn.fastly.steamstatic.com", "devstreaming-cdn.apple.com"}
-	domainHash, err := resolverconfig.CanonicalDomainSHA256(domains)
-	if err != nil {
-		t.Fatal(err)
-	}
 	writeFile(t, configPath, fmt.Sprintf(`{
   "version": 2,
-  "scope": {
-    "type": "domains",
-    "id": "mainland-known-services-v2",
-    "domains": ["cdn.fastly.steamstatic.com", "devstreaming-cdn.apple.com"],
-    "domain_sha256": %q
-  },
-  "resolver": {
-    "candidate_id": "google-doh-wan-ecs",
-    "source": "global_encrypted_ecs",
-    "transport": "doh",
-    "endpoint": "https://8.8.8.8/dns-query",
-    "proxy": "DNSProxy"
-  },
-  "ecs": {"prefix": "114.114.114.0/24", "source": "stun_xor_mapped_address_mainland", "interface": "wan", "server": "stun.chat.bilibili.com:3478", "server_ip": "106.12.251.193"},
-  "measurement": {
-    "report_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-    "report_finished_at": %q,
-    "resolv_path": "/tmp/resolv.conf.d/resolv.conf.auto",
-    "generated_at": %q,
-    "expires_at": %q
+  "expires_at": %q,
+  "nameserver_policy": {
+    "cdn.fastly.steamstatic.com": ["https://8.8.8.8/dns-query#DNSProxy"],
+    "devstreaming-cdn.apple.com": ["https://8.8.8.8/dns-query#DNSProxy"]
   }
-}`, domainHash, now.Add(-time.Minute).Format(time.RFC3339Nano), now.Format(time.RFC3339Nano), now.Add(30*time.Minute).Format(time.RFC3339Nano)))
+}`, now.Add(30*time.Minute).Format(time.RFC3339Nano)))
 	result, err := Render(Options{
 		SourcePath: paths.subscription, OutputPath: filepath.Join(paths.dir, "dnsqualify.yaml"),
 		PacksSelectionPath: paths.selection, RulesCacheDir: paths.cacheDir,
@@ -635,7 +612,7 @@ enabled_packs: []
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.ResolverConfig == nil || result.ResolverConfig.Resolver.CandidateID != "google-doh-wan-ecs" {
+	if result.ResolverConfig == nil || len(result.ResolverConfig.NameserverPolicy) != len(domains) {
 		t.Fatalf("resolver config result = %+v", result)
 	}
 	if !result.ResolverStatus.Enabled || result.ResolverStatus.State != "active" {
@@ -643,7 +620,7 @@ enabled_packs: []
 	}
 	config := readTestYAML(t, result.OutputPath)
 	policy := config["dns"].(map[string]any)["nameserver-policy"].(map[string]any)
-	want := "https://8.8.8.8/dns-query#DNSProxy&ecs=114.114.114.0/24&ecs-override=true"
+	want := "https://8.8.8.8/dns-query#DNSProxy"
 	for _, domain := range domains {
 		got := policy[domain].([]any)
 		if len(got) != 1 || got[0] != want {

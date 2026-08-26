@@ -17,21 +17,11 @@ func TestLoadMissingMeansOptionalConfigDisabled(t *testing.T) {
 }
 
 func TestLoadExpiredMeansOptionalConfigExplicitlyDisabled(t *testing.T) {
-	now := time.Now()
 	path := filepath.Join(t.TempDir(), "dnsqualify.json")
-	config := validConfig(now)
-	config.Measurement.ReportFinishedAt = now.Add(-3 * time.Minute).Format(time.RFC3339Nano)
-	config.Measurement.GeneratedAt = now.Add(-2 * time.Minute).Format(time.RFC3339Nano)
-	config.Measurement.ExpiresAt = now.Add(-time.Minute).Format(time.RFC3339Nano)
-	data, err := json.Marshal(config)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, data, 0o600); err != nil {
-		t.Fatal(err)
-	}
+	config := validConfig(time.Now().Add(-time.Minute))
+	writeConfig(t, path, config)
 	result, err := Load(path)
-	if err != nil || result.Config != nil || result.Status.Enabled || result.Status.Reason != "expired" || result.Status.ExpiresAt != config.Measurement.ExpiresAt {
+	if err != nil || result.Config != nil || result.Status.Enabled || result.Status.Reason != "expired" || result.Status.ExpiresAt != config.ExpiresAt {
 		t.Fatalf("result = %+v, error = %v", result, err)
 	}
 }
@@ -46,28 +36,21 @@ func TestLoadRejectsMalformedExistingConfig(t *testing.T) {
 	}
 }
 
-func TestValidateRejectsLegacyExpiredAndUnverifiableECS(t *testing.T) {
+func TestValidateOnlyConsumerContract(t *testing.T) {
 	now := time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC)
 	tests := []struct {
 		name string
 		edit func(*Config)
 		want string
 	}{
-		{name: "legacy", edit: func(config *Config) { config.Version = 1 }, want: "version 1"},
-		{name: "expired", edit: func(config *Config) {
-			config.Measurement.ReportFinishedAt = now.Add(-3 * time.Minute).Format(time.RFC3339Nano)
-			config.Measurement.GeneratedAt = now.Add(-2 * time.Minute).Format(time.RFC3339Nano)
-			config.Measurement.ExpiresAt = now.Add(-time.Minute).Format(time.RFC3339Nano)
-		}, want: "expired"},
-		{name: "private ECS", edit: func(config *Config) { config.ECS.Prefix = "192.168.1.0/24" }, want: "publicly routable"},
-		{name: "documentation ECS", edit: func(config *Config) { config.ECS.Prefix = "203.0.113.0/24" }, want: "publicly routable"},
-		{name: "missing ECS interface", edit: func(config *Config) { config.ECS.Interface = "" }, want: "interface provenance"},
-		{name: "too specific ECS", edit: func(config *Config) { config.ECS.Prefix = "114.114.114.1/32" }, want: "no more than 24"},
-		{name: "scope hash", edit: func(config *Config) { config.Scope.DomainSHA256 = strings.Repeat("b", 64) }, want: "domain_sha256"},
+		{name: "version", edit: func(config *Config) { config.Version = 1 }, want: "version 1"},
+		{name: "empty policy", edit: func(config *Config) { config.NameserverPolicy = nil }, want: "nameserver_policy"},
+		{name: "invalid expiry", edit: func(config *Config) { config.ExpiresAt = "tomorrow" }, want: "invalid expires_at"},
+		{name: "expired", edit: func(config *Config) { config.ExpiresAt = now.Add(-time.Second).Format(time.RFC3339Nano) }, want: "expired"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			config := validConfig(now)
+			config := validConfig(now.Add(time.Minute))
 			test.edit(&config)
 			if err := ValidateAt(config, now); err == nil || !strings.Contains(err.Error(), test.want) {
 				t.Fatalf("ValidateAt error = %v, want %q", err, test.want)
@@ -76,17 +59,10 @@ func TestValidateRejectsLegacyExpiredAndUnverifiableECS(t *testing.T) {
 	}
 }
 
-func TestLoadAndApplyQualifiedECSConfig(t *testing.T) {
-	now := time.Now()
+func TestLoadAndApplyNameserverPolicyOverlay(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "dnsqualify.json")
-	config := validConfig(now)
-	data, err := json.Marshal(config)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, data, 0o600); err != nil {
-		t.Fatal(err)
-	}
+	config := validConfig(time.Now().Add(time.Minute))
+	writeConfig(t, path, config)
 	loaded, err := Load(path)
 	if err != nil {
 		t.Fatal(err)
@@ -102,11 +78,10 @@ func TestLoadAndApplyQualifiedECSConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	policy := dns["nameserver-policy"].(map[string]any)
-	want := "https://8.8.8.8/dns-query#DNSProxy&ecs=114.114.114.0/24&ecs-override=true"
-	for _, domain := range config.Scope.Domains {
+	for domain, want := range config.NameserverPolicy {
 		got := policy[domain].([]string)
-		if len(got) != 1 || got[0] != want {
-			t.Fatalf("policy[%q] = %#v, want %q", domain, got, want)
+		if len(got) != 1 || got[0] != want[0] {
+			t.Fatalf("policy[%q] = %#v, want %#v", domain, got, want)
 		}
 	}
 	if len(dns["proxy-server-nameserver"].([]string)) != 1 {
@@ -114,59 +89,39 @@ func TestLoadAndApplyQualifiedECSConfig(t *testing.T) {
 	}
 }
 
-func TestValidateAcceptsHTTPSJSONECSProvenanceOnlyForMainland(t *testing.T) {
-	now := time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC)
-	for _, test := range []struct {
-		name     string
-		source   string
-		server   string
-		serverIP string
-	}{
-		{name: "ipapi", source: ECSHTTPSIPAPIIS, server: IPAPIISServer, serverIP: "5.223.55.72"},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			config := validConfig(now)
-			config.ECS.Source = test.source
-			config.ECS.Server = test.server
-			config.ECS.ServerIP = test.serverIP
-			config.ECS.CountryCode = "CN"
-			if err := ValidateAt(config, now); err != nil {
-				t.Fatal(err)
-			}
-			config.ECS.CountryCode = "HK"
-			if err := ValidateAt(config, now); err == nil || !strings.Contains(err.Error(), "country code must be CN") {
-				t.Fatalf("ValidateAt error = %v", err)
-			}
-		})
-	}
-}
-
-func TestApplyRejectsPolicyConflict(t *testing.T) {
-	now := time.Now()
-	config := validConfig(now)
+func TestApplyRejectsPolicyConflictWithoutPartialMutation(t *testing.T) {
+	config := validConfig(time.Now().Add(time.Minute))
+	conflict := "devstreaming-cdn.apple.com"
 	dns := map[string]any{"nameserver-policy": map[string]any{
-		config.Scope.Domains[0]: []string{"https://existing.example/dns-query"},
+		conflict: []string{"https://existing.example/dns-query"},
 	}}
 	if err := Apply(map[string]any{"dns": dns}, config); err == nil || !strings.Contains(err.Error(), "conflicts") {
 		t.Fatalf("Apply error = %v, want explicit policy conflict", err)
 	}
+	policy := dns["nameserver-policy"].(map[string]any)
+	if len(policy) != 1 {
+		t.Fatalf("conflicting overlay partially mutated policy: %#v", policy)
+	}
 }
 
-func validConfig(now time.Time) Config {
-	domains := []string{"cdn.fastly.steamstatic.com", "devstreaming-cdn.apple.com"}
-	hash, _ := CanonicalDomainSHA256(domains)
+func validConfig(expires time.Time) Config {
+	server := "https://8.8.8.8/dns-query#DNSProxy"
 	return Config{
-		Version: Version,
-		Scope:   Scope{Type: ScopeTypeDomains, ID: "mainland-known-services-v2", Domains: domains, DomainSHA256: hash},
-		Resolver: Resolver{
-			CandidateID: "google-doh-wan-ecs", Source: "global_encrypted_ecs",
-			Transport: "doh", Endpoint: "https://8.8.8.8/dns-query", Proxy: DNSProxyGroup,
+		Version: Version, ExpiresAt: expires.Format(time.RFC3339Nano),
+		NameserverPolicy: map[string][]string{
+			"cdn.fastly.steamstatic.com": {server},
+			"devstreaming-cdn.apple.com": {server},
 		},
-		ECS: ECS{Prefix: "114.114.114.0/24", Source: ECSSTUNMainland, Interface: "wan", Server: MainlandSTUNServer, ServerIP: "106.12.251.193"},
-		Measurement: Measurement{
-			ReportSHA256: strings.Repeat("a", 64), ReportFinishedAt: now.Add(-time.Minute).Format(time.RFC3339Nano),
-			ResolvPath: "/tmp/resolv.conf.auto", GeneratedAt: now.Format(time.RFC3339Nano),
-			ExpiresAt: now.Add(30 * time.Minute).Format(time.RFC3339Nano),
-		},
+	}
+}
+
+func writeConfig(t *testing.T, path string, config Config) {
+	t.Helper()
+	data, err := json.Marshal(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
 	}
 }

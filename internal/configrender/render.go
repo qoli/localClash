@@ -145,10 +145,8 @@ func Render(opts Options) (Result, error) {
 	fields := map[string]any{"dnsqualify_config": resolverConfig != nil, "mode": "disabled", "state": resolverLoad.Status.State, "reason": resolverLoad.Status.Reason}
 	if resolverConfig != nil {
 		fields["mode"] = resolverconfig.ModeDNSQualify
-		fields["scope"] = resolverConfig.Scope.ID
-		fields["domain_count"] = len(resolverConfig.Scope.Domains)
-		fields["endpoint"] = resolverConfig.Resolver.Endpoint
-		fields["ecs_prefix"] = resolverConfig.ECS.Prefix
+		fields["policy_count"] = len(resolverConfig.NameserverPolicy)
+		fields["expires_at"] = resolverConfig.ExpiresAt
 	}
 	finish(nil, fields)
 

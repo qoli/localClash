@@ -23,16 +23,18 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 - The encrypted baseline now uses one AliDNS DoH main resolver and an explicit
   lazy Google DoH fallback through `DNSProxy`; fallback filtering keeps the
   reserved/bogon CIDRs but disables the coarse `geoip-code: CN` classifier.
-- `dnsqualify.json` is now a strict v2 exact-domain contract. Core validates
-  the sorted domain hash, Google DoH endpoint and `DNSProxy` egress, ordered
-  WAN-bound Bilibili STUN / ipapi.is JSON public-egress
-  provenance, strict `CN` country code for JSON observations, ECS `/24` plus WAN-device provenance,
-  report hash, expiry, and policy conflicts before rendering. A WAN interface
-  address, HTTP echo, or overseas STUN result is not accepted as public identity.
-- Missing or expired `dnsqualify.json` evidence visibly disables the optional
-  optimization and renders the encrypted baseline. Legacy, malformed,
-  fake/private ECS, non-CN JSON observations, or conflicting configs still fail explicitly and do not
-  produce a replacement Mihomo config.
+- `dnsqualify.json` is now a narrow v2 `nameserver_policy` overlay. Core knows
+  only the overlay version and expiry, refuses policy overwrites, verifies its
+  own `DNSProxy` reference, and delegates the complete rendered config to
+  `mihomo -t`; it no longer contains STUN, HTTP provider, WAN, country, ECS, or
+  candidate-scoring validation.
+- Public-address acquisition, strict `CN` validation for JSON observations,
+  ECS prefix validation, exact-domain qualification, and complete provenance
+  remain inside standalone dnsqualify and its separate report for LuCI.
+- Missing or expired `dnsqualify.json` visibly disables the optional
+  optimization and renders the encrypted baseline. Malformed or conflicting
+  overlays still fail explicitly and do not produce a replacement Mihomo
+  config.
 
 ## 目前最新版本
 
