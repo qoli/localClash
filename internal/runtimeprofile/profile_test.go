@@ -279,10 +279,10 @@ func assertMainlandReachableDNS(t *testing.T, mihomo map[string]any, listen stri
 		}
 	}
 	for key, want := range map[string][]any{
-		"nameserver":              {"https://dns.alidns.com/dns-query"},
-		"proxy-server-nameserver": {"https://dns.alidns.com/dns-query", "https://doh.pub/dns-query"},
-		"direct-nameserver":       {"https://dns.alidns.com/dns-query"},
-		"default-nameserver":      {"223.5.5.5", "223.6.6.6"},
+		"nameserver":              {"https://223.5.5.5/dns-query"},
+		"proxy-server-nameserver": {"https://223.5.5.5/dns-query"},
+		"direct-nameserver":       {"https://223.5.5.5/dns-query"},
+		"default-nameserver":      {"https://223.5.5.5/dns-query"},
 	} {
 		if !reflect.DeepEqual(dns[key], want) {
 			t.Fatalf("%s dns %s = %+v, want mainland-reachable defaults %+v", label, key, dns[key], want)
@@ -294,17 +294,21 @@ func assertMainlandReachableDNS(t *testing.T, mihomo map[string]any, listen stri
 			t.Fatalf("%s dns must not ship foreign DoT default %q: %+v", label, forbidden, dns)
 		}
 	}
-	globalResolvers := []any{"https://cloudflare-dns.com/dns-query#DNSProxy", "https://dns.google/dns-query#DNSProxy"}
+	globalResolvers := []any{"https://8.8.8.8/dns-query#DNSProxy"}
 	if !reflect.DeepEqual(dns["fallback"], globalResolvers) {
 		t.Fatalf("%s dns fallback = %+v, want global DoH through DNSProxy %+v", label, dns["fallback"], globalResolvers)
 	}
+	if dns["fallback-lazy-query"] != true {
+		t.Fatalf("%s dns fallback-lazy-query = %+v, want explicit lazy fallback", label, dns["fallback-lazy-query"])
+	}
 	policy, ok := dns["nameserver-policy"].(map[string]any)
-	if !ok || !reflect.DeepEqual(policy["geosite:gfw"], globalResolvers) {
+	gfwResolvers := []any{"https://1.1.1.1/dns-query#DNSProxy"}
+	if !ok || !reflect.DeepEqual(policy["geosite:gfw"], gfwResolvers) {
 		t.Fatalf("%s dns nameserver-policy = %+v, want geosite:gfw through DNSProxy DoH", label, dns["nameserver-policy"])
 	}
 	filter, ok := dns["fallback-filter"].(map[string]any)
-	if !ok || filter["geoip"] != true || filter["geoip-code"] != "CN" || filter["geosite"] != nil {
-		t.Fatalf("%s dns fallback-filter = %+v, want geoip CN and no deprecated geosite filter", label, dns["fallback-filter"])
+	if !ok || filter["geoip"] != false || filter["geoip-code"] != nil || filter["geosite"] != nil {
+		t.Fatalf("%s dns fallback-filter = %+v, want explicit CIDR-only filtering", label, dns["fallback-filter"])
 	}
 }
 

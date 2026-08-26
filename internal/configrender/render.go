@@ -16,7 +16,6 @@ import (
 	rulespkg "localclash/internal/rules"
 	"localclash/internal/runtimeprofile"
 	"localclash/internal/smartpolicy"
-	"localclash/internal/wandns"
 
 	"gopkg.in/yaml.v3"
 )
@@ -38,8 +37,6 @@ type Options struct {
 	RulesCacheDir      string
 	RuntimeProfilePath string
 	ResolverConfigPath string
-	WANResolvPath      string
-	WANProbe           wandns.ProbeFunc `json:"-"`
 	Force              bool
 	OnStage            func(StageEvent) `json:"-"`
 }
@@ -51,7 +48,7 @@ type Result struct {
 	ProxyCount     int
 	RuleCount      int
 	ResolverConfig *resolverconfig.Config `json:"resolver_config,omitempty"`
-	DNSSelection   *wandns.Selection      `json:"dns_selection,omitempty"`
+	ResolverStatus resolverconfig.Status  `json:"resolver_status"`
 }
 
 type ruleSpec struct {
@@ -126,13 +123,13 @@ func Render(opts Options) (Result, error) {
 	}
 	finish(nil, map[string]any{"runtime_mode": runtimeFile.Mode, "core": runtimeFile.Core})
 
-	finish = stage("select_dns", map[string]any{"resolver_config_path": opts.ResolverConfigPath, "wan_resolv_path": opts.WANResolvPath})
-	resolverConfig, err := resolverconfig.Load(opts.ResolverConfigPath)
+	finish = stage("apply_dns_optimization", map[string]any{"resolver_config_path": opts.ResolverConfigPath})
+	resolverLoad, err := resolverconfig.Load(opts.ResolverConfigPath)
 	if err != nil {
 		finish(err, nil)
 		return Result{}, err
 	}
-	var dnsSelection *wandns.Selection
+	resolverConfig := resolverLoad.Config
 	builtinRouter := runtimeFile.Mode == runtimeprofile.ModeRouter && profile.Path == "builtin:"+runtimeprofile.ModeRouter
 	if resolverConfig != nil {
 		if !builtinRouter {
@@ -144,23 +141,14 @@ func Render(opts Options) (Result, error) {
 			finish(err, nil)
 			return Result{}, err
 		}
-		dnsSelection = &wandns.Selection{
-			Mode: resolverconfig.ModeDNSQualify, Scope: resolverconfig.ScopeMainlandServices,
-			Endpoints: []string{resolverConfig.Resolver.Endpoint}, ResolvPath: resolverConfig.Measurement.ResolvPath,
-		}
-	} else if builtinRouter {
-		selected := wandns.Select(opts.WANResolvPath, opts.WANProbe)
-		if err := applyDNSSelection(profile.Mihomo, selected.Endpoints); err != nil {
-			finish(err, nil)
-			return Result{}, err
-		}
-		dnsSelection = &selected
 	}
-	fields := map[string]any{"dnsqualify_config": resolverConfig != nil}
-	if dnsSelection != nil {
-		fields["mode"] = dnsSelection.Mode
-		fields["endpoints"] = dnsSelection.Endpoints
-		fields["fallback_reason"] = dnsSelection.FallbackReason
+	fields := map[string]any{"dnsqualify_config": resolverConfig != nil, "mode": "disabled", "state": resolverLoad.Status.State, "reason": resolverLoad.Status.Reason}
+	if resolverConfig != nil {
+		fields["mode"] = resolverconfig.ModeDNSQualify
+		fields["scope"] = resolverConfig.Scope.ID
+		fields["domain_count"] = len(resolverConfig.Scope.Domains)
+		fields["endpoint"] = resolverConfig.Resolver.Endpoint
+		fields["ecs_prefix"] = resolverConfig.ECS.Prefix
 	}
 	finish(nil, fields)
 
@@ -265,7 +253,7 @@ func Render(opts Options) (Result, error) {
 		ProxyCount:     len(proxyNames),
 		RuleCount:      len(rendered["rules"].([]string)),
 		ResolverConfig: resolverConfig,
-		DNSSelection:   dnsSelection,
+		ResolverStatus: resolverLoad.Status,
 	}, nil
 }
 
@@ -623,26 +611,7 @@ func normalizeOptions(opts Options) Options {
 	if opts.ResolverConfigPath == "" {
 		opts.ResolverConfigPath = resolverconfig.DefaultPath(opts.RuntimeProfilePath)
 	}
-	if opts.WANResolvPath == "" {
-		opts.WANResolvPath = wandns.DefaultResolvPath
-	}
 	return opts
-}
-
-func applyDNSSelection(mihomo map[string]any, endpoints []string) error {
-	if len(endpoints) == 0 {
-		return errors.New("DNS selection endpoints are required")
-	}
-	dns, ok := mihomo["dns"].(map[string]any)
-	if !ok {
-		return errors.New("runtime profile DNS configuration is missing or invalid")
-	}
-	policy, ok := dns["nameserver-policy"].(map[string]any)
-	if !ok {
-		return errors.New("runtime profile nameserver-policy is missing or invalid")
-	}
-	policy[resolverconfig.ScopeMainlandServices] = append([]string{}, endpoints...)
-	return nil
 }
 
 func ensureOutput(path string, force bool) error {
