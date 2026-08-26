@@ -22,10 +22,50 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
-| localClash Core | [v0.1.62](https://github.com/qoli/localClash/releases/tag/v0.1.62) | 2026-08-26 UTC+8 |
-| localclash-luci | [v0.1.0-54](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-54) | 2026-08-26 UTC+8 |
+| localClash Core | [v0.1.63](https://github.com/qoli/localClash/releases/tag/v0.1.63) | 2026-08-26 UTC+8 |
+| localclash-luci | [v0.1.0-55](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-55) | 2026-08-26 UTC+8 |
 
 ## 2026-08-26
+
+### localClash Core v0.1.63
+
+Changes:
+
+- Resolver overlay 改為真正的可選 module：無法讀取、解碼、驗證或合併時，Core
+  會捨棄整份 overlay、回報 `disabled/rejected` 與原始原因，並繼續生成 secure
+  baseline，不再讓 dnsqualify 子系統失效中止一鍵更新或 Mihomo 啟動流程。
+- Config renderer 只依賴 `ApplyOptional` 與 generic `Status`；overlay 的版本、欄位、
+  load、validate 與 apply 都封裝在 resolverconfig implementation，Core caller 不再
+  辨識舊版 dnsqualify schema。
+- 被拒絕或發生 policy 衝突的 overlay 不會局部修改 baseline；只有完整通過 module
+  驗收的 overlay 才會套用。
+
+Release:
+
+- [qoli/localClash v0.1.63](https://github.com/qoli/localClash/releases/tag/v0.1.63)
+
+Verification:
+
+- `go test ./...` 與 `go vet ./...` 通過；回歸測試覆蓋舊格式、未知／混合欄位、
+  無效 overlay 與 policy 衝突，確認它們只停用可選能力且不修改 secure baseline。
+- 以路由器一鍵更新日誌中的舊 `scope/resolver/ecs/measurement` 輸入重現
+  `unknown field`，修正後 config render 成功並回報 generic `rejected` 狀態。
+
+### localclash-luci v0.1.0-55
+
+Changes:
+
+- 一鍵更新下載器會拒絕無效或不完整的下載內容，不會把錯誤頁面當成安裝包。
+
+Release:
+
+- [qoli/localclash-luci v0.1.0-55](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-55)
+
+Verification:
+
+- [main CI 32966536465](https://github.com/qoli/localclash-luci/actions/runs/32966536465)
+  與 [Release workflow 32966705248](https://github.com/qoli/localclash-luci/actions/runs/32966705248)
+  成功；公開 Release 包含完整 13 個受管資產。
 
 ### localClash Core v0.1.62
 
