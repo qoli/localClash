@@ -16,32 +16,41 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 
 ## Unreleased
 
-### DNS authority and qualified ECS refactor
-
-- Builtin router rendering no longer discovers, probes, races, or injects WAN
-  resolver lists into `geosite:cn`.
-- The encrypted baseline now uses one AliDNS DoH main resolver and an explicit
-  lazy Google DoH fallback through `DNSProxy`; fallback filtering keeps the
-  reserved/bogon CIDRs but disables the coarse `geoip-code: CN` classifier.
-- `dnsqualify.json` is now a narrow v2 `nameserver_policy` overlay. Core knows
-  only the overlay version and expiry, refuses policy overwrites, verifies its
-  own `DNSProxy` reference, and delegates the complete rendered config to
-  `mihomo -t`; it no longer contains STUN, HTTP provider, WAN, country, ECS, or
-  candidate-scoring validation.
-- Public-address acquisition, strict `CN` validation for JSON observations,
-  ECS prefix validation, exact-domain qualification, and complete provenance
-  remain inside standalone dnsqualify and its separate report for LuCI.
-- Missing or expired `dnsqualify.json` visibly disables the optional
-  optimization and renders the encrypted baseline. Malformed or conflicting
-  overlays still fail explicitly and do not produce a replacement Mihomo
-  config.
+- 暫無。
 
 ## 目前最新版本
 
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
-| localClash Core | [v0.1.61](https://github.com/qoli/localClash/releases/tag/v0.1.61) | 2026-08-21 UTC+8 |
+| localClash Core | [v0.1.62](https://github.com/qoli/localClash/releases/tag/v0.1.62) | 2026-08-26 UTC+8 |
 | localclash-luci | [v0.1.0-53](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-53) | 2026-08-21 UTC+8 |
+
+## 2026-08-26
+
+### localClash Core v0.1.62
+
+Changes:
+
+- 內建 router profile 不再發現、競速或注入 WAN resolver；加密 DNS 基線改為
+  AliDNS DoH 主查詢與經 `DNSProxy` 的 lazy Google DoH fallback，污染判斷只保留
+  明確的 bogon／reserved CIDR，不再使用粗粒度 `geoip-code: CN`。
+- Core 改為只消費有版本與有效期的 `nameserver_policy` overlay，拒絕覆蓋既有
+  policy，並把完整生成配置交給 `mihomo -t`。STUN、HTTP provider、WAN、country、
+  ECS 與候選評分全部留在獨立 dnsqualify，不再進入 Core interface。
+- 缺少或過期的 overlay 會明確停用這項可選最佳化並保留加密基線；格式損壞或
+  policy 衝突仍會停止 render，不會產生看似有效的替代配置。
+
+Release:
+
+- [qoli/localClash v0.1.62](https://github.com/qoli/localClash/releases/tag/v0.1.62)
+
+Verification:
+
+- Core 與 dnsqualify 的 `go test ./...`、`go vet ./...`，以及 LuCI rpcd／shell／
+  JavaScript 測試與 IPK／APK build 全部通過。
+- iStoreOS 24.10.8 VM 實測中國境內 STUN 與阻斷 UDP/3478 後的 `ipapi.is` JSON
+  路徑，兩者均取得 `14.216.16.0/24`；overlay 經 Core 合併後由 Mihomo v1.19.30
+  `-t` 驗證通過。測試後已回復 secure baseline，未啟動 Mihomo runtime。
 
 ## 2026-08-21
 
