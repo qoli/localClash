@@ -23,7 +23,7 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
 | localClash Core | [v0.1.62](https://github.com/qoli/localClash/releases/tag/v0.1.62) | 2026-08-26 UTC+8 |
-| localclash-luci | [v0.1.0-53](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-53) | 2026-08-21 UTC+8 |
+| localclash-luci | [v0.1.0-54](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-54) | 2026-08-26 UTC+8 |
 
 ## 2026-08-26
 
@@ -51,6 +51,33 @@ Verification:
 - iStoreOS 24.10.8 VM 實測中國境內 STUN 與阻斷 UDP/3478 後的 `ipapi.is` JSON
   路徑，兩者均取得 `14.216.16.0/24`；overlay 經 Core 合併後由 Mihomo v1.19.30
   `-t` 驗證通過。測試後已回復 secure baseline，未啟動 Mihomo runtime。
+- [Release workflow 32963080157](https://github.com/qoli/localClash/actions/runs/32963080157)
+  成功；公開 Release 的 7 個資產均已回讀，三份 SHA256 與 amd64／arm64 ELF
+  架構驗證通過。
+
+### localclash-luci v0.1.0-54
+
+Changes:
+
+- LuCI 改為只從獨立 `dnsqualify-report.json` 顯示 provider、STUN／JSON source、
+  country code 與 ECS provenance；交給 Core 的 overlay 僅保留 policy、版本與有效期。
+- 離線套件鎖定 dnsqualify source commit
+  `999fe9c0fc92894c90a0d429c669e3a83a011fd7`，公網 IP 依序採用中國境內 STUN，
+  再使用必須嚴格回報 `country_code == CN` 的 `ipapi.is` JSON 路徑。
+- 離線 bundle 鎖定 Core v0.1.62；RFC3339 expiry parser 明確支援 OpenWrt BusyBox、
+  GNU coreutils 與 Darwin `date`，無效時間或不支援的平台仍直接失敗。
+
+Release:
+
+- [qoli/localclash-luci v0.1.0-54](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-54)
+
+Verification:
+
+- [main CI 32963836603](https://github.com/qoli/localclash-luci/actions/runs/32963836603)
+  與 [Release workflow 32964037005](https://github.com/qoli/localclash-luci/actions/runs/32964037005)
+  成功。
+- 公開 Release 的 13 個專案資產均已回讀；6 份 sidecar SHA256 全部通過，
+  x86_64／aarch64 `.run` 的 `--info`、`--list`、`--check` 與 `--noexec` 均通過。
 
 ## 2026-08-21
 
