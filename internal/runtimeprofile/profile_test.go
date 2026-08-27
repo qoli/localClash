@@ -67,9 +67,6 @@ func TestConfigureWritesModeAndCore(t *testing.T) {
 	if status.RuntimeSource != RuntimeSourceBuiltin {
 		t.Fatalf("runtime source = %q, want builtin", status.RuntimeSource)
 	}
-	if !status.RouterTakeoverRequired {
-		t.Fatal("router profile should require router takeover after run_runtime")
-	}
 	if status.SmartGroupDefault.URL != "https://cp.cloudflare.com/generate_204" || status.SmartGroupDefault.Interval != 600 {
 		t.Fatalf("smart defaults = %+v, want OpenClash-style health check defaults", status.SmartGroupDefault)
 	}
@@ -137,12 +134,6 @@ func TestDefaultRouterProfileMatchesRouterReferencePreferences(t *testing.T) {
 	sniffer := mihomo["sniffer"].(map[string]any)
 	if sniffer["enable"] != true || sniffer["override-destination"] != true || sniffer["force-dns-mapping"] != true || sniffer["parse-pure-ip"] != true {
 		t.Fatalf("router sniffer = %+v, want enabled DNS mapping and pure-IP parsing", sniffer)
-	}
-	if _, ok := profile.Deploy["openclash-conflict"]; ok {
-		t.Fatalf("router deploy must not contain OpenClash conflict policy: %+v", profile.Deploy)
-	}
-	if _, ok := profile.Deploy["wan-interface"]; ok {
-		t.Fatalf("router deploy must not pin Ronnie's WAN interface: %+v", profile.Deploy)
 	}
 }
 

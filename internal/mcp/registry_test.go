@@ -39,8 +39,8 @@ func TestRegistryIncludesSafetyLevels(t *testing.T) {
 	if byName["runtime_status"].SafetyLevel != SafeRead {
 		t.Fatalf("runtime_status safety = %q, want %q", byName["runtime_status"].SafetyLevel, SafeRead)
 	}
-	if byName["router_takeover_status"].SafetyLevel != SafeRead {
-		t.Fatalf("router_takeover_status safety = %q, want %q", byName["router_takeover_status"].SafetyLevel, SafeRead)
+	if byName["runtime_facts"].SafetyLevel != SafeRead {
+		t.Fatalf("runtime_facts safety = %q, want %q", byName["runtime_facts"].SafetyLevel, SafeRead)
 	}
 	if byName["routing_explain"].SafetyLevel != SafeRead {
 		t.Fatalf("routing_explain safety = %q, want %q", byName["routing_explain"].SafetyLevel, SafeRead)
@@ -126,14 +126,8 @@ func TestRegistryIncludesSafetyLevels(t *testing.T) {
 	if byName["stop_runtime"].SafetyLevel != ConfirmRequired {
 		t.Fatalf("stop_runtime safety = %q, want %q", byName["stop_runtime"].SafetyLevel, ConfirmRequired)
 	}
-	if !strings.Contains(byName["stop_runtime"].Description, "router_takeover_stop") || !strings.Contains(byName["stop_runtime"].Description, "force=true") {
-		t.Fatalf("stop_runtime description missing takeover guard guidance: %q", byName["stop_runtime"].Description)
-	}
-	if byName["router_takeover_apply"].SafetyLevel != ConfirmRequired {
-		t.Fatalf("router_takeover_apply safety = %q, want %q", byName["router_takeover_apply"].SafetyLevel, ConfirmRequired)
-	}
-	if byName["router_takeover_stop"].SafetyLevel != ConfirmRequired {
-		t.Fatalf("router_takeover_stop safety = %q, want %q", byName["router_takeover_stop"].SafetyLevel, ConfirmRequired)
+	if !strings.Contains(byName["stop_runtime"].Description, "platform integration") {
+		t.Fatalf("stop_runtime description missing platform ownership guidance: %q", byName["stop_runtime"].Description)
 	}
 	if !strings.Contains(byName["run_runtime"].Description, "network connectivity") || !strings.Contains(byName["run_runtime"].Description, "Agent itself") {
 		t.Fatalf("run_runtime description missing network risk: %q", byName["run_runtime"].Description)
@@ -163,7 +157,7 @@ func TestRuntimeSchemasExposeForceConfigTest(t *testing.T) {
 }
 
 func TestRuntimeSchemasUseServerStatePaths(t *testing.T) {
-	for _, name := range []string{"run_runtime", "restart_runtime", "runtime_status", "router_takeover_status", "router_takeover_apply", "router_takeover_stop", "stop_runtime"} {
+	for _, name := range []string{"run_runtime", "restart_runtime", "runtime_status", "runtime_facts", "stop_runtime"} {
 		schema := inputSchemaForTool(name)
 		properties := schema["properties"].(map[string]any)
 		for _, forbidden := range []string{

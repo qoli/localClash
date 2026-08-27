@@ -173,6 +173,51 @@ func TestRunProductStatusPrintsJSONEnvelope(t *testing.T) {
 	}
 }
 
+func TestRunProductRuntimeFactsUsesGeneratedConfig(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("LOCALCLASH_WORKDIR", dir)
+	t.Chdir(dir)
+	writeMainTestFile(t, filepath.Join(dir, "localclash-runtime.json"), `{"version":2,"mode":"router","core":"meta"}`)
+	writeMainTestFile(t, filepath.Join(dir, ".runtime", "mihomo", "config.yaml"), `redir-port: 17892
+tproxy-port: 17895
+ipv6: true
+external-controller: 127.0.0.1:19090
+dns:
+  listen: 0.0.0.0:17874
+tun:
+  enable: true
+  device: lc-test-tun
+  auto-route: false
+  auto-redirect: false
+`)
+
+	output := captureStdout(t, func() error {
+		return run([]string{"runtime", "facts", "--json"})
+	})
+	var result struct {
+		OK     bool `json:"ok"`
+		Status struct {
+			SchemaVersion  int    `json:"schema_version"`
+			ProfileMode    string `json:"profile_mode"`
+			RuntimeRunning bool   `json:"runtime_running"`
+			DNSPort        int    `json:"dns_port"`
+			RedirPort      int    `json:"redir_port"`
+			TProxyPort     int    `json:"tproxy_port"`
+			TunDevice      string `json:"tun_device"`
+			ConfigSHA256   string `json:"config_sha256"`
+		} `json:"status"`
+	}
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
+		t.Fatalf("runtime facts JSON = %q, error = %v", output, err)
+	}
+	if !result.OK || result.Status.SchemaVersion != 1 || result.Status.ProfileMode != "router" || result.Status.RuntimeRunning {
+		t.Fatalf("runtime facts identity = %+v", result)
+	}
+	if result.Status.DNSPort != 17874 || result.Status.RedirPort != 17892 || result.Status.TProxyPort != 17895 || result.Status.TunDevice != "lc-test-tun" || result.Status.ConfigSHA256 == "" {
+		t.Fatalf("runtime facts network = %+v", result.Status)
+	}
+}
+
 func TestRunProductResetFullDryRunPrintsJSONEnvelope(t *testing.T) {
 	parent := t.TempDir()
 	dir := filepath.Join(parent, "localclash")
@@ -708,41 +753,6 @@ func TestRunProductRuntimeRestartAcceptsStrategy(t *testing.T) {
 	}
 	if !result.OK || result.Status.AppliedStrategy != "process_restart" || result.Status.Start.PID == 0 {
 		t.Fatalf("runtime restart result = %+v, want process_restart runtime", result)
-	}
-}
-
-func TestRunProductTakeoverApplyFailureReturnsErrorEnvelope(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("LOCALCLASH_WORKDIR", dir)
-	t.Chdir(dir)
-	writeMainTestFile(t, "localclash-runtime.json", `{"version":2,"mode":"router","core":"meta"}`)
-
-	output, err := captureStdoutAllowError(t, func() error {
-		return run([]string{"takeover", "apply", "--json"})
-	})
-	if err == nil || !strings.Contains(err.Error(), "run_runtime") {
-		t.Fatalf("takeover apply error = %v, output = %s; want run_runtime failure", err, output)
-	}
-	var result struct {
-		OK      bool   `json:"ok"`
-		Code    string `json:"code"`
-		Message string `json:"message"`
-		Details struct {
-			Error  string `json:"error"`
-			Checks []struct {
-				ID string `json:"id"`
-				OK bool   `json:"ok"`
-			} `json:"checks"`
-		} `json:"details"`
-	}
-	if err := json.Unmarshal([]byte(output), &result); err != nil {
-		t.Fatalf("takeover apply JSON = %q, error = %v", output, err)
-	}
-	if result.OK || result.Code != "router_takeover_apply_failed" || !strings.Contains(result.Message, "run_runtime") || !strings.Contains(result.Details.Error, "run_runtime") {
-		t.Fatalf("takeover apply result = %+v, want ok=false router takeover failure", result)
-	}
-	if len(result.Details.Checks) == 0 || result.Details.Checks[0].ID != "runtime_running" || result.Details.Checks[0].OK {
-		t.Fatalf("takeover apply checks = %+v, want runtime_running failure", result.Details.Checks)
 	}
 }
 

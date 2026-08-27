@@ -26,7 +26,7 @@ import (
 	"localclash/internal/localconfig"
 	"localclash/internal/policytemplate"
 	"localclash/internal/reset"
-	"localclash/internal/routertakeover"
+	"localclash/internal/runtimefacts"
 	"localclash/internal/runtimeprofile"
 	"localclash/internal/subscriptions"
 	"localclash/internal/workspace"
@@ -86,8 +86,6 @@ func runProductCommand(args []string, state appinit.RuntimeState) (bool, error) 
 		}
 	case "runtime":
 		err = runProductRuntime(args[1:], state)
-	case "takeover":
-		err = runProductTakeover(args[1:], state)
 	case "apply":
 		err = runProductApply(args[1:], state)
 	case "reset":
@@ -114,7 +112,7 @@ func productCommandWasHandled(args []string) bool {
 		return false
 	}
 	switch args[0] {
-	case "component", "runtime", "takeover", "apply":
+	case "component", "runtime", "apply":
 		return true
 	case "status":
 		return hasFlag(args[1:], "json")
@@ -475,7 +473,7 @@ func runProductConfig(args []string, state appinit.RuntimeState) error {
 
 func runProductRuntime(args []string, state appinit.RuntimeState) error {
 	if len(args) == 0 {
-		return fmt.Errorf("runtime subcommand is required: status, start, restart, or stop")
+		return fmt.Errorf("runtime subcommand is required: status, facts, start, restart, or stop")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
 	defer cancel()
@@ -486,6 +484,19 @@ func runProductRuntime(args []string, state appinit.RuntimeState) error {
 		}
 		result := corerun.Status(runtimeStatusOptions(state))
 		return printProductOK(productEnvelope{OK: true, Summary: "Runtime status read.", Status: result, Changes: []string{}, Warnings: []string{}})
+	case "facts":
+		if err := parseJSONOnly("runtime facts", args[1:]); err != nil {
+			return err
+		}
+		result, err := runtimefacts.Read(ctx, runtimefacts.Options{
+			RuntimeProfile: state.Paths.RuntimeProfilePath,
+			ConfigPath:     state.Paths.GeneratedConfig,
+			RuntimeDir:     state.Paths.MihomoRuntimeDir,
+		})
+		if err != nil {
+			return err
+		}
+		return printProductOK(productEnvelope{OK: true, Summary: "Runtime network facts read.", Status: result, Changes: []string{}, Warnings: []string{}})
 	case "start":
 		if err := parseJSONOnly("runtime start", args[1:]); err != nil {
 			return err
@@ -556,65 +567,6 @@ func parseRuntimeRestartInput(args []string) (runtimeRestartInput, error) {
 	return input, nil
 }
 
-func runProductTakeover(args []string, state appinit.RuntimeState) error {
-	if len(args) == 0 {
-		return fmt.Errorf("takeover subcommand is required: status, apply, or stop")
-	}
-	if err := parseJSONOnly("takeover "+args[0], args[1:]); err != nil {
-		return err
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	defer cancel()
-	opts := routerTakeoverOptions(state)
-	switch args[0] {
-	case "status":
-		result, err := routertakeover.Status(ctx, opts)
-		if err != nil {
-			if errors.Is(err, context.DeadlineExceeded) {
-				return codedProductError{
-					code:    "router_takeover_status_timeout",
-					message: "router takeover status observation timed out; actual takeover state is unknown",
-					details: map[string]any{"timeout_seconds": int(routertakeover.StatusObservationTimeout / time.Second)},
-					nextActions: []string{
-						"retry router takeover status after router load decreases",
-						"inspect router logs and nft command latency if the timeout repeats",
-					},
-				}
-			}
-			return err
-		}
-		return printProductOK(productEnvelope{OK: true, Summary: "Router takeover status read.", Status: result, Changes: []string{}, Warnings: result.Warnings, NextActions: result.NextActions})
-	case "apply":
-		result, err := routertakeover.Apply(ctx, opts)
-		if err != nil {
-			return err
-		}
-		if result.Error != "" || !result.Applied {
-			message := strings.TrimSpace(result.Error)
-			if message == "" {
-				message = "router takeover apply did not complete"
-			}
-			return codedProductError{code: "router_takeover_apply_failed", message: message, details: result, nextActions: result.NextActions}
-		}
-		return printProductOK(productEnvelope{OK: true, Changed: result.Applied, Summary: "Router takeover apply completed.", Status: result, Changes: changedIf(result.Applied, "takeover_applied"), Warnings: result.Warnings, NextActions: result.NextActions})
-	case "stop":
-		result, err := routertakeover.Stop(ctx, opts)
-		if err != nil {
-			return err
-		}
-		if result.Error != "" || !result.Stopped {
-			message := strings.TrimSpace(result.Error)
-			if message == "" {
-				message = "router takeover stop did not complete"
-			}
-			return codedProductError{code: "router_takeover_stop_failed", message: message, details: result, nextActions: result.NextActions}
-		}
-		return printProductOK(productEnvelope{OK: true, Changed: result.Stopped, Summary: "Router takeover stop completed.", Status: result, Changes: changedIf(result.Stopped, "takeover_stopped"), Warnings: result.Warnings, NextActions: result.NextActions})
-	default:
-		return fmt.Errorf("unknown takeover subcommand %q", args[0])
-	}
-}
-
 type desiredStateInput struct {
 	Version       int                   `json:"version"`
 	Mode          string                `json:"mode"`
@@ -644,8 +596,7 @@ type desiredConfig struct {
 }
 
 type desiredRuntime struct {
-	Service        string `json:"service,omitempty"`
-	RouterTakeover string `json:"router_takeover,omitempty"`
+	Service string `json:"service,omitempty"`
 }
 
 func runProductApply(args []string, state appinit.RuntimeState) error {
@@ -715,9 +666,6 @@ func validateDesiredState(input desiredStateInput) error {
 	}
 	if input.Runtime != nil {
 		if err := validateOneOf("runtime.service", input.Runtime.Service, "leave", "start", "restart", "restart_if_needed", "stop"); err != nil {
-			return err
-		}
-		if err := validateOneOf("runtime.router_takeover", input.Runtime.RouterTakeover, "leave", "enabled", "disabled"); err != nil {
 			return err
 		}
 	}
@@ -919,27 +867,6 @@ func executeDesiredRuntime(input *desiredRuntime, state appinit.RuntimeState) ([
 			changes = append(changes, "runtime_stopped")
 		}
 	}
-	takeover := emptyAsLeave(input.RouterTakeover)
-	switch takeover {
-	case "enabled":
-		result, err := routertakeover.Apply(ctx, routerTakeoverOptions(state))
-		if err != nil {
-			return changes, warnings, err
-		}
-		warnings = append(warnings, result.Warnings...)
-		if result.Applied {
-			changes = append(changes, "takeover_applied")
-		}
-	case "disabled":
-		result, err := routertakeover.Stop(ctx, routerTakeoverOptions(state))
-		if err != nil {
-			return changes, warnings, err
-		}
-		warnings = append(warnings, result.Warnings...)
-		if result.Stopped {
-			changes = append(changes, "takeover_stopped")
-		}
-	}
 	return changes, warnings, nil
 }
 
@@ -970,9 +897,6 @@ func desiredChanges(input desiredStateInput) []string {
 	if input.Runtime != nil {
 		if emptyAsLeave(input.Runtime.Service) != "leave" {
 			changes = append(changes, "runtime_"+input.Runtime.Service)
-		}
-		if emptyAsLeave(input.Runtime.RouterTakeover) != "leave" {
-			changes = append(changes, "takeover_"+input.Runtime.RouterTakeover)
 		}
 	}
 	return changes
@@ -1446,10 +1370,6 @@ func normalizeCorePathForState(state appinit.RuntimeState, corePath string) stri
 		return corePath
 	}
 	return filepath.Join(root, corePath)
-}
-
-func routerTakeoverOptions(state appinit.RuntimeState) routertakeover.Options {
-	return routertakeover.Options{RuntimeProfile: state.Paths.RuntimeProfilePath, ConfigPath: state.Paths.GeneratedConfig, RuntimeDir: state.Paths.MihomoRuntimeDir}
 }
 
 func printProductOK(envelope productEnvelope) error {

@@ -22,7 +22,6 @@ import (
 	"localclash/internal/chatgptavailable"
 	"localclash/internal/localconfig"
 	"localclash/internal/mihomotest"
-	"localclash/internal/routertakeover"
 	"localclash/internal/rules"
 	"localclash/internal/runtimeprofile"
 
@@ -133,7 +132,7 @@ func TestToolsListIncludesCoreTools(t *testing.T) {
 	for _, tool := range result.Tools {
 		byName[tool.Name] = tool
 	}
-	for _, name := range []string{"doctor", "environment_inspect", "config_configure", "config_status", "config_render", "config_patch_apply", "config_patch_draft", "config_patch_get", "proxy_group_build", "policy_group_build", "custom_rules_build", "rule_provider_build", "nl_file", "pack_rules_query", "pack_rules_prefetch", "pack_rules_read", "packs_list", "packs_get", "routing_explain", "subscription_nodes_list", "subscription_nodes_search", "runtime_profile_status", "runtime_status", "mihomo_api_request", "mihomo_connections_read", "mihomo_config_test", "mihomo_logs_read", "router_takeover_status", "subscriptions_status", "tools_list", "subscriptions_configure", "subscriptions_refresh", "run_runtime", "restart_runtime", "router_takeover_apply", "router_takeover_stop", "sed_file", "stop_runtime"} {
+	for _, name := range []string{"doctor", "environment_inspect", "config_configure", "config_status", "config_render", "config_patch_apply", "config_patch_draft", "config_patch_get", "proxy_group_build", "policy_group_build", "custom_rules_build", "rule_provider_build", "nl_file", "pack_rules_query", "pack_rules_prefetch", "pack_rules_read", "packs_list", "packs_get", "routing_explain", "subscription_nodes_list", "subscription_nodes_search", "runtime_profile_status", "runtime_status", "runtime_facts", "mihomo_api_request", "mihomo_connections_read", "mihomo_config_test", "mihomo_logs_read", "subscriptions_status", "tools_list", "subscriptions_configure", "subscriptions_refresh", "run_runtime", "restart_runtime", "sed_file", "stop_runtime"} {
 		if byName[name].Name == "" {
 			t.Fatalf("missing tool %q", name)
 		}
@@ -160,10 +159,10 @@ func TestRegistrySafetyLevels(t *testing.T) {
 		"subscription_nodes_list":   SafeRead,
 		"subscription_nodes_search": SafeRead,
 		"runtime_status":            SafeRead,
+		"runtime_facts":             SafeRead,
 		"mihomo_connections_read":   SafeRead,
 		"mihomo_logs_read":          SafeRead,
 		"runtime_profile_status":    SafeRead,
-		"router_takeover_status":    SafeRead,
 		"routing_explain":           SafeRead,
 		"subscriptions_status":      SafeRead,
 		"tools_list":                SafeRead,
@@ -185,8 +184,6 @@ func TestRegistrySafetyLevels(t *testing.T) {
 		"subscriptions_refresh":     SafeWrite,
 		"run_runtime":               ConfirmRequired,
 		"restart_runtime":           ConfirmRequired,
-		"router_takeover_apply":     ConfirmRequired,
-		"router_takeover_stop":      ConfirmRequired,
 		"stop_runtime":              ConfirmRequired,
 	}
 	got := map[string]SafetyLevel{}
@@ -3036,9 +3033,7 @@ func TestRuntimeToolsRejectCallerManagedPaths(t *testing.T) {
 		{name: "run_runtime", args: map[string]any{"config": "other.yaml", "background": false}},
 		{name: "restart_runtime", args: map[string]any{"core": "other-core", "background": false}},
 		{name: "runtime_status", args: map[string]any{"runtime_dir": "other-runtime"}},
-		{name: "router_takeover_status", args: map[string]any{"state_dir": "other-state"}},
-		{name: "router_takeover_apply", args: map[string]any{"dns_port": 1053, "background": false}},
-		{name: "router_takeover_stop", args: map[string]any{"tun_device": "utun9", "background": false}},
+		{name: "runtime_facts", args: map[string]any{"config": "other.yaml"}},
 		{name: "stop_runtime", args: map[string]any{"runtime_profile": "other-profile", "background": false}},
 	} {
 		resp := callHandleWithServer(t, server, map[string]any{
@@ -3080,8 +3075,6 @@ func TestAsyncToolsRejectUnknownFieldsBeforeQueue(t *testing.T) {
 		{name: "subscriptions_refresh", args: map[string]any{"config": "other.yaml"}},
 		{name: "run_runtime", args: map[string]any{"config": "other.yaml"}},
 		{name: "restart_runtime", args: map[string]any{"config": "other.yaml"}},
-		{name: "router_takeover_apply", args: map[string]any{"config": "other.yaml"}},
-		{name: "router_takeover_stop", args: map[string]any{"config": "other.yaml"}},
 		{name: "stop_runtime", args: map[string]any{"config": "other.yaml"}},
 	} {
 		resp := callHandleWithServer(t, server, map[string]any{
@@ -3335,102 +3328,6 @@ sleep 30
 	}
 }
 
-func TestStopRuntimeRefusesWhenRouterTakeoverIsEffective(t *testing.T) {
-	original := routerTakeoverStatus
-	routerTakeoverStatus = func(ctx context.Context, opts routertakeover.Options) (routertakeover.Result, error) {
-		return routertakeover.Result{
-			ProfileMode:    runtimeprofile.ModeRouter,
-			RuntimeRunning: true,
-			Effective:      true,
-		}, nil
-	}
-	t.Cleanup(func() {
-		routerTakeoverStatus = original
-	})
-
-	dir := t.TempDir()
-	workDir := filepath.Join(dir, "runtime")
-	if err := os.MkdirAll(workDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	server := NewServerWithState(appinit.RuntimeState{
-		Paths: appinit.RuntimePaths{
-			RuntimeProfilePath: filepath.Join(dir, "localclash-runtime.json"),
-			MihomoRuntimeDir:   workDir,
-		},
-	})
-	resp := callHandleWithServer(t, server, map[string]any{
-		"jsonrpc": "2.0",
-		"id":      1,
-		"method":  "tools/call",
-		"params": map[string]any{
-			"name": "stop_runtime",
-			"arguments": map[string]any{
-				"background": false,
-			},
-		},
-	})
-	if resp.Error != nil {
-		t.Fatalf("stop_runtime returned JSON-RPC error: %+v", resp.Error)
-	}
-	result := marshalToolResult(t, resp.Result)
-	content := result.StructuredContent.(map[string]any)
-	if content["refused"] != true || !strings.Contains(content["error"].(string), "router takeover") {
-		t.Fatalf("stop_runtime content = %+v, want router takeover refusal", content)
-	}
-	actions := content["next_actions"].([]any)
-	if len(actions) == 0 || !strings.Contains(actions[0].(string), "router_takeover_stop") {
-		t.Fatalf("next_actions = %+v, want router_takeover_stop guidance", actions)
-	}
-}
-
-func TestRouterTakeoverApplyFailureMarksToolResultError(t *testing.T) {
-	dir := t.TempDir()
-	profile := filepath.Join(dir, "localclash-runtime.json")
-	if _, err := runtimeprofile.Configure(profile, runtimeprofile.ModeRouter, runtimeprofile.CoreMeta); err != nil {
-		t.Fatal(err)
-	}
-	state := appinit.RuntimeState{
-		Paths: appinit.RuntimePaths{
-			RuntimeProfilePath: profile,
-			GeneratedConfig:    filepath.Join(dir, "generated", "mihomo.yaml"),
-			MihomoRuntimeDir:   filepath.Join(dir, ".runtime", "mihomo"),
-		},
-	}
-
-	resp := callHandleWithServer(t, NewServerWithState(state), map[string]any{
-		"jsonrpc": "2.0",
-		"id":      1,
-		"method":  "tools/call",
-		"params": map[string]any{
-			"name": "router_takeover_apply",
-			"arguments": map[string]any{
-				"background": false,
-			},
-		},
-	})
-	if resp.Error != nil {
-		t.Fatalf("router_takeover_apply returned JSON-RPC error: %+v", resp.Error)
-	}
-	result := marshalToolResult(t, resp.Result)
-	if !result.IsError {
-		t.Fatalf("router_takeover_apply IsError = false, content = %+v", result.StructuredContent)
-	}
-	content := result.StructuredContent.(map[string]any)
-	if !strings.Contains(content["error"].(string), "run_runtime") {
-		t.Fatalf("content = %+v, want run_runtime error", content)
-	}
-	if statusFile, ok := content["task_status_file"].(string); ok && statusFile != "" {
-		statusText, err := os.ReadFile(statusFile)
-		if err != nil {
-			t.Fatalf("read task status: %v", err)
-		}
-		if !strings.Contains(string(statusText), `"status": "error"`) {
-			t.Fatalf("task status = %s, want error", statusText)
-		}
-	}
-}
-
 func TestRunRuntimeToolUsesBootstrapDiagnostics(t *testing.T) {
 	state := appinit.RuntimeState{
 		Paths: appinit.RuntimePaths{
@@ -3650,6 +3547,9 @@ func removedMCPTools() []string {
 		"rules_render",
 		"switch_proxy_group",
 		"apply_router_config",
+		"router_takeover_status",
+		"router_takeover_apply",
+		"router_takeover_stop",
 	}
 }
 

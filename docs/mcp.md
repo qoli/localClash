@@ -69,12 +69,10 @@ path、subscription artifact path、runtime dir 或 core binary path。Agent 只
 - `routing_explain`：解釋某個服務、域名、pack、policy group、出口在 localClash compiled intent 裡應該怎麼路由。這是 config/intent evidence，不證明 Mihomo runtime 已載入，也不證明當前流量正在使用。
 - `runtime_profile_status`：看當前 Meta/Smart、normal/router 等 runtime profile。
 - `runtime_status`：看 Mihomo 是否運行、PID、controller/UI endpoint。
-- `router_takeover_status`：看 OpenWrt firewall/nft/DNS hijack/fwmark/TUN 接管狀態。
+- `runtime_facts`：從實際 generated config、managed process 與 controller probe 讀取版本化 network facts。
 
-服務場景：回答「現在 Telegram 為什麼不走代理」、「Steam 最終落到哪個出口」、「是否已接管路由器網路」。
-`routing_explain`、`runtime_profile_status`、`runtime_status` 和
-`router_takeover_status` 都從 server state 讀取本地位置，不要求 Agent 傳 config
-或 runtime path。
+服務場景：回答配置意圖、已載入 runtime 與當前連線。OpenWrt 接管狀態不屬於
+Core MCP；由 localclash-luci 的 OpenWrt manager 回報。
 
 **6. Mihomo Runtime API 與執行型工具**
 
@@ -84,11 +82,10 @@ path、subscription artifact path、runtime dir 或 core binary path。Agent 只
 - `mihomo_connections_read`：讀取 bounded Mihomo active connection snapshot；預設用 `GET /connections/` 做一次性觀測，`mode=stream` 才使用 WebSocket `/connections/` 讀取有限幀。用於回答「當前活躍連接」的命中規則與 selected proxy chain；沒有某個 domain 的 active connection，不代表未來連接不會匹配該規則。
 - `mihomo_logs_read`：從 Mihomo controller 讀取 bounded WebSocket/HTTP stream logs，不要求 caller 傳 token 或 config path，也不輸出 token。
 - `restart_runtime`：MCP 預設 hot reload。它只校對已通過 `mihomo_config_test` 的 config hash，然後呼叫 Mihomo `PUT /configs`。Mihomo reload 是同步長操作；request timeout 只能表示結果不確定，不等於 reload 失敗。工具不做配置語義驗證，Agent 應根據本次改動用 `mihomo_api_request` 查 `/rules`、`/providers/rules`、`/proxies` 或 `/configs`。若要 stop/start，必須顯式傳 `strategy=process_restart`。
-- `stop_runtime`：停止 Mihomo；如果 router takeover 生效，預設拒絕，避免斷網。
-- `router_takeover_apply`：套用 localClash 管理的 OpenWrt runtime 接管規則。
-- `router_takeover_stop`：撤銷 localClash 管理的接管規則，不停止 Mihomo。
+- `stop_runtime`：只停止 Mihomo。平台整合 caller 必須先處理 host traffic capture。
 
-服務場景：真正改變運行狀態或路由器網路狀態，所以是 `confirm_required`。這組現在也會輸出階段性 task log，Agent 可以追 `stop -> start -> status` 或 takeover script/verify 的進度。
+服務場景：改變 Mihomo 運行狀態，所以是 `confirm_required`。Core 不執行
+OpenWrt firewall、DNS hijack 或 policy-routing 操作。
 
 **推薦 Agent 流程**
 
@@ -109,6 +106,6 @@ path、subscription artifact path、runtime dir 或 core binary path。Agent 只
 8. 用 `mihomo_config_test` 對即將載入的 config 做顯式驗證
 9. 經用戶確認後 `restart_runtime`；預設 hot reload，若需要進程重啟才傳 `strategy=process_restart`
 10. 若 hot reload timeout，視為 `indeterminate`，不要推斷失敗或自動 process restart；按本次改動語義用 `mihomo_api_request` 做追查
-11. 路由器接管只在明確確認後 `router_takeover_apply`
+11. 需要 OpenWrt 接管時，轉交 localclash-luci manager 並另行確認
 
 長任務現在的觀測入口是：工具返回 `task_id`、`log_file`、`status_file`，Agent 應該用 `nl_file` 持續讀 log，而不是等待 MCP 一次性返回。

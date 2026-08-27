@@ -6,7 +6,7 @@
 
 ## LuCI Project Relationship
 
-`/Volumes/Data/Github/localclash-luci` is the sibling OpenWrt LuCI surface for this core project. Keep ownership explicit: this repository owns the Go runtime, product-level CLI/MCP API, subscriptions, config rendering, runtime lifecycle, release manifests, and router-safe diagnostics; the LuCI repository owns UI, package, ACL, menu, and helper files that call those product surfaces. Start future LuCI maintenance tasks from this core project so agents first verify the current core contract, release/manifest state, and runtime behavior before changing the LuCI UI/package layer. When edits must land in `../localclash-luci`, keep them scoped there and do not move runtime logic, generated runtime artifacts, or Mihomo/dashboard assets into the LuCI package.
+`/Volumes/Data/Github/localclash-luci` is the sibling OpenWrt integration project. Keep ownership explicit: this repository owns subscriptions, Mihomo config rendering/testing, Mihomo runtime lifecycle, release manifests, and versioned runtime facts. The LuCI repository owns UI, package, ACL, OpenWrt takeover desired state, fw4/nft/policy-routing/DNS-hijack implementation, ownership markers, boot/hotplug reconciliation, and cross-module runtime/takeover transactions. Core must not execute `fw4`, `nft`, `uci`, or `ip rule`. Start future LuCI maintenance tasks from this core project so agents first verify the current Core facts contract and release compatibility before changing the LuCI layer.
 
 ## Mihomo Core Source Checkouts
 

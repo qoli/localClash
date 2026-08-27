@@ -16,7 +16,13 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 
 ## Unreleased
 
-- 暫無。
+- Core 新增 `runtime facts` CLI/MCP 唯讀 interface，從實際 generated config、
+  managed Mihomo process 與 controller readiness probe 回報版本化 network facts。
+- Core 移除 OpenWrt takeover implementation、CLI/MCP tools、desired-state 欄位與
+  runtime stop guard；OpenWrt takeover 完整改由 localclash-luci manager 擁有。
+- localclash-luci 新增獨立 takeover manager，接管 fw4/nft、policy routing、DNS
+  hijack、ownership/repair state、boot/hotplug reconcile，以及 restart/stop/reset/
+  one-click transaction。
 
 ## 目前最新版本
 

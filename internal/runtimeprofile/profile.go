@@ -58,7 +58,6 @@ type Profile struct {
 	Path        string         `yaml:"path,omitempty" json:"path,omitempty"`
 	Description string         `yaml:"description,omitempty" json:"description,omitempty"`
 	Mihomo      map[string]any `yaml:"mihomo" json:"mihomo"`
-	Deploy      map[string]any `yaml:"deploy,omitempty" json:"deploy,omitempty"`
 }
 
 type diskFile struct {
@@ -82,20 +81,19 @@ type SmartOptions struct {
 }
 
 type Status struct {
-	Path                   string         `json:"path"`
-	Exists                 bool           `json:"exists"`
-	Mode                   string         `json:"mode"`
-	Core                   string         `json:"core"`
-	CorePath               string         `json:"core_path"`
-	RuntimeSource          string         `json:"runtime_source"`
-	UserProfilePath        string         `json:"user_profile_path"`
-	UserProfileExists      bool           `json:"user_profile_exists"`
-	AvailableModes         []string       `json:"available_modes"`
-	AvailableCores         []string       `json:"available_cores"`
-	Summary                map[string]any `json:"summary"`
-	SmartGroupDefault      SmartOptions   `json:"smart_group_default"`
-	RouterTakeoverRequired bool           `json:"router_takeover_required,omitempty"`
-	NextActions            []string       `json:"next_actions,omitempty"`
+	Path              string         `json:"path"`
+	Exists            bool           `json:"exists"`
+	Mode              string         `json:"mode"`
+	Core              string         `json:"core"`
+	CorePath          string         `json:"core_path"`
+	RuntimeSource     string         `json:"runtime_source"`
+	UserProfilePath   string         `json:"user_profile_path"`
+	UserProfileExists bool           `json:"user_profile_exists"`
+	AvailableModes    []string       `json:"available_modes"`
+	AvailableCores    []string       `json:"available_cores"`
+	Summary           map[string]any `json:"summary"`
+	SmartGroupDefault SmartOptions   `json:"smart_group_default"`
+	NextActions       []string       `json:"next_actions,omitempty"`
 }
 
 func Load(path string) (File, bool, error) {
@@ -159,11 +157,9 @@ func StatusFor(path string) (Status, error) {
 	sort.Strings(status.AvailableModes)
 	sort.Strings(status.AvailableCores)
 	if file.Mode == ModeRouter {
-		status.RouterTakeoverRequired = true
 		status.NextActions = []string{
 			"call config_render when .runtime/mihomo/config.yaml is missing or stale",
 			"call run_runtime after user confirmation to start Mihomo",
-			"call router_takeover_apply after user confirmation to capture router traffic",
 		}
 	} else {
 		status.NextActions = []string{
@@ -422,11 +418,9 @@ func normalizeJSONNumbers(value any) any {
 	switch typed := value.(type) {
 	case *Profile:
 		typed.Mihomo = normalizeOptionalMap(typed.Mihomo)
-		typed.Deploy = normalizeOptionalMap(typed.Deploy)
 	case *File:
 		for key, profile := range typed.Profiles {
 			profile.Mihomo = normalizeOptionalMap(profile.Mihomo)
-			profile.Deploy = normalizeOptionalMap(profile.Deploy)
 			typed.Profiles[key] = profile
 		}
 	case *diskFile:

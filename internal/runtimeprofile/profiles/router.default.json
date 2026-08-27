@@ -152,11 +152,5 @@
       "interval": 30,
       "write-to-system": true
     }
-  },
-  "deploy": {
-    "lan-interface": "br-lan",
-    "router-self-proxy": true,
-    "dnsmasq-redirect": true,
-    "ipv6-mode": 3
   }
 }

@@ -65,9 +65,9 @@ func Registry() []Tool {
 		{Name: "runtime_profile_status", SafetyLevel: SafeRead, Description: "Inspect the active Mihomo runtime profile and its safe summary without exposing proxy credentials."},
 		{Name: "subscriptions_status", SafetyLevel: SafeRead, Description: "Inspect configured subscription sources and local effective subscription state."},
 		{Name: "runtime_status", SafetyLevel: SafeRead, Description: "Inspect localClash-owned Mihomo runtime processes by managed core process name without changing runtime state."},
+		{Name: "runtime_facts", SafetyLevel: SafeRead, Description: "Read versioned Mihomo runtime network facts from the generated config, managed process state, and bounded controller readiness probe. Does not inspect or change host firewall, DNS interception, or policy routing."},
 		{Name: "mihomo_connections_read", SafetyLevel: SafeRead, Description: "Read bounded Mihomo active connection snapshots from the controller over HTTP or WebSocket without exposing the controller token. This is runtime data-plane evidence for currently tracked active connections only: it can prove a live connection's matched rule and selected proxy chain, but absence of a domain is not proof of how a future connection would route. Use routing_explain for intended routing and mihomo_logs_read or fresh traffic when runtime evidence is needed."},
 		{Name: "mihomo_logs_read", SafetyLevel: SafeRead, Description: "Read a bounded batch of Mihomo controller logs over WebSocket or HTTP streaming without exposing the controller token."},
-		{Name: "router_takeover_status", SafetyLevel: SafeRead, Description: "Inspect localClash-owned OpenWrt router takeover runtime state: runtime profile, Mihomo runtime, fw4/nft chains, DNS hijack, fwmark route, and TUN device."},
 		{Name: "routing_explain", SafetyLevel: SafeRead, Description: "Explain localClash compiled routing intent for a service, domain, pack, policy group, or exit query. Reads localclash-intent.json, patch provenance, active packs, policy groups, proxy groups, custom rules, and cached rule matches; this is config/intent evidence, not proof that Mihomo has loaded the config or that current traffic is using it. Verify loaded runtime with mihomo_api_request (/rules, /providers/rules, /proxies) and active traffic with mihomo_connections_read."},
 		{Name: "tools_list", SafetyLevel: SafeRead, Description: "List localClash MCP tools as ordinary tool output for clients that do not expose MCP registry introspection to the model."},
 		{Name: "config_patch_apply", SafetyLevel: SafeWrite, Description: "Apply reviewed patch-registry operations from the current config_patch_draft or explicit operations, then compile localclash-intent.json, derive localclash-packs.gob, and regenerate .runtime/mihomo/config.yaml without starting runtime."},
@@ -86,10 +86,8 @@ func Registry() []Tool {
 		{Name: "subscriptions_refresh", SafetyLevel: SafeWrite, Description: "Refresh configured subscriptions, rebuild service capabilities, render and test a candidate Mihomo config, then promote it without changing the running core."},
 		{Name: "run_runtime", SafetyLevel: ConfirmRequired, Description: "Start the Mihomo runtime from .runtime/mihomo/config.yaml, assuming the config has already been validated by config_patch_apply, mihomo_config_test, or doctor. Requires external Agent/MCP client confirmation; starting the proxy runtime may temporarily interrupt network connectivity, and the Agent itself may be disconnected if it depends on the current network/proxy path."},
 		{Name: "restart_runtime", SafetyLevel: ConfirmRequired, Description: "Reload the running Mihomo runtime. MCP defaults to hot reload, which verifies the current config hash against a prior mihomo_config_test attestation before calling Mihomo PUT /configs. Mihomo reload is synchronous and may exceed the request timeout; a timeout is indeterminate, not proof of failure. Agents should use mihomo_api_request for change-specific runtime verification. Use strategy=process_restart for an explicit stop/start process restart."},
-		{Name: "router_takeover_apply", SafetyLevel: ConfirmRequired, Description: "Apply localClash-owned OpenWrt router takeover runtime rules for router profile mode. Uses localClash router redir-host-mix behavior: TCP redir-host, DNS hijack, fwmark route, and TUN forwarding. Does not persist firewall config; call only after run_runtime or restart_runtime and user confirmation."},
-		{Name: "router_takeover_stop", SafetyLevel: ConfirmRequired, Description: "Remove localClash-owned OpenWrt router takeover runtime rules without stopping Mihomo. This changes firewall, DNS, and policy-routing runtime state and requires user confirmation."},
 		{Name: "sed_file", SafetyLevel: SafeWrite, Description: "Apply sed-style repository-local text edits with dry-run diff output. Defaults to dry_run=true."},
-		{Name: "stop_runtime", SafetyLevel: ConfirmRequired, Description: "Stop localClash-owned Mihomo runtime processes identified by managed core process names. Refuses by default when router takeover is effective because router traffic still depends on Mihomo; call router_takeover_stop first or pass force=true only after explicit user confirmation."},
+		{Name: "stop_runtime", SafetyLevel: ConfirmRequired, Description: "Stop localClash-owned Mihomo runtime processes identified by managed core process names. Host traffic-capture coordination belongs to the platform integration caller."},
 	}
 	sort.Slice(tools, func(i, j int) bool { return tools[i].Name < tools[j].Name })
 	return tools
@@ -415,21 +413,11 @@ func inputSchemaForTool(name string) map[string]any {
 			"additionalProperties": false,
 			"properties":           map[string]any{},
 		}
-	case "runtime_status":
+	case "runtime_status", "runtime_facts":
 		return map[string]any{
 			"type":                 "object",
 			"additionalProperties": false,
 			"properties":           map[string]any{},
-		}
-	case "router_takeover_status", "router_takeover_apply", "router_takeover_stop":
-		return map[string]any{
-			"type":                 "object",
-			"additionalProperties": false,
-			"properties": map[string]any{
-				"dry_run":    map[string]any{"type": "boolean", "description": "Return the shell script without applying changes. Supported by router_takeover_apply and router_takeover_stop."},
-				"background": map[string]any{"type": "boolean", "description": "Run apply/stop as a background task and immediately return task_id/log_file. Defaults to true for MCP execution tools; ignored by router_takeover_status."},
-				"wait":       map[string]any{"type": "boolean", "description": "Set true to wait synchronously for completion. Equivalent to background=false; ignored by router_takeover_status."},
-			},
 		}
 	case "stop_runtime":
 		return map[string]any{
@@ -437,7 +425,7 @@ func inputSchemaForTool(name string) map[string]any {
 			"additionalProperties": false,
 			"properties": map[string]any{
 				"timeout_ms": map[string]any{"type": "integer", "minimum": 0, "description": "Milliseconds to wait after SIGTERM before reporting timeout. Defaults to 5000."},
-				"force":      map[string]any{"type": "boolean", "description": "Bypass the active router takeover guard and send SIGKILL if the runtime does not exit before timeout. Defaults to false."},
+				"force":      map[string]any{"type": "boolean", "description": "Send SIGKILL if the runtime does not exit before timeout. Defaults to false."},
 				"background": map[string]any{"type": "boolean", "description": "Run as a background task and immediately return task_id/log_file. Defaults to true for MCP execution tools."},
 				"wait":       map[string]any{"type": "boolean", "description": "Set true to wait synchronously for completion. Equivalent to background=false."},
 			},

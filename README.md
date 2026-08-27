@@ -232,14 +232,12 @@ Current MCP tool map:
   `config_patch_draft`, and `config_patch_apply`.
 - Patch-building helpers: `proxy_group_build`, `policy_group_build`,
   `custom_rules_build`, and `rule_provider_build`.
-- Runtime profile and process observation: `runtime_profile_status` and
-  `runtime_status`.
+- Runtime profile, process, and network-fact observation:
+  `runtime_profile_status`, `runtime_status`, and `runtime_facts`.
 - Mihomo controller evidence and validation: `mihomo_config_test`,
   `mihomo_api_request`, `mihomo_connections_read`, and `mihomo_logs_read`.
 - Confirmed lifecycle actions: `run_runtime`, `restart_runtime`, and
   `stop_runtime`.
-- Router transparent-proxy runtime state: `router_takeover_status`,
-  `router_takeover_apply`, and `router_takeover_stop`.
 
 Use `tools_list` when an MCP client does not expose registry metadata directly.
 It returns the current tool names, safety levels, descriptions, and schemas as
@@ -270,9 +268,9 @@ addresses, passwords, UUIDs, WAN credentials, and private keys are redacted or
 omitted.
 
 The server marks `run_runtime` as `confirm_required`, and assumes the Agent SDK
-or MCP client has completed confirmation before calling it. Router traffic
-takeover is a separate confirmed step from starting Mihomo. zashboard remains
-Mihomo's runtime dashboard only, not localClash's configuration UI.
+or MCP client has completed confirmation before calling it. Core does not own
+host traffic capture; OpenWrt takeover is managed by `localclash-luci`.
+zashboard remains Mihomo's runtime dashboard only, not localClash's configuration UI.
 
 MCP subscription bootstrap tools:
 
@@ -545,10 +543,10 @@ MCP runtime tool:
   change-specific runtime verification, such as checking `/rules`,
   `/providers/rules`, `/proxies`, or `/configs`. Use `strategy:
   process_restart` for an explicit stop/start restart.
-- `stop_runtime`: stops Mihomo only when it is not still required by active
-  router takeover. If `router_takeover_status.effective` is true, call
-  `router_takeover_stop` first, or pass `force: true` only after explicit user
-  confirmation.
+- `runtime_facts`: reads schema-versioned network facts from the actual generated
+  Mihomo config, managed process state, and a bounded controller readiness probe.
+- `stop_runtime`: stops only the managed Mihomo process. Platform integration
+  callers must coordinate any host traffic-capture state before calling it.
 
 Agent verification ladder:
 
@@ -574,21 +572,10 @@ depend on the current network or proxy path and could lose its connection after
 this operation. These tools do not install router takeover rules, switch proxy
 groups, or modify system proxy settings.
 
-Router profile takeover tools:
-
-- `router_takeover_status`: inspect localClash-owned OpenWrt takeover runtime
-  state.
-- `router_takeover_apply`: after `run_runtime`, install localClash-owned
-  Redir-Host Mix runtime rules: TCP redir-host, DNS hijack, fwmark route, and
-  TUN forwarding. This must not write persistent firewall configuration.
-- `router_takeover_stop`: remove localClash-owned takeover rules without
-  stopping Mihomo.
-
-These tools are for `router` profile mode. In `normal` mode, agents should use
-only `config_render` and `run_runtime`; `router_takeover_apply` will refuse to
-apply until the runtime profile is switched to `router`. Router takeover rules
-are runtime state; reboot clears them, and `router_takeover_stop` removes the
-localClash-owned rules explicitly.
+The `router` profile configures Mihomo for an external platform traffic-capture
+adapter. Core does not install, inspect, reconcile, or remove OpenWrt firewall,
+DNS interception, or policy-routing state. Those operations are exposed by the
+LuCI/OpenWrt takeover manager in the sibling `localclash-luci` repository.
 
 Minimal MCP closed loop:
 
@@ -601,15 +588,17 @@ Minimal MCP closed loop:
 6. `run_runtime`, or `restart_runtime` if Mihomo is already running
 7. `runtime_status`
 
-Router MCP closed loop:
+Router Core preparation loop:
 
 1. `config_configure` with `runtime_profile: router`, optional `core`, and
    optional `policy_template`
 2. `config_render`
 3. `mihomo_config_test`
 4. `run_runtime`, or `restart_runtime` if Mihomo is already running
-5. `router_takeover_apply`
-6. `router_takeover_status`
+5. `runtime_facts`
+
+After this Core loop, the LuCI/OpenWrt integration performs and verifies the
+separate takeover transaction.
 
 This is the MCP form of the runtime loop. `doctor` remains the broader
 health-check entrypoint, including generated config validation. Agents should use
@@ -749,10 +738,9 @@ alternate runtime selector. For MCP-managed routing changes, prefer
 `config_patch_draft` followed by `config_patch_apply`; for plain MCP rebuilds,
 use `config_render`.
 
-The proposed opt-in mode that transfers OpenWrt TUN routing and redirect
-ownership to Mihomo is tracked in the
-[Mihomo TUN Auto-Routing Ownership Plan](docs/mihomo-tun-auto-routing-plan.md).
-The current built-in `router` profile still uses localClash-owned takeover.
+The built-in `router` profile keeps Mihomo auto-route and auto-redirect disabled
+so the platform integration can own traffic capture explicitly. On OpenWrt that
+owner is the `localclash-luci` takeover manager.
 
 The rule model is documented in `docs/rule-model.md`. In short, localClash
 renders a fixed local safety baseline first, then user overrides, optional rule
@@ -794,9 +782,9 @@ PID file if present; use `--force` to send SIGKILL if the runtime does not stop
 before `--timeout`. CLI `restart` uses an explicit process restart unless
 `--strategy hot_reload` is supplied; MCP `restart_runtime` defaults to hot
 reload and requires a prior config-test attestation.
-The MCP `stop_runtime` tool adds an Agent safety guard: it refuses to stop
-Mihomo while localClash router takeover is effective unless `force: true` is
-explicitly supplied.
+The Core stop interfaces do not inspect platform traffic-capture state. The
+LuCI/OpenWrt stop transaction removes and verifies takeover before stopping
+Mihomo.
 
 ## Factory Reset
 

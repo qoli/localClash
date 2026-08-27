@@ -82,9 +82,10 @@ port, ASN, or timing alone. Require a user-confirmed endpoint or repeatable
 before/after evidence from a fresh app action. If several candidates remain,
 report candidates and uncertainty instead of writing a rule.
 
-Use `router_takeover_status` only when the question is specifically about
-router interception, DNS hijack, firewall, fwmark, or TUN ownership. Do not
-expand a product-routing task into firewall or takeover changes.
+Core MCP does not expose router takeover tools. When the question is specifically
+about OpenWrt interception, DNS hijack, firewall, fwmark, or TUN ownership, use
+the `localclash-luci` OpenWrt manager interface. Do not expand a product-routing
+task into firewall or takeover changes.
 
 ## Pack-First Rule Selection
 

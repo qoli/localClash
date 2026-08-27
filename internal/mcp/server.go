@@ -33,8 +33,8 @@ import (
 	"localclash/internal/mihomoapi"
 	"localclash/internal/mihomotest"
 	"localclash/internal/policytemplate"
-	"localclash/internal/routertakeover"
 	"localclash/internal/rules"
+	"localclash/internal/runtimefacts"
 	"localclash/internal/runtimeprofile"
 	"localclash/internal/smartpolicy"
 	"localclash/internal/subscriptions"
@@ -57,8 +57,6 @@ type Server struct {
 	testMihomoConfig      func(context.Context, mihomotest.TestOptions) (mihomotest.TestResult, error)
 	promoteMihomoConfig   func(string, string, string) (mihomotest.PromoteResult, error)
 }
-
-var routerTakeoverStatus = routertakeover.Status
 
 type configPatchDraftSlot struct {
 	Key              string
@@ -561,6 +559,8 @@ func (s *Server) callTool(ctx context.Context, params json.RawMessage) (toolResu
 		return s.callSubscriptionNodesSearch(args)
 	case "runtime_status":
 		return s.callRuntimeStatus(args)
+	case "runtime_facts":
+		return s.callRuntimeFacts(ctx, args)
 	case "runtime_profile_status":
 		return s.callRuntimeProfileStatus(args)
 	case "mihomo_api_request":
@@ -571,8 +571,6 @@ func (s *Server) callTool(ctx context.Context, params json.RawMessage) (toolResu
 		return s.callMihomoLogsRead(ctx, args)
 	case "mihomo_config_test":
 		return s.callMaybeAsyncTool(ctx, "mihomo_config_test", args, s.callMihomoConfigTest)
-	case "router_takeover_status":
-		return s.callRouterTakeoverStatus(ctx, args)
 	case "routing_explain":
 		return s.runLoggedSyncTool(ctx, "routing_explain", args, s.callRoutingExplain)
 	case "subscriptions_status":
@@ -595,10 +593,6 @@ func (s *Server) callTool(ctx context.Context, params json.RawMessage) (toolResu
 		return s.callMaybeAsyncTool(ctx, "run_runtime", args, s.callRunRuntimeSync)
 	case "restart_runtime":
 		return s.callMaybeAsyncTool(ctx, "restart_runtime", args, s.callRestartRuntimeSync)
-	case "router_takeover_apply":
-		return s.callMaybeAsyncTool(ctx, "router_takeover_apply", args, s.callRouterTakeoverApplySync)
-	case "router_takeover_stop":
-		return s.callMaybeAsyncTool(ctx, "router_takeover_stop", args, s.callRouterTakeoverStopSync)
 	case "sed_file":
 		return s.callSedFile(args)
 	case "stop_runtime":
@@ -2968,12 +2962,6 @@ func (s *Server) callRunRuntimeSync(ctx context.Context, args json.RawMessage) (
 	if err != nil {
 		return jsonToolResult(runtimeErrorResult(err.Error()))
 	}
-	if s.state != nil {
-		if profile, profileErr := runtimeprofile.StatusFor(s.state.Paths.RuntimeProfilePath); profileErr == nil && profile.Mode == runtimeprofile.ModeRouter {
-			result.Warnings = append(result.Warnings, "Runtime profile is router; run_runtime only starts Mihomo and does not capture router traffic.")
-			result.NextActions = append(result.NextActions, "call router_takeover_apply after user confirmation to install localClash-owned OpenWrt firewall, DNS, and TUN takeover rules")
-		}
-	}
 	return jsonToolResult(result)
 }
 
@@ -3041,12 +3029,6 @@ func (s *Server) callRestartRuntimeSync(ctx context.Context, args json.RawMessag
 	})
 	if err != nil {
 		return jsonToolResult(runtimeErrorResult(err.Error()))
-	}
-	if s.state != nil {
-		if profile, profileErr := runtimeprofile.StatusFor(s.state.Paths.RuntimeProfilePath); profileErr == nil && profile.Mode == runtimeprofile.ModeRouter {
-			result.Warnings = append(result.Warnings, "Runtime profile is router; restart_runtime only restarts Mihomo and does not capture router traffic.")
-			result.NextActions = append(result.NextActions, "call router_takeover_status to verify existing takeover rules, or router_takeover_apply after user confirmation if takeover is not active")
-		}
 	}
 	return jsonToolResult(result)
 }
@@ -3315,12 +3297,6 @@ func localConfigTaskLogger(ctx context.Context, parent string) func(localconfig.
 
 func subscriptionsTaskLogger(ctx context.Context) func(subscriptions.StageEvent) {
 	return func(event subscriptions.StageEvent) {
-		logGenericStage(ctx, event.Stage, event.Event, event.DurationMS, event.Error, event.Fields)
-	}
-}
-
-func routerTakeoverTaskLogger(ctx context.Context) func(routertakeover.StageEvent) {
-	return func(event routertakeover.StageEvent) {
 		logGenericStage(ctx, event.Stage, event.Event, event.DurationMS, event.Error, event.Fields)
 	}
 }
@@ -3876,9 +3852,6 @@ func configConfigureNextActions(status runtimeprofile.Status, effectiveSubscript
 		"call restart_runtime after user confirmation if Mihomo is already running and should load the updated generated config",
 		"call run_runtime after user confirmation if Mihomo is not running",
 	}
-	if status.Mode == runtimeprofile.ModeRouter {
-		actions = append(actions, "call router_takeover_apply after user confirmation to capture router traffic")
-	}
 	return actions
 }
 
@@ -3926,102 +3899,23 @@ func (s *Server) callRuntimeStatus(args json.RawMessage) (toolResult, error) {
 	}))
 }
 
-type routerTakeoverInput struct {
-	RuntimeProfile string
-	Config         string
-	RuntimeDir     string
-	LogFile        string
-	StateDir       string
-	DNSPort        int
-	RedirPort      int
-	TunDevice      string
-	DryRun         bool
-}
-
-func (s *Server) routerTakeoverOptions(args json.RawMessage) (routertakeover.Options, error) {
-	var req struct {
-		DryRun     bool  `json:"dry_run"`
-		Background *bool `json:"background"`
-		Wait       *bool `json:"wait"`
-	}
+func (s *Server) callRuntimeFacts(ctx context.Context, args json.RawMessage) (toolResult, error) {
+	var req struct{}
 	if err := decodeStrictToolInput(args, &req); err != nil {
-		return routertakeover.Options{}, err
+		return toolResult{}, err
 	}
-	in := routerTakeoverInput{DryRun: req.DryRun}
-	if s.state != nil {
-		if in.RuntimeProfile == "" {
-			in.RuntimeProfile = s.state.Paths.RuntimeProfilePath
-		}
-		if in.Config == "" {
-			in.Config = s.state.Paths.GeneratedConfig
-		}
-		if in.RuntimeDir == "" {
-			in.RuntimeDir = s.state.Paths.MihomoRuntimeDir
-		}
+	if s.state == nil {
+		return toolResult{}, errors.New("runtime_facts requires initialized server state")
 	}
-	return routertakeover.Options{
-		RuntimeProfile: in.RuntimeProfile,
-		ConfigPath:     in.Config,
-		RuntimeDir:     in.RuntimeDir,
-		LogPath:        in.LogFile,
-		StateDir:       in.StateDir,
-		DNSPort:        in.DNSPort,
-		RedirPort:      in.RedirPort,
-		TunDevice:      in.TunDevice,
-		DryRun:         in.DryRun,
-	}, nil
-}
-
-func (s *Server) callRouterTakeoverStatus(ctx context.Context, args json.RawMessage) (toolResult, error) {
-	opts, err := s.routerTakeoverOptions(args)
+	facts, err := runtimefacts.Read(ctx, runtimefacts.Options{
+		RuntimeProfile: s.state.Paths.RuntimeProfilePath,
+		ConfigPath:     s.state.Paths.GeneratedConfig,
+		RuntimeDir:     s.state.Paths.MihomoRuntimeDir,
+	})
 	if err != nil {
 		return toolResult{}, err
 	}
-	result, err := routertakeover.Status(ctx, opts)
-	if err != nil {
-		return toolResult{}, err
-	}
-	return jsonToolResult(result)
-}
-
-func (s *Server) callRouterTakeoverApplySync(ctx context.Context, args json.RawMessage) (toolResult, error) {
-	opts, err := s.routerTakeoverOptions(args)
-	if err != nil {
-		return toolResult{}, err
-	}
-	opts.OnStage = routerTakeoverTaskLogger(ctx)
-	result, err := routertakeover.Apply(ctx, opts)
-	if err != nil {
-		return toolResult{}, err
-	}
-	tool, err := jsonToolResult(result)
-	if err != nil {
-		return toolResult{}, err
-	}
-	if result.Error != "" {
-		tool.IsError = true
-	}
-	return tool, nil
-}
-
-func (s *Server) callRouterTakeoverStopSync(ctx context.Context, args json.RawMessage) (toolResult, error) {
-	opts, err := s.routerTakeoverOptions(args)
-	if err != nil {
-		return toolResult{}, err
-	}
-	opts.OnStage = routerTakeoverTaskLogger(ctx)
-	result, err := routertakeover.Stop(ctx, opts)
-	if err != nil {
-		return toolResult{}, err
-	}
-	tool, err := jsonToolResult(result)
-	if err != nil {
-		return toolResult{}, err
-	}
-	if result.Error != "" {
-		tool.IsError = true
-	}
-	return tool, nil
+	return jsonToolResult(facts)
 }
 
 func (s *Server) callStopRuntimeSync(ctx context.Context, args json.RawMessage) (toolResult, error) {
@@ -4035,73 +3929,22 @@ func (s *Server) callStopRuntimeSync(ctx context.Context, args json.RawMessage) 
 		return toolResult{}, err
 	}
 	in := struct {
-		RuntimeProfile string
-		Config         string
-		Core           string
-		RuntimeDir     string
-		LogFile        string
-		StateDir       string
-		DNSPort        int
-		RedirPort      int
-		TunDevice      string
-		TimeoutMS      int
-		Force          bool
+		Config     string
+		Core       string
+		RuntimeDir string
+		LogFile    string
+		TimeoutMS  int
+		Force      bool
 	}{
 		TimeoutMS: req.TimeoutMS,
 		Force:     req.Force,
 	}
 	if s.state != nil {
-		if in.RuntimeProfile == "" {
-			in.RuntimeProfile = s.state.Paths.RuntimeProfilePath
-		}
 		if in.Config == "" {
 			in.Config = s.state.Paths.GeneratedConfig
 		}
 		if in.RuntimeDir == "" {
 			in.RuntimeDir = s.state.Paths.MihomoRuntimeDir
-		}
-	}
-	if !in.Force && (s.state != nil || strings.TrimSpace(in.RuntimeProfile) != "") {
-		finish := startTaskStage(ctx, "takeover_guard_status", map[string]any{"runtime_profile": in.RuntimeProfile})
-		takeover, takeoverErr := routerTakeoverStatus(ctx, routertakeover.Options{
-			RuntimeProfile: in.RuntimeProfile,
-			ConfigPath:     in.Config,
-			RuntimeDir:     in.RuntimeDir,
-			LogPath:        in.LogFile,
-			StateDir:       in.StateDir,
-			DNSPort:        in.DNSPort,
-			RedirPort:      in.RedirPort,
-			TunDevice:      in.TunDevice,
-		})
-		if takeoverErr != nil {
-			finishTaskStage(finish, takeoverErr, nil)
-		} else {
-			finishTaskStage(finish, nil, map[string]any{"effective": takeover.Effective})
-		}
-		if takeoverErr == nil && takeover.Effective {
-			finish = startTaskStage(ctx, "runtime_status_for_refusal", map[string]any{"runtime_dir": in.RuntimeDir})
-			status := corerun.Status(corerun.StatusOptions{
-				CorePath:   in.Core,
-				ConfigPath: in.Config,
-				WorkDir:    in.RuntimeDir,
-				LogPath:    in.LogFile,
-			})
-			finishTaskStage(finish, nil, map[string]any{"running": status.Running, "pid": status.PID})
-			return jsonToolResult(corerun.StopResult{
-				Refused:    true,
-				WasRunning: status.Running,
-				PID:        status.PID,
-				RuntimeDir: status.RuntimeDir,
-				Error:      "router takeover is effective; stopping Mihomo would break the router traffic path",
-				Warnings: []string{
-					"router takeover is currently effective and depends on the Mihomo runtime.",
-					"stop_runtime refused to stop Mihomo because router traffic may still be redirected to it.",
-				},
-				NextActions: []string{
-					"call router_takeover_stop after user confirmation, then call stop_runtime again",
-					"or call stop_runtime with force=true if the user explicitly accepts breaking the active router traffic path",
-				},
-			})
 		}
 	}
 	finish := startTaskStage(ctx, "stop_runtime", map[string]any{"runtime_dir": in.RuntimeDir, "timeout_ms": in.TimeoutMS, "force": in.Force})

@@ -1,5 +1,11 @@
 # Mihomo TUN Auto-Routing Ownership Plan
 
+> Superseded architecture note: Core no longer owns any OpenWrt takeover
+> implementation or interface. The current owner is the `localclash-luci`
+> OpenWrt takeover manager; Core exposes only versioned Mihomo runtime facts.
+> The material below is retained as historical design context and must not be
+> used as the current ownership contract.
+
 Status: draft; source investigation completed on 2026-07-12, localClash
 implementation not started.
 

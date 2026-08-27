@@ -42,12 +42,10 @@ Usage:
   localclash mihomo config-test --json
   localclash mihomo config-promote --json
   localclash runtime status --json
+  localclash runtime facts --json
   localclash runtime start --json
   localclash runtime restart --json
   localclash runtime stop --json
-  localclash takeover status --json
-  localclash takeover apply --json
-  localclash takeover stop --json
   localclash apply --input desired-state.json --json
   localclash reset [--full] [--dry-run] [--workspace <path>] --json
   localclash mcp serve [flags]
