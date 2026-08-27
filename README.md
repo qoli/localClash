@@ -855,15 +855,14 @@ to explicit bogon/reserved CIDRs and does not treat non-CN GeoIP as pollution.
 
 Core contains no DNS quality probe, service catalog, candidate scorer, or
 `dnsqualify` command. When the optional v2 `dnsqualify.json` file exists beside
-the runtime profile, Core reads only a versioned, expiring
+the runtime profile, Core reads only a versioned
 `nameserver_policy` overlay. It does not know how dnsqualify observed the WAN,
 which STUN or JSON adapter succeeded, how candidates were scored, or why the
 selected ECS prefix qualified. Core refuses to overwrite an existing policy,
 merges the overlay, verifies its own `DNSProxy` reference in the complete
 rendered config, and delegates final syntax and configuration validation to
-`mihomo -t`. A missing file leaves optimization visibly disabled; an expired
-file visibly disables optimization while preserving the encrypted baseline; a
-malformed or conflicting file fails rendering explicitly.
+`mihomo -t`. A missing file leaves optimization visibly disabled; a malformed
+or conflicting file fails rendering explicitly.
 `proxy-server-nameserver` remains independent.
 
 ## 支持 localClash

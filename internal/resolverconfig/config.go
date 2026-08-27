@@ -8,7 +8,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"time"
 )
 
 const (
@@ -16,15 +15,12 @@ const (
 	defaultName = "dnsqualify.json"
 )
 
-var errExpired = errors.New("resolver qualification expired")
-
 type Status struct {
 	Enabled     bool   `json:"enabled"`
 	State       string `json:"state"`
 	Reason      string `json:"reason,omitempty"`
 	Detail      string `json:"detail,omitempty"`
 	PolicyCount int    `json:"policy_count,omitempty"`
-	ExpiresAt   string `json:"expires_at,omitempty"`
 }
 
 type loadResult struct {
@@ -33,9 +29,10 @@ type loadResult struct {
 }
 
 type config struct {
-	Version          int                 `json:"version"`
-	ExpiresAt        string              `json:"expires_at"`
-	NameserverPolicy map[string][]string `json:"nameserver_policy"`
+	Version int `json:"version"`
+	// DeprecatedExpiresAt keeps existing v2 files readable but has no runtime semantics.
+	DeprecatedExpiresAt string              `json:"expires_at,omitempty"`
+	NameserverPolicy    map[string][]string `json:"nameserver_policy"`
 }
 
 func DefaultPath(runtimeProfilePath string) string {
@@ -84,32 +81,18 @@ func load(path string) (loadResult, error) {
 		}
 		return loadResult{}, fmt.Errorf("decode resolver config %s trailing data: %w", path, err)
 	}
-	if err := validateAt(candidate, time.Now()); err != nil {
-		if errors.Is(err, errExpired) {
-			return loadResult{Status: Status{State: "disabled", Reason: "expired", ExpiresAt: candidate.ExpiresAt}}, nil
-		}
+	if err := validate(candidate); err != nil {
 		return loadResult{}, fmt.Errorf("validate resolver config %s: %w", path, err)
 	}
-	return loadResult{config: &candidate, Status: Status{Enabled: true, State: "active", ExpiresAt: candidate.ExpiresAt}}, nil
+	return loadResult{config: &candidate, Status: Status{Enabled: true, State: "active"}}, nil
 }
 
 func validate(candidate config) error {
-	return validateAt(candidate, time.Now())
-}
-
-func validateAt(candidate config, now time.Time) error {
 	if candidate.Version != version {
 		return fmt.Errorf("unsupported resolver config version %d; want %d", candidate.Version, version)
 	}
 	if len(candidate.NameserverPolicy) == 0 {
 		return errors.New("resolver nameserver_policy is required")
-	}
-	expires, err := time.Parse(time.RFC3339Nano, candidate.ExpiresAt)
-	if err != nil {
-		return fmt.Errorf("invalid expires_at: %w", err)
-	}
-	if !now.Before(expires) {
-		return fmt.Errorf("%w at %s", errExpired, expires.Format(time.RFC3339Nano))
 	}
 	return nil
 }

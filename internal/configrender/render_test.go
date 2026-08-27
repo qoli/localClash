@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"localclash/internal/configmeta"
 	"localclash/internal/resolverconfig"
@@ -594,7 +593,7 @@ enabled_packs: []
 	}
 }
 
-func TestRenderExpiredResolverConfigUsesVisibleSecureBaseline(t *testing.T) {
+func TestRenderIgnoresProducerMetadata(t *testing.T) {
 	paths := writeRenderFixture(t)
 	profilePath := filepath.Join(paths.dir, "localclash-runtime.json")
 	if _, err := runtimeprofile.Configure(profilePath, runtimeprofile.ModeRouter, ""); err != nil {
@@ -612,16 +611,15 @@ policy_groups:
 enabled_packs: []
 `)
 	domains := []string{"cdn.fastly.steamstatic.com", "devstreaming-cdn.apple.com"}
-	now := time.Now()
-	writeFile(t, resolverconfig.DefaultPath(profilePath), fmt.Sprintf(`{
+	writeFile(t, resolverconfig.DefaultPath(profilePath), `{
   "version": 2,
-  "expires_at": %q,
+  "expires_at": "2000-01-01T00:00:00Z",
   "nameserver_policy": {
     "cdn.fastly.steamstatic.com": ["https://8.8.8.8/dns-query#DNSProxy"],
     "devstreaming-cdn.apple.com": ["https://8.8.8.8/dns-query#DNSProxy"]
   }
-}`, now.Add(-time.Minute).Format(time.RFC3339Nano)))
-	outputPath := filepath.Join(paths.dir, "expired-baseline.yaml")
+}`)
+	outputPath := filepath.Join(paths.dir, "ignored-producer-metadata.yaml")
 	result, err := Render(Options{
 		SourcePath: paths.subscription, OutputPath: outputPath,
 		PacksSelectionPath: paths.selection, RulesCacheDir: paths.cacheDir,
@@ -630,14 +628,14 @@ enabled_packs: []
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.ResolverStatus.Enabled || result.ResolverStatus.Reason != "expired" {
+	if !result.ResolverStatus.Enabled || result.ResolverStatus.State != "active" || result.ResolverStatus.PolicyCount != len(domains) {
 		t.Fatalf("resolver result = %+v", result)
 	}
 	config := readTestYAML(t, outputPath)
 	policy := config["dns"].(map[string]any)["nameserver-policy"].(map[string]any)
 	for _, domain := range domains {
-		if _, exists := policy[domain]; exists {
-			t.Fatalf("expired ECS policy %q remained active: %#v", domain, policy)
+		if _, exists := policy[domain]; !exists {
+			t.Fatalf("ignored producer metadata disabled ECS policy %q: %#v", domain, policy)
 		}
 	}
 }
@@ -660,16 +658,14 @@ policy_groups:
 enabled_packs: []
 `)
 	configPath := resolverconfig.DefaultPath(profilePath)
-	now := time.Now()
 	domains := []string{"cdn.fastly.steamstatic.com", "devstreaming-cdn.apple.com"}
-	writeFile(t, configPath, fmt.Sprintf(`{
+	writeFile(t, configPath, `{
   "version": 2,
-  "expires_at": %q,
   "nameserver_policy": {
     "cdn.fastly.steamstatic.com": ["https://8.8.8.8/dns-query#DNSProxy"],
     "devstreaming-cdn.apple.com": ["https://8.8.8.8/dns-query#DNSProxy"]
   }
-}`, now.Add(30*time.Minute).Format(time.RFC3339Nano)))
+}`)
 	result, err := Render(Options{
 		SourcePath: paths.subscription, OutputPath: filepath.Join(paths.dir, "dnsqualify.yaml"),
 		PacksSelectionPath: paths.selection, RulesCacheDir: paths.cacheDir,

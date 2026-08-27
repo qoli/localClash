@@ -134,7 +134,6 @@ func Render(opts Options) (Result, error) {
 	}
 	if resolverStatus.Enabled {
 		fields["policy_count"] = resolverStatus.PolicyCount
-		fields["expires_at"] = resolverStatus.ExpiresAt
 	}
 	finish(nil, fields)
 

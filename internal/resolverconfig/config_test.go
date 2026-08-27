@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 )
 
 func TestLoadMissingMeansOptionalConfigDisabled(t *testing.T) {
@@ -16,12 +15,13 @@ func TestLoadMissingMeansOptionalConfigDisabled(t *testing.T) {
 	}
 }
 
-func TestLoadExpiredMeansOptionalConfigExplicitlyDisabled(t *testing.T) {
+func TestIgnoredProducerMetadataDoesNotDisableOverlay(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "dnsqualify.json")
-	config := validConfig(time.Now().Add(-time.Minute))
+	config := validConfig()
+	config.DeprecatedExpiresAt = "2000-01-01T00:00:00Z"
 	writeConfig(t, path, config)
 	status := ApplyOptional(path, validMihomo())
-	if status.Enabled || status.State != "disabled" || status.Reason != "expired" || status.ExpiresAt != config.ExpiresAt {
+	if !status.Enabled || status.State != "active" || status.PolicyCount != len(config.NameserverPolicy) {
 		t.Fatalf("status = %+v", status)
 	}
 }
@@ -68,7 +68,6 @@ func TestApplyOptionalRejectsUnacceptableOverlayWithoutMutatingBaseline(t *testi
 }
 
 func TestValidateOnlyConsumerContract(t *testing.T) {
-	now := time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC)
 	tests := []struct {
 		name string
 		edit func(*config)
@@ -76,15 +75,13 @@ func TestValidateOnlyConsumerContract(t *testing.T) {
 	}{
 		{name: "version", edit: func(config *config) { config.Version = 1 }, want: "version 1"},
 		{name: "empty policy", edit: func(config *config) { config.NameserverPolicy = nil }, want: "nameserver_policy"},
-		{name: "invalid expiry", edit: func(config *config) { config.ExpiresAt = "tomorrow" }, want: "invalid expires_at"},
-		{name: "expired", edit: func(config *config) { config.ExpiresAt = now.Add(-time.Second).Format(time.RFC3339Nano) }, want: "expired"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			config := validConfig(now.Add(time.Minute))
+			config := validConfig()
 			test.edit(&config)
-			if err := validateAt(config, now); err == nil || !strings.Contains(err.Error(), test.want) {
-				t.Fatalf("validateAt error = %v, want %q", err, test.want)
+			if err := validate(config); err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("validate error = %v, want %q", err, test.want)
 			}
 		})
 	}
@@ -92,7 +89,7 @@ func TestValidateOnlyConsumerContract(t *testing.T) {
 
 func TestLoadAndApplyNameserverPolicyOverlay(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "dnsqualify.json")
-	config := validConfig(time.Now().Add(time.Minute))
+	config := validConfig()
 	writeConfig(t, path, config)
 	dns := map[string]any{
 		"nameserver-policy":       map[string]any{"geosite:gfw": []string{"https://1.1.1.1/dns-query#DNSProxy"}},
@@ -115,7 +112,7 @@ func TestLoadAndApplyNameserverPolicyOverlay(t *testing.T) {
 }
 
 func TestApplyRejectsPolicyConflictWithoutPartialMutation(t *testing.T) {
-	config := validConfig(time.Now().Add(time.Minute))
+	config := validConfig()
 	conflict := "devstreaming-cdn.apple.com"
 	dns := map[string]any{"nameserver-policy": map[string]any{
 		conflict: []string{"https://existing.example/dns-query"},
@@ -131,7 +128,7 @@ func TestApplyRejectsPolicyConflictWithoutPartialMutation(t *testing.T) {
 
 func TestApplyOptionalRejectsPolicyConflictAndKeepsBaseline(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "dnsqualify.json")
-	candidate := validConfig(time.Now().Add(time.Minute))
+	candidate := validConfig()
 	writeConfig(t, path, candidate)
 	conflict := "devstreaming-cdn.apple.com"
 	mihomo := map[string]any{"dns": map[string]any{"nameserver-policy": map[string]any{
@@ -147,10 +144,10 @@ func TestApplyOptionalRejectsPolicyConflictAndKeepsBaseline(t *testing.T) {
 	}
 }
 
-func validConfig(expires time.Time) config {
+func validConfig() config {
 	server := "https://8.8.8.8/dns-query#DNSProxy"
 	return config{
-		Version: version, ExpiresAt: expires.Format(time.RFC3339Nano),
+		Version: version,
 		NameserverPolicy: map[string][]string{
 			"cdn.fastly.steamstatic.com": {server},
 			"devstreaming-cdn.apple.com": {server},
