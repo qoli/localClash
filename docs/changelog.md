@@ -22,10 +22,54 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
-| localClash Core | [v0.1.64](https://github.com/qoli/localClash/releases/tag/v0.1.64) | 2026-08-26 UTC+8 |
-| localclash-luci | [v0.1.0-56](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-56) | 2026-08-27 UTC+8 |
+| localClash Core | [v0.1.65](https://github.com/qoli/localClash/releases/tag/v0.1.65) | 2026-08-27 UTC+8 |
+| localclash-luci | [v0.1.0-57](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-57) | 2026-08-27 UTC+8 |
 
 ## 2026-08-27
+
+### localClash Core v0.1.65
+
+Changes:
+
+- dnsqualify overlay 的 Core 契約精簡為 `version` 與 `nameserver_policy`；Core
+  驗證並套用使用者保留的 ECS policy，直到使用者重新測量或刪除它。
+- 舊版 dnsqualify 附帶的額外 metadata 不會中止 Core 配置生成，安全的加密 DNS
+  baseline 仍由 Core 獨立維護。
+
+Release:
+
+- [qoli/localClash v0.1.65](https://github.com/qoli/localClash/releases/tag/v0.1.65)
+
+Verification:
+
+- `go test ./...`、`go vet ./...` 與 `git diff --check` 通過。
+- [Release workflow 33054051580](https://github.com/qoli/localClash/actions/runs/33054051580)
+  成功；公開 Release 的 7 個資產已重新下載，三份 SHA256、amd64／arm64 binary
+  架構與 manifest `v0.1.65` 均通過驗證。遠端標籤精確指向
+  `e793d627ad9869a3a7167471c7c2373fc6539020`。
+
+### localclash-luci v0.1.0-57
+
+Changes:
+
+- DNS 最佳化狀態只呈現目前保存的 ECS policy、測量結果與使用者可執行的更新／
+  刪除操作。
+- 離線 bundle 固定使用 Core v0.1.65 與 dnsqualify
+  `195a499e4dcee3d7b375116cdd39873558d76480`。
+
+Release:
+
+- [qoli/localclash-luci v0.1.0-57](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-57)
+
+Verification:
+
+- [main CI 33054460700](https://github.com/qoli/localclash-luci/actions/runs/33054460700)
+  與 [Release workflow 33054607880](https://github.com/qoli/localclash-luci/actions/runs/33054607880)
+  全部成功。
+- 公開 Release 的 13 個受管資產已重新下載；6 份 sidecar SHA256 全部通過，
+  x86_64／aarch64 `.run` 的 `--info`、`--list`、`--check` 與 `--noexec`
+  均通過。遠端標籤精確指向
+  `5bacf8140656fee7cb839c508d5e0fc6fb9169b0`。
 
 ### localclash-luci v0.1.0-56
 
@@ -118,9 +162,8 @@ Verification:
 
 Changes:
 
-- Router profile 不再注入 WAN resolver；預設使用加密 DNS 基線，Core 只接收有
-  版本與有效期的 `nameserver_policy` overlay，缺少或過期時保留基線，格式損壞或
-  policy 衝突則明確拒絕。
+- Router profile 不再注入 WAN resolver；預設使用加密 DNS 基線，Core 接收
+  `nameserver_policy` overlay，缺少時保留基線，格式損壞或 policy 衝突則明確拒絕。
 
 Release:
 
@@ -141,9 +184,8 @@ Verification:
 
 Changes:
 
-- DNS qualification provenance 改由獨立報告顯示，交給 Core 的 overlay 只保留
-  policy、版本與有效期；離線 bundle 鎖定 Core v0.1.62，並支援 OpenWrt BusyBox、
-  GNU coreutils 與 Darwin 的 expiry 解析。
+- DNS qualification provenance 改由獨立報告顯示，交給 Core 的 overlay 保留
+  policy 與版本；離線 bundle 鎖定 Core v0.1.62。
 
 Release:
 
