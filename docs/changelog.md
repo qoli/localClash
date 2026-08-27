@@ -16,22 +16,56 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 
 ## Unreleased
 
-- Core 新增 `runtime facts` CLI/MCP 唯讀 interface，從實際 generated config、
-  managed Mihomo process 與 controller readiness probe 回報版本化 network facts。
-- Core 移除 OpenWrt takeover implementation、CLI/MCP tools、desired-state 欄位與
-  runtime stop guard；OpenWrt takeover 完整改由 localclash-luci manager 擁有。
-- localclash-luci 新增獨立 takeover manager，接管 fw4/nft、policy routing、DNS
-  hijack、ownership/repair state、boot/hotplug reconcile，以及 restart/stop/reset/
-  one-click transaction。
-
 ## 目前最新版本
 
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
-| localClash Core | [v0.1.65](https://github.com/qoli/localClash/releases/tag/v0.1.65) | 2026-08-27 UTC+8 |
-| localclash-luci | [v0.1.0-57](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-57) | 2026-08-27 UTC+8 |
+| localClash Core | [v0.1.67](https://github.com/qoli/localClash/releases/tag/v0.1.67) | 2026-08-27 UTC+8 |
+| localclash-luci | [v0.1.0-58](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-58) | 2026-08-27 UTC+8 |
 
 ## 2026-08-27
+
+### localClash Core v0.1.67
+
+Changes:
+
+- 新增版本化 `runtime facts`；Core 僅管理 Mihomo config、lifecycle 與 runtime
+  facts，移除 OpenWrt takeover，並以 Core/config/workdir identity 判定 process。
+
+Release:
+
+- [qoli/localClash v0.1.67](https://github.com/qoli/localClash/releases/tag/v0.1.67)
+
+Verification:
+
+- Linux container 的 uncached `go test ./...` 與 `go vet ./...` 通過。
+- [Release workflow 33064795469](https://github.com/qoli/localClash/actions/runs/33064795469)
+  成功；公開 Release 的 7 個資產、三份 SHA256、amd64／arm64 ELF 與 manifest
+  `v0.1.67` 均通過驗證。遠端標籤精確指向
+  `db138b51a380dc1b8a7e8d79df4d5b1d3c32a7f3`。
+
+### localclash-luci v0.1.0-58
+
+Changes:
+
+- LuCI takeover manager 接管 fw4/nft、policy routing、DNS hijack、ownership、
+  boot/hotplug 與跨模組 transaction；離線 bundle 固定使用 Core `v0.1.67`。
+
+Release:
+
+- [qoli/localclash-luci v0.1.0-58](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-58)
+
+Verification:
+
+- iStoreOS 24.10.8 x86_64 QEMU 實測 takeover apply、restart/stop transaction、
+  fw4 reload 後 hotplug repair、整機 reboot restore、ownership conflict 拒絕，以及
+  OpenClash `revert_firewall` 不影響獨立的 `0x6c63`／table `27747` route identity。
+- [main CI 33065426368](https://github.com/qoli/localclash-luci/actions/runs/33065426368)
+  與 [Release workflow 33065583859](https://github.com/qoli/localclash-luci/actions/runs/33065583859)
+  全部成功。
+- 公開 Release 的 13 個受管資產與 6 份 sidecar SHA256 全部通過；x86_64／
+  aarch64 `.run` 的 `--info`、`--list`、`--check` 與 `--noexec` 均通過。
+  遠端標籤精確指向 `2ff6865427afcdc42657aa205acc3130ab36ad34`。
 
 ### localClash Core v0.1.65
 
