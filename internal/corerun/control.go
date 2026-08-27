@@ -121,6 +121,9 @@ type HotReloadResult struct {
 }
 
 func Status(opts StatusOptions) StatusResult {
+	identityScoped := strings.TrimSpace(opts.CorePath) != "" &&
+		strings.TrimSpace(opts.ConfigPath) != "" &&
+		strings.TrimSpace(opts.WorkDir) != ""
 	normalized := normalizeStartOptions(StartOptions{
 		CorePath:   opts.CorePath,
 		ConfigPath: opts.ConfigPath,
@@ -137,6 +140,15 @@ func Status(opts StatusOptions) StatusResult {
 	result.ExternalUIURL = externalUIURL(result.ExternalController, endpoints.ExternalUI)
 
 	processes := findManagedRuntimeProcesses()
+	if identityScoped {
+		matched := make([]runtimeProcess, 0, len(processes))
+		for _, process := range processes {
+			if _, err := InspectManagedRuntimeProcess(process.PID, normalized.CorePath, normalized.ConfigPath, normalized.WorkDir); err == nil {
+				matched = append(matched, process)
+			}
+		}
+		processes = matched
+	}
 	if len(processes) == 0 {
 		return result
 	}

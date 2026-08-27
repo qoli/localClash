@@ -3884,6 +3884,9 @@ func (s *Server) callRuntimeStatus(args json.RawMessage) (toolResult, error) {
 		LogFile    string
 	}{}
 	if s.state != nil {
+		if in.Core == "" {
+			in.Core = s.state.Paths.CorePath
+		}
 		if in.Config == "" {
 			in.Config = s.state.Paths.GeneratedConfig
 		}
@@ -3909,6 +3912,7 @@ func (s *Server) callRuntimeFacts(ctx context.Context, args json.RawMessage) (to
 	}
 	facts, err := runtimefacts.Read(ctx, runtimefacts.Options{
 		RuntimeProfile: s.state.Paths.RuntimeProfilePath,
+		CorePath:       s.state.Paths.CorePath,
 		ConfigPath:     s.state.Paths.GeneratedConfig,
 		RuntimeDir:     s.state.Paths.MihomoRuntimeDir,
 	})

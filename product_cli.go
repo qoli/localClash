@@ -490,6 +490,7 @@ func runProductRuntime(args []string, state appinit.RuntimeState) error {
 		}
 		result, err := runtimefacts.Read(ctx, runtimefacts.Options{
 			RuntimeProfile: state.Paths.RuntimeProfilePath,
+			CorePath:       state.Paths.CorePath,
 			ConfigPath:     state.Paths.GeneratedConfig,
 			RuntimeDir:     state.Paths.MihomoRuntimeDir,
 		})

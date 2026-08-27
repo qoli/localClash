@@ -21,6 +21,7 @@ const SchemaVersion = 1
 
 type Options struct {
 	RuntimeProfile string
+	CorePath       string
 	ConfigPath     string
 	RuntimeDir     string
 	LogPath        string
@@ -76,6 +77,7 @@ func Read(ctx context.Context, opts Options) (Facts, error) {
 		return Facts{}, fmt.Errorf("runtime facts hash generated config %q: %w", configPath, err)
 	}
 	runtime := corerun.Status(corerun.StatusOptions{
+		CorePath:   opts.CorePath,
 		ConfigPath: configPath,
 		WorkDir:    opts.RuntimeDir,
 		LogPath:    opts.LogPath,

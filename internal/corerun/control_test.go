@@ -65,6 +65,39 @@ func TestStatusIgnoresUnmanagedProcessName(t *testing.T) {
 	}
 }
 
+func TestStatusIgnoresManagedNameWithDifferentRuntimeIdentity(t *testing.T) {
+	dir := t.TempDir()
+	core := filepath.Join(dir, "lc-mihomo-meta")
+	writeStartExecutable(t, core, "#!/bin/sh\nexit 0\n")
+	config := writeStartConfig(t, dir)
+	workDir := filepath.Join(dir, "runtime")
+	if err := os.MkdirAll(workDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	otherDir := t.TempDir()
+	otherCore := filepath.Join(otherDir, "lc-mihomo-meta")
+	writeStartExecutable(t, otherCore, "#!/bin/sh\nexit 0\n")
+	otherConfig := writeStartConfig(t, otherDir)
+	otherWorkDir := filepath.Join(otherDir, "runtime")
+	if err := os.MkdirAll(otherWorkDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	table := stubProcessTable(t)
+	cmd := exec.Command("sleep", "30")
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer killProcess(cmd.Process.Pid)
+	go func() { _ = cmd.Wait() }()
+	table.add(cmd.Process.Pid, "lc-mihomo-meta", []string{otherCore, "-d", otherWorkDir, "-f", otherConfig})
+
+	result := Status(StatusOptions{CorePath: core, ConfigPath: config, WorkDir: workDir})
+	if result.Running || result.PID != 0 {
+		t.Fatalf("status = %+v, want different runtime identity ignored", result)
+	}
+}
+
 func TestStatusSkipsConfigTestProcess(t *testing.T) {
 	dir := t.TempDir()
 	workDir := filepath.Join(dir, "runtime")
