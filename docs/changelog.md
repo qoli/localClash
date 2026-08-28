@@ -16,6 +16,16 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 
 ## Unreleased
 
+### Restore dual-DoH DNS resilience
+
+- Restore explicit AliDNS and DNSPod DoH pools for normal and proxy-node
+  resolution, and use Google plus Cloudflare DoH through `DNSProxy` for both
+  fallback and the `geosite:gfw` policy.
+- Restore eager parallel fallback queries and explicit GeoIP CN/CIDR fallback
+  classification, while keeping the deprecated `fallback-filter.geosite`
+  field replaced by `nameserver-policy`.
+- Select Mihomo's ARC DNS cache algorithm explicitly.
+
 ## 目前最新版本
 
 | 渠道 | 最新版本 | 發佈時間 |

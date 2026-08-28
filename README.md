@@ -837,9 +837,12 @@ go run . doctor --json
 ## External DNS Selection Config
 
 The builtin router profile never promotes WAN-provisioned resolvers into
-runtime authority. Its secure baseline uses one AliDNS DoH main resolver and a
-lazy Google DoH fallback through `DNSProxy`; fallback classification is limited
-to explicit bogon/reserved CIDRs and does not treat non-CN GeoIP as pollution.
+runtime authority. Its encrypted baseline races explicit AliDNS and DNSPod DoH
+main resolvers, uses ARC caching, and eagerly queries Google and Cloudflare DoH
+fallback resolvers through `DNSProxy`. Non-CN or explicit bogon/reserved main
+answers select the fallback result. `geosite:gfw` uses the same two global DoH
+resolvers through an explicit `nameserver-policy`; the deprecated
+`fallback-filter.geosite` field is not used.
 
 Core contains no DNS quality probe, service catalog, candidate scorer, or
 `dnsqualify` command. When the optional v2 `dnsqualify.json` file exists beside

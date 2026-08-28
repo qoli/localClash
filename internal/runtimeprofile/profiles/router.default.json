@@ -46,11 +46,14 @@
       "listen": "0.0.0.0:7874",
       "respect-rules": true,
       "fake-ip-filter-mode": "blacklist",
+      "cache-algorithm": "arc",
       "nameserver": [
-        "https://223.5.5.5/dns-query"
+        "https://223.5.5.5/dns-query",
+        "https://doh.pub/dns-query"
       ],
       "proxy-server-nameserver": [
-        "https://223.5.5.5/dns-query"
+        "https://223.5.5.5/dns-query",
+        "https://doh.pub/dns-query"
       ],
       "direct-nameserver": [
         "https://223.5.5.5/dns-query"
@@ -59,16 +62,19 @@
         "https://223.5.5.5/dns-query"
       ],
       "fallback": [
-        "https://8.8.8.8/dns-query#DNSProxy"
+        "https://8.8.8.8/dns-query#DNSProxy",
+        "https://1.1.1.1/dns-query#DNSProxy"
       ],
-      "fallback-lazy-query": true,
+      "fallback-lazy-query": false,
       "nameserver-policy": {
         "geosite:gfw": [
-          "https://1.1.1.1/dns-query#DNSProxy"
+          "https://1.1.1.1/dns-query#DNSProxy",
+          "https://8.8.8.8/dns-query#DNSProxy"
         ]
       },
       "fallback-filter": {
-        "geoip": false,
+        "geoip": true,
+        "geoip-code": "CN",
         "ipcidr": [
           "0.0.0.0/8",
           "10.0.0.0/8",

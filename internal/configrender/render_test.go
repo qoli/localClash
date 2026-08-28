@@ -464,7 +464,7 @@ enabled_packs: []
 	if _, exists := policy["geosite:cn"]; exists {
 		t.Fatalf("builtin router unexpectedly injected broad mainland DNS authority: %#v", policy)
 	}
-	if got := dns["proxy-server-nameserver"].([]any); len(got) != 1 || got[0] != "https://223.5.5.5/dns-query" {
+	if got := dns["proxy-server-nameserver"].([]any); len(got) != 2 || got[0] != "https://223.5.5.5/dns-query" || got[1] != "https://doh.pub/dns-query" {
 		t.Fatalf("proxy-server-nameserver changed: %#v", got)
 	}
 	if result.ResolverStatus.Enabled || result.ResolverStatus.Reason != "missing" {
@@ -500,15 +500,18 @@ enabled_packs: []
 	}
 	config := readTestYAML(t, result.OutputPath)
 	dns := config["dns"].(map[string]any)
-	if got := dns["fallback"].([]any); len(got) != 1 || got[0] != "https://8.8.8.8/dns-query#DNSProxy" {
+	if got := dns["fallback"].([]any); len(got) != 2 || got[0] != "https://8.8.8.8/dns-query#DNSProxy" || got[1] != "https://1.1.1.1/dns-query#DNSProxy" {
 		t.Fatalf("fallback = %#v", got)
 	}
-	if dns["fallback-lazy-query"] != true {
+	if dns["fallback-lazy-query"] != false {
 		t.Fatalf("fallback-lazy-query = %#v", dns["fallback-lazy-query"])
 	}
+	if dns["cache-algorithm"] != "arc" {
+		t.Fatalf("cache-algorithm = %#v", dns["cache-algorithm"])
+	}
 	filter := dns["fallback-filter"].(map[string]any)
-	if filter["geoip"] != false || filter["geoip-code"] != nil {
-		t.Fatalf("fallback-filter = %#v, want CIDR-only classification", filter)
+	if filter["geoip"] != true || filter["geoip-code"] != "CN" || filter["geosite"] != nil {
+		t.Fatalf("fallback-filter = %#v, want GeoIP CN and CIDR classification without deprecated geosite", filter)
 	}
 }
 
