@@ -16,22 +16,28 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 
 ## Unreleased
 
-### Restore dual-DoH DNS resilience
-
-- Restore explicit AliDNS and DNSPod DoH pools for normal and proxy-node
-  resolution, and use Google plus Cloudflare DoH through `DNSProxy` for both
-  fallback and the `geosite:gfw` policy.
-- Restore eager parallel fallback queries and explicit GeoIP CN/CIDR fallback
-  classification, while keeping the deprecated `fallback-filter.geosite`
-  field replaced by `nameserver-policy`.
-- Select Mihomo's ARC DNS cache algorithm explicitly.
-
 ## 目前最新版本
 
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
-| localClash Core | [v0.1.67](https://github.com/qoli/localClash/releases/tag/v0.1.67) | 2026-08-27 UTC+8 |
+| localClash Core | [v0.1.68](https://github.com/qoli/localClash/releases/tag/v0.1.68) | 2026-08-28 UTC+8 |
 | localclash-luci | [v0.1.0-58](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-58) | 2026-08-27 UTC+8 |
+
+## 2026-08-28
+
+### localClash Core v0.1.68
+
+Changes:
+
+- 恢復雙 DoH、eager fallback、GeoIP／CIDR、ARC cache 與 GFW 雙 DoH。
+
+Release:
+
+- [qoli/localClash v0.1.68](https://github.com/qoli/localClash/releases/tag/v0.1.68)
+
+Verification:
+
+- tests 與 iStoreOS QEMU 驗收通過。
 
 ## 2026-08-27
 
