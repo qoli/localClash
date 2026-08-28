@@ -29,7 +29,7 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 
 Changes:
 
-- 恢復雙 DoH、eager fallback、GeoIP／CIDR、ARC cache 與 GFW 雙 DoH。
+- 雙 DoH、fallback、GeoIP／CIDR、ARC cache。
 
 Release:
 
