@@ -21,7 +21,7 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
 | localClash Core | [v0.1.70](https://github.com/qoli/localClash/releases/tag/v0.1.70) | 2026-08-30 UTC+8 |
-| localclash-luci | [v0.1.0-59](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-59) | 2026-08-29 UTC+8 |
+| localclash-luci | [v0.1.0-60](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-60) | 2026-08-30 UTC+8 |
 
 ## 2026-08-30
 
@@ -44,6 +44,34 @@ Verification:
 
 - `go test ./...` 通過，並覆蓋 Mihomo pair promotion、殘留 rollback artifact
   拒絕，以及第二個候選 promotion 失敗時恢復原有 pair。
+- [Release workflow 33263921922](https://github.com/qoli/localClash/actions/runs/33263921922)
+  成功；公開 Release 的 7 個資產、三份 SHA256、amd64／arm64 ELF 與 manifest
+  `v0.1.70` 均通過驗證。遠端標籤精確指向
+  `bd854f88c6862342fc0452a6d3fbd7ce955050ec`。
+
+### localclash-luci v0.1.0-60
+
+Changes:
+
+- 一鍵更新拆成軟體與配置材料兩個檢查點：先以現行配置切換新 Mihomo、恢復並
+  驗證網路接管，之後才刷新訂閱與提交新配置。
+- 訂閱刷新失敗會明確停止材料階段，不再以既有訂閱快取繼續；已驗證的軟體
+  檢查點與網路接管保持運行，讓使用者修正訂閱後重試。
+- 網路接管恢復以持久化 desired state 為準；故障當下的 `effective=false` 不再
+  被誤判為使用者主動停用接管。iStore 離線 bundle 固定 Core `v0.1.70`。
+
+Release:
+
+- [qoli/localclash-luci v0.1.0-60](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-60)
+
+Verification:
+
+- [main CI 33264195713](https://github.com/qoli/localclash-luci/actions/runs/33264195713)
+  與 [Release workflow 33264302309](https://github.com/qoli/localclash-luci/actions/runs/33264302309)
+  全部成功。
+- 公開 Release 的 13 個受管資產及 6 份 sidecar SHA256 全部通過；x86_64／
+  aarch64 `.run` 的 `--info`、`--list`、`--check` 與 `--noexec` 均通過。
+  遠端標籤精確指向 `650cab42de0c587740bb7a305ed4283b2f7cc5ef`。
 
 ## 2026-08-29
 
