@@ -47,6 +47,7 @@ type TransactionHooks struct {
 	Validate      func(context.Context, string, string) (ValidationStatus, error)
 	RuntimeStatus func() (RuntimeStatus, error)
 	Reload        func(context.Context, string) (ReloadStatus, error)
+	Progress      func(stage, message string)
 }
 
 type TransactionOptions struct {
@@ -82,14 +83,22 @@ type TransactionResult struct {
 func Transact(ctx context.Context, opts TransactionOptions) (TransactionResult, error) {
 	transactionMu.Lock()
 	defer transactionMu.Unlock()
+	report := func(stage, message string) {
+		if opts.Hooks.Progress != nil {
+			opts.Hooks.Progress(stage, message)
+		}
+	}
 
+	report("validate", "Validating custom-site transaction input.")
 	if err := validateTransactionOptions(opts); err != nil {
 		return TransactionResult{}, err
 	}
+	report("load", "Reading durable custom-site state.")
 	pair, err := customsites.Load(opts.Paths)
 	if err != nil {
 		return TransactionResult{}, err
 	}
+	report("candidate", "Building candidate custom-site state.")
 	candidate, entry, err := applyInput(pair, opts.Input, opts.Now)
 	if err != nil {
 		return TransactionResult{}, err
@@ -123,9 +132,11 @@ func Transact(ctx context.Context, opts TransactionOptions) (TransactionResult, 
 	}
 	candidateConfig := filepath.Join(tempRoot, "config.yaml")
 	candidateAttestation := filepath.Join(tempRoot, "config-test-attestation.json")
+	report("render", "Rendering candidate Mihomo configuration.")
 	if err := opts.Hooks.Render(ctx, candidatePaths, candidateConfig); err != nil {
 		return result, fmt.Errorf("render custom site candidate config: %w", err)
 	}
+	report("config_test", "Running Mihomo configuration validation.")
 	validation, err := opts.Hooks.Validate(ctx, candidateConfig, candidateAttestation)
 	if err != nil {
 		return result, fmt.Errorf("validate custom site candidate config: %w", err)
@@ -142,6 +153,7 @@ func Transact(ctx context.Context, opts TransactionOptions) (TransactionResult, 
 	result.Apply.Validated = true
 	result.Apply.ConfigSHA256 = validation.ConfigSHA256
 
+	report("runtime_status", "Inspecting active Mihomo runtime state.")
 	runtimeStatus, err := opts.Hooks.RuntimeStatus()
 	if err != nil {
 		return result, fmt.Errorf("inspect runtime before custom site promotion: %w", err)
@@ -158,6 +170,7 @@ func Transact(ctx context.Context, opts TransactionOptions) (TransactionResult, 
 		return result, fmt.Errorf("backup custom site promotion targets: %w", err)
 	}
 	if err := promoteTargets(targets); err != nil {
+		report("rollback", "Candidate promotion failed; restoring prior files.")
 		rollbackErr := restorePromotionTargets(backups)
 		result.Apply.RolledBack = rollbackErr == nil
 		if rollbackErr != nil {
@@ -165,6 +178,7 @@ func Transact(ctx context.Context, opts TransactionOptions) (TransactionResult, 
 		}
 		return result, fmt.Errorf("promote custom site transaction: %w", err)
 	}
+	report("promote", "Candidate state and generated configuration were promoted.")
 	result.Apply.Promoted = true
 	result.Snapshot, err = customsites.SnapshotChecked(candidate)
 	if err != nil {
@@ -174,21 +188,25 @@ func Transact(ctx context.Context, opts TransactionOptions) (TransactionResult, 
 		return result, fmt.Errorf("read promoted custom site snapshot: %v; rollback files: %v", err, rollbackErr)
 	}
 	if !runtimeStatus.Running {
+		report("complete", "Runtime is inactive; saved state will apply on next start.")
 		result.Apply.PendingNextStart = true
 		return result, nil
 	}
 
+	report("reload", "Hot reloading the active Mihomo runtime.")
 	reload, reloadErr := opts.Hooks.Reload(ctx, validation.ConfigSHA256)
 	if reloadErr == nil && (!reload.Reloaded || !reload.ReadBack) {
 		reloadErr = fmt.Errorf("hot reload did not prove loaded state: reloaded=%t read_back=%t", reload.Reloaded, reload.ReadBack)
 	}
 	if reloadErr == nil {
+		report("complete", "Runtime reload and semantic read-back succeeded.")
 		result.Apply.Reloaded = true
 		result.Apply.ReadBack = true
 		result.Apply.Effective = true
 		return result, nil
 	}
 
+	report("rollback", "Runtime read-back failed; restoring prior files and runtime.")
 	fileRollbackErr := restorePromotionTargets(backups)
 	var runtimeRollbackErr error
 	if fileRollbackErr == nil {

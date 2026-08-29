@@ -579,6 +579,9 @@ func customSitesTransactionOptions(state appinit.RuntimeState, paths customsites
 		AttestationPath: attestationPath,
 		Input:           input,
 		Hooks: customsitesapply.TransactionHooks{
+			Progress: func(stage, message string) {
+				fmt.Fprintf(os.Stderr, "custom-sites stage=%s message=%s\n", stage, message)
+			},
 			Render: func(ctx context.Context, candidatePaths customsites.Paths, output string) error {
 				_, err := configrender.Render(configrender.Options{
 					SourcePath:         state.Paths.SubscriptionPath,
@@ -671,7 +674,9 @@ func waitForCustomSitesRuntimeReadBack(ctx context.Context, pair customsites.Pai
 	readBackCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	var lastErr error
+	attempt := 0
 	for {
+		attempt++
 		rulesResponse, err := request(readBackCtx, mihomoapi.RequestOptions{Method: "GET", Path: "/rules", Timeout: 2 * time.Second, MaxBytes: 4 * 1024 * 1024})
 		if err != nil {
 			lastErr = fmt.Errorf("read back Mihomo rules after hot reload: %w", err)
@@ -680,6 +685,7 @@ func waitForCustomSitesRuntimeReadBack(ctx context.Context, pair customsites.Pai
 			if proxiesErr != nil {
 				lastErr = fmt.Errorf("read back Mihomo proxies after hot reload: %w", proxiesErr)
 			} else if verifyErr := verifyCustomSitesRuntimeReadBack(pair, rulesResponse, proxiesResponse); verifyErr == nil {
+				fmt.Fprintf(os.Stderr, "custom-sites stage=read_back message=Runtime semantics converged after %d attempt(s).\n", attempt)
 				return nil
 			} else {
 				lastErr = verifyErr

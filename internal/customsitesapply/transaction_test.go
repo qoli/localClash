@@ -17,6 +17,8 @@ func TestTransactFirstAddPromotesCandidateAndReportsPending(t *testing.T) {
 	root := t.TempDir()
 	opts := testTransactionOptions(t, root)
 	opts.Input = TransactionInput{Version: 1, Operation: OperationAdd, Pattern: "ABC.*cdn?.com", Route: customsites.RouteProxy}
+	var stages []string
+	opts.Hooks.Progress = func(stage, _ string) { stages = append(stages, stage) }
 
 	result, err := Transact(context.Background(), opts)
 	if err != nil {
@@ -27,6 +29,9 @@ func TestTransactFirstAddPromotesCandidateAndReportsPending(t *testing.T) {
 	}
 	if result.Snapshot.ProxyCount != 1 || result.Snapshot.DirectCount != 0 || result.Snapshot.ProxySHA256 == "" || result.Snapshot.DirectSHA256 == "" {
 		t.Fatalf("snapshot = %+v, want authoritative counts and hashes", result.Snapshot)
+	}
+	if got, want := strings.Join(stages, ","), "validate,load,candidate,render,config_test,runtime_status,promote,complete"; got != want {
+		t.Fatalf("progress stages = %q, want %q", got, want)
 	}
 	pair, err := customsites.Load(opts.Paths)
 	if err != nil {
