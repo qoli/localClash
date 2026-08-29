@@ -20,8 +20,30 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
-| localClash Core | [v0.1.69](https://github.com/qoli/localClash/releases/tag/v0.1.69) | 2026-08-29 UTC+8 |
+| localClash Core | [v0.1.70](https://github.com/qoli/localClash/releases/tag/v0.1.70) | 2026-08-30 UTC+8 |
 | localclash-luci | [v0.1.0-59](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-59) | 2026-08-29 UTC+8 |
+
+## 2026-08-30
+
+### localClash Core v0.1.70
+
+Changes:
+
+- Mihomo 更新改為候選交易：Meta 與 Smart 先下載到隔離目錄，確認兩個候選均為
+  可執行檔，再用現行配置驗證目前選用的候選核心。
+- 兩個 Mihomo 核心只會在候選完整且驗證通過後成對 promotion；任何中途失敗都會
+  回復原有 pair，並對殘留 rollback artifact 明確停止。
+- Core 與 LuCI 的更新責任保持分離：Core 負責候選驗證和二進位交易，LuCI 負責
+  軟體檢查點、訂閱材料檢查點及網路接管連續性。
+
+Release:
+
+- [qoli/localClash v0.1.70](https://github.com/qoli/localClash/releases/tag/v0.1.70)
+
+Verification:
+
+- `go test ./...` 通過，並覆蓋 Mihomo pair promotion、殘留 rollback artifact
+  拒絕，以及第二個候選 promotion 失敗時恢復原有 pair。
 
 ## 2026-08-29
 

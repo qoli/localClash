@@ -443,16 +443,7 @@ func runProductComponentUpdate(args []string, state appinit.RuntimeState) error 
 		}
 		return printProductOK(productEnvelope{OK: true, Changed: true, Summary: "Base assets updated.", Status: result, Changes: []string{"base_assets_updated"}, Warnings: []string{}})
 	case "mihomo":
-		result, err := downloadCore(ctx, coredownload.Options{
-			Version:    "latest",
-			Flavor:     coredownload.FlavorAll,
-			Target:     coredownload.TargetRouter,
-			TargetOS:   "linux",
-			TargetArch: runtime.GOARCH,
-			OutputDir:  productWorkspacePath(state, "bin"),
-			Repo:       "MetaCubeX/mihomo",
-			Force:      true,
-		})
+		result, err := updateMihomoComponents(ctx, state)
 		if err != nil {
 			return err
 		}

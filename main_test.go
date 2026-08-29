@@ -758,8 +758,14 @@ func TestRunProductComponentUpdateMihomoRefreshesCoreVersionCache(t *testing.T) 
 	core := filepath.Join(dir, runtimeprofile.MetaCorePath)
 	oldDownloadCore := downloadCore
 	downloadCore = func(ctx context.Context, opts coredownload.Options) ([]coredownload.Result, error) {
-		writeMainExecutableCore(t, core, "Mihomo component update")
-		return []coredownload.Result{{OutputPath: core, Flavor: coredownload.FlavorMeta, Target: opts.Target}}, nil
+		meta := filepath.Join(opts.OutputDir, "linux-"+runtime.GOARCH, runtimeprofile.ManagedMetaCoreName)
+		smart := filepath.Join(opts.OutputDir, "linux-"+runtime.GOARCH, runtimeprofile.ManagedSmartCoreName)
+		writeMainExecutableCore(t, meta, "Mihomo component update")
+		writeMainExecutableCore(t, smart, "Mihomo smart component update")
+		return []coredownload.Result{
+			{OutputPath: meta, Flavor: coredownload.FlavorMeta, Target: opts.Target},
+			{OutputPath: smart, Flavor: coredownload.FlavorSmart, Target: opts.Target},
+		}, nil
 	}
 	t.Cleanup(func() {
 		downloadCore = oldDownloadCore
