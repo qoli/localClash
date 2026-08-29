@@ -646,15 +646,7 @@ func customSitesTransactionOptions(state appinit.RuntimeState, paths customsites
 				if err != nil {
 					return customsitesapply.ReloadStatus{Reloaded: true}, fmt.Errorf("load promoted custom site state for runtime read-back: %w", err)
 				}
-				rulesResponse, err := client.Request(ctx, mihomoapi.RequestOptions{Method: "GET", Path: "/rules", Timeout: 10 * time.Second, MaxBytes: 4 * 1024 * 1024})
-				if err != nil {
-					return customsitesapply.ReloadStatus{Reloaded: true}, fmt.Errorf("read back Mihomo rules after hot reload: %w", err)
-				}
-				proxiesResponse, err := client.Request(ctx, mihomoapi.RequestOptions{Method: "GET", Path: "/proxies", Timeout: 10 * time.Second, MaxBytes: 2 * 1024 * 1024})
-				if err != nil {
-					return customsitesapply.ReloadStatus{Reloaded: true}, fmt.Errorf("read back Mihomo proxies after hot reload: %w", err)
-				}
-				if err := verifyCustomSitesRuntimeReadBack(pair, rulesResponse, proxiesResponse); err != nil {
+				if err := waitForCustomSitesRuntimeReadBack(ctx, pair, client.Request, 10*time.Second, 150*time.Millisecond); err != nil {
 					return customsitesapply.ReloadStatus{Reloaded: true}, err
 				}
 				status := corerun.Status(runtimeStatusOptions(state))
@@ -664,6 +656,46 @@ func customSitesTransactionOptions(state appinit.RuntimeState, paths customsites
 				return customsitesapply.ReloadStatus{Reloaded: true, ReadBack: true}, nil
 			},
 		},
+	}
+}
+
+type mihomoRequestFunc func(context.Context, mihomoapi.RequestOptions) (mihomoapi.Response, error)
+
+func waitForCustomSitesRuntimeReadBack(ctx context.Context, pair customsites.Pair, request mihomoRequestFunc, timeout, interval time.Duration) error {
+	if timeout <= 0 {
+		timeout = 10 * time.Second
+	}
+	if interval <= 0 {
+		interval = 150 * time.Millisecond
+	}
+	readBackCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	var lastErr error
+	for {
+		rulesResponse, err := request(readBackCtx, mihomoapi.RequestOptions{Method: "GET", Path: "/rules", Timeout: 2 * time.Second, MaxBytes: 4 * 1024 * 1024})
+		if err != nil {
+			lastErr = fmt.Errorf("read back Mihomo rules after hot reload: %w", err)
+		} else {
+			proxiesResponse, proxiesErr := request(readBackCtx, mihomoapi.RequestOptions{Method: "GET", Path: "/proxies", Timeout: 2 * time.Second, MaxBytes: 2 * 1024 * 1024})
+			if proxiesErr != nil {
+				lastErr = fmt.Errorf("read back Mihomo proxies after hot reload: %w", proxiesErr)
+			} else if verifyErr := verifyCustomSitesRuntimeReadBack(pair, rulesResponse, proxiesResponse); verifyErr == nil {
+				return nil
+			} else {
+				lastErr = verifyErr
+			}
+		}
+
+		timer := time.NewTimer(interval)
+		select {
+		case <-readBackCtx.Done():
+			timer.Stop()
+			if lastErr == nil {
+				lastErr = readBackCtx.Err()
+			}
+			return fmt.Errorf("custom site runtime read-back did not converge within %s: %w", timeout, lastErr)
+		case <-timer.C:
+		}
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/gob"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -14,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"localclash/internal/appinit"
 	"localclash/internal/chatgptavailable"
@@ -177,6 +179,55 @@ func TestVerifyCustomSitesRuntimeReadBackRequiresSemanticOrderAndGroups(t *testi
 	raw[0], raw[1] = raw[1], raw[0]
 	if err := verifyCustomSitesRuntimeReadBack(pair, rules, proxies); err == nil || !strings.Contains(err.Error(), "rule 1 mismatch") {
 		t.Fatalf("error = %v, want semantic order mismatch", err)
+	}
+}
+
+func TestWaitForCustomSitesRuntimeReadBackRetriesStaleControllerState(t *testing.T) {
+	pair := customsites.EmptyPair()
+	pair.Direct.Entries = []customsites.Entry{{ID: "direct", Match: customsites.MatchFull, Pattern: "priority.test.invalid", Sequence: 1, AddedAt: "2026-08-29T00:00:00Z"}}
+	rules := mihomoapi.Response{JSON: map[string]any{"rules": []any{
+		map[string]any{"type": "Domain", "payload": "priority.test.invalid", "proxy": customsites.DirectPolicyGroup},
+	}}}
+	staleProxies := mihomoapi.Response{JSON: map[string]any{"proxies": map[string]any{}}}
+	loadedProxies := mihomoapi.Response{JSON: map[string]any{"proxies": map[string]any{
+		customsites.ProxyPolicyGroup:  map[string]any{},
+		customsites.DirectPolicyGroup: map[string]any{},
+	}}}
+	proxyReads := 0
+	request := func(_ context.Context, opts mihomoapi.RequestOptions) (mihomoapi.Response, error) {
+		switch opts.Path {
+		case "/rules":
+			return rules, nil
+		case "/proxies":
+			proxyReads++
+			if proxyReads == 1 {
+				return staleProxies, nil
+			}
+			return loadedProxies, nil
+		default:
+			return mihomoapi.Response{}, fmt.Errorf("unexpected path %q", opts.Path)
+		}
+	}
+	if err := waitForCustomSitesRuntimeReadBack(context.Background(), pair, request, 100*time.Millisecond, time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	if proxyReads != 2 {
+		t.Fatalf("proxy reads = %d, want 2", proxyReads)
+	}
+}
+
+func TestWaitForCustomSitesRuntimeReadBackFailsWhenStateNeverConverges(t *testing.T) {
+	pair := customsites.EmptyPair()
+	pair.Direct.Entries = []customsites.Entry{{ID: "direct", Match: customsites.MatchFull, Pattern: "priority.test.invalid", Sequence: 1, AddedAt: "2026-08-29T00:00:00Z"}}
+	request := func(_ context.Context, opts mihomoapi.RequestOptions) (mihomoapi.Response, error) {
+		if opts.Path == "/rules" {
+			return mihomoapi.Response{JSON: map[string]any{"rules": []any{}}}, nil
+		}
+		return mihomoapi.Response{JSON: map[string]any{"proxies": map[string]any{}}}, nil
+	}
+	err := waitForCustomSitesRuntimeReadBack(context.Background(), pair, request, 5*time.Millisecond, time.Millisecond)
+	if err == nil || !strings.Contains(err.Error(), "did not converge") || !strings.Contains(err.Error(), "missing reserved policy group") {
+		t.Fatalf("error = %v, want bounded semantic read-back failure", err)
 	}
 }
 
