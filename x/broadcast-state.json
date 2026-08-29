@@ -32,6 +32,14 @@
       "image_sha256": "fdf616dd35f4c758c8d3802cdbc9cace12ac66127fcc41d544fe28334a8829c1",
       "fingerprint": "93b0de8f6ddd60b00d58e419729501e0f8be994b901ca6b41bddfcdde57f6dcd",
       "verified": true
+    },
+    {
+      "account": "@llqoli",
+      "status_url": "https://x.com/llqoli/status/2093707738438357498",
+      "text_sha256": "8a1ebe724292bd7b06f22917848565be6c22e27567374cfed72bb5ae57485352",
+      "image_sha256": "77477b39bdb0fcfd3730a70099c522095d556c4ad83435d3c7ba733afda0374e",
+      "fingerprint": "855cc245b4d1b19c77c68de8da641d2aa8a26adef1a46e00ceceb574cddc6748",
+      "verified": true
     }
   ]
 }
