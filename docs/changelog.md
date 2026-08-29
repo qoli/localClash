@@ -21,7 +21,7 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
 | localClash Core | [v0.1.69](https://github.com/qoli/localClash/releases/tag/v0.1.69) | 2026-08-29 UTC+8 |
-| localclash-luci | [v0.1.0-58](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-58) | 2026-08-27 UTC+8 |
+| localclash-luci | [v0.1.0-59](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-59) | 2026-08-29 UTC+8 |
 
 ## 2026-08-29
 
@@ -44,6 +44,37 @@ Verification:
 
 - `go test ./...`、iStoreOS 24.10.8 x86_64 QEMU 的兩條重疊規則互動、runtime
   rule order／policy group read-back 與 rollback failure path 均通過。
+- [Release workflow 33257009978](https://github.com/qoli/localClash/actions/runs/33257009978)
+  成功；公開 Release 的 7 個資產、三份 SHA256、amd64／arm64 ELF 與 manifest
+  `v0.1.69` 均通過驗證。遠端標籤精確指向
+  `cc6e0a398369c0bde7b7058031031ef2415ba1ee`。
+
+### localclash-luci v0.1.0-59
+
+Changes:
+
+- 新增「網站分流」頁面，以單筆新增／刪除管理 `自訂代理網站` 與
+  `自訂直連網站`；相同 pattern 跨列表時只在前端雙邊標黃，最後加入者仍優先。
+- 網站儲存改為背景 task，直接顯示等待時間與 validate、render、`mihomo -t`、
+  promote、reload、read-back／rollback log，不再讓使用者面對無狀態的長時間等待。
+- 「同步最新默认策略」以數量與 SHA256 證明兩份自訂網站列表未被修改；iStore
+  離線 bundle 固定使用 Core `v0.1.69`。
+- 修正沒有重複警告的網站 row 被 LuCI `E()` 顯示為 `domain.comnull`。
+
+Release:
+
+- [qoli/localclash-luci v0.1.0-59](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-59)
+
+Verification:
+
+- iStoreOS 24.10.8 x86_64 QEMU 完成直連→代理重疊規則互動、黃色提示、背景
+  progress log、runtime rule order／policy group read-back 及無 `null` row 驗收。
+- [main CI 33257213187](https://github.com/qoli/localclash-luci/actions/runs/33257213187)
+  與 [Release workflow 33257307070](https://github.com/qoli/localclash-luci/actions/runs/33257307070)
+  全部成功。
+- 公開 Release 的 13 個受管資產與 6 份 sidecar SHA256 全部通過；x86_64／
+  aarch64 `.run` 的 `--info`、`--list`、`--check` 與 `--noexec` 均通過。
+  遠端標籤精確指向 `dcb2b88d9e50b960051450ab43112da6b124ee93`。
 
 ## 2026-08-28
 
