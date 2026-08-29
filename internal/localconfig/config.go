@@ -147,15 +147,16 @@ type LocalRulePack struct {
 }
 
 type LocalRulePackRule struct {
-	Type         string `json:"type,omitempty" yaml:"type,omitempty"`
-	Value        string `json:"value,omitempty" yaml:"value,omitempty"`
-	Domain       string `json:"domain,omitempty" yaml:"domain,omitempty"`
-	DomainSuffix string `json:"domain_suffix,omitempty" yaml:"domain_suffix,omitempty"`
-	DomainRegex  string `json:"domain_regex,omitempty" yaml:"domain_regex,omitempty"`
-	IPCIDR       string `json:"ip_cidr,omitempty" yaml:"ip_cidr,omitempty"`
-	IPCIDR6      string `json:"ip_cidr6,omitempty" yaml:"ip_cidr6,omitempty"`
-	GeoIP        string `json:"geoip,omitempty" yaml:"geoip,omitempty"`
-	NoResolve    bool   `json:"no_resolve,omitempty" yaml:"no_resolve,omitempty"`
+	Type           string `json:"type,omitempty" yaml:"type,omitempty"`
+	Value          string `json:"value,omitempty" yaml:"value,omitempty"`
+	Domain         string `json:"domain,omitempty" yaml:"domain,omitempty"`
+	DomainSuffix   string `json:"domain_suffix,omitempty" yaml:"domain_suffix,omitempty"`
+	DomainWildcard string `json:"domain_wildcard,omitempty" yaml:"domain_wildcard,omitempty"`
+	DomainRegex    string `json:"domain_regex,omitempty" yaml:"domain_regex,omitempty"`
+	IPCIDR         string `json:"ip_cidr,omitempty" yaml:"ip_cidr,omitempty"`
+	IPCIDR6        string `json:"ip_cidr6,omitempty" yaml:"ip_cidr6,omitempty"`
+	GeoIP          string `json:"geoip,omitempty" yaml:"geoip,omitempty"`
+	NoResolve      bool   `json:"no_resolve,omitempty" yaml:"no_resolve,omitempty"`
 }
 
 type ExternalRuleProvider struct {
@@ -1260,7 +1261,7 @@ func normalizeCustomRuleLine(id string, rule CustomRuleLine) (CustomRuleLine, er
 		return CustomRuleLine{}, fmt.Errorf("custom rule %q contains an empty value", id)
 	}
 	switch rule.Type {
-	case "domain", "domain_suffix", "domain_regex", "ip_cidr", "ip_cidr6", "geoip":
+	case "domain", "domain_suffix", "domain_wildcard", "domain_regex", "ip_cidr", "ip_cidr6", "geoip":
 	default:
 		return CustomRuleLine{}, fmt.Errorf("custom rule %q type %q is unsupported", id, rule.Type)
 	}
@@ -1449,6 +1450,7 @@ func normalizeLocalRulePackRule(packID string, index int, rule LocalRulePackRule
 	candidates := []CustomRuleLine{
 		{Type: "domain", Value: rule.Domain, NoResolve: rule.NoResolve},
 		{Type: "domain_suffix", Value: rule.DomainSuffix, NoResolve: rule.NoResolve},
+		{Type: "domain_wildcard", Value: rule.DomainWildcard, NoResolve: rule.NoResolve},
 		{Type: "domain_regex", Value: rule.DomainRegex, NoResolve: rule.NoResolve},
 		{Type: "ip_cidr", Value: rule.IPCIDR, NoResolve: rule.NoResolve},
 		{Type: "ip_cidr6", Value: rule.IPCIDR6, NoResolve: rule.NoResolve},
@@ -1461,7 +1463,7 @@ func normalizeLocalRulePackRule(packID string, index int, rule LocalRulePackRule
 		}
 	}
 	if len(selected) != 1 {
-		return CustomRuleLine{}, fmt.Errorf("local rule pack %q rule %d must specify exactly one of domain, domain_suffix, domain_regex, ip_cidr, ip_cidr6, geoip, or type/value", packID, index+1)
+		return CustomRuleLine{}, fmt.Errorf("local rule pack %q rule %d must specify exactly one of domain, domain_suffix, domain_wildcard, domain_regex, ip_cidr, ip_cidr6, geoip, or type/value", packID, index+1)
 	}
 	return normalizeCustomRuleLine(fmt.Sprintf("rule pack %s rule %d", packID, index+1), selected[0])
 }

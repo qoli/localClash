@@ -236,6 +236,19 @@ func TestResolveEnabledLocalRulePacks(t *testing.T) {
 	}
 }
 
+func TestNormalizeCustomRuleLineSupportsDomainWildcard(t *testing.T) {
+	got, err := normalizeCustomRuleLine("custom-sites", CustomRuleLine{
+		Type:  " DOMAIN_WILDCARD ",
+		Value: " abc.*cdn?.com ",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Type != "domain_wildcard" || got.Value != "abc.*cdn?.com" {
+		t.Fatalf("normalized rule = %+v, want domain_wildcard abc.*cdn?.com", got)
+	}
+}
+
 func TestResolveEnabledRulePacksFromLocalFiles(t *testing.T) {
 	dir := t.TempDir()
 	rulePacksDir := filepath.Join(dir, "rule-packs")
@@ -504,7 +517,7 @@ func TestResolveAllowsNestedPolicyGroupExit(t *testing.T) {
 		Config: Config{
 			PolicyGroups: map[string]PolicyGroup{
 				"☁️ Cloudflare": {Mode: "manual", Exits: []string{"🌐 全球直连"}},
-				"🌐 全球直连":    {Mode: "manual", Exits: []string{"DIRECT"}},
+				"🌐 全球直连":        {Mode: "manual", Exits: []string{"DIRECT"}},
 			},
 			FallbackTarget: "☁️ Cloudflare",
 		},

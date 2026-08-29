@@ -142,6 +142,22 @@ func TestRegistryIncludesSafetyLevels(t *testing.T) {
 	}
 }
 
+func TestCustomRulesBuildSchemaIncludesDomainWildcard(t *testing.T) {
+	schema := inputSchemaForTool("custom_rules_build")
+	properties := schema["properties"].(map[string]any)
+	rulesSchema := properties["rules"].(map[string]any)
+	ruleSchema := rulesSchema["items"].(map[string]any)
+	ruleProperties := ruleSchema["properties"].(map[string]any)
+	typeSchema := ruleProperties["type"].(map[string]any)
+	types := typeSchema["enum"].([]string)
+	for _, ruleType := range types {
+		if ruleType == "domain_wildcard" {
+			return
+		}
+	}
+	t.Fatalf("custom_rules_build types = %+v, want domain_wildcard", types)
+}
+
 func TestRuntimeSchemasExposeForceConfigTest(t *testing.T) {
 	for _, name := range []string{"run_runtime", "restart_runtime"} {
 		schema := inputSchemaForTool(name)

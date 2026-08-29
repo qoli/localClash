@@ -121,6 +121,25 @@ CLI commands remain useful for local development and for environments where an
 MCP client is not available. The main human path is either `localclash run` for
 runtime startup, or conversation through an MCP-capable agent for management.
 
+### Custom Website Routing
+
+LuCI's simple website-routing page uses a strict Core transaction rather than
+editing generated Mihomo YAML. The same operations are available for adapter
+and diagnostic use through the CLI:
+
+```bash
+localclash custom-sites list --json
+localclash custom-sites transact --input request.json --json
+```
+
+An add request contains `{"version":1,"operation":"add","pattern":"example.com","route":"proxy"}`;
+a delete request contains `{"version":1,"operation":"delete","id":"<entry-id>"}`.
+Inputs containing `*` or `?` compile to `DOMAIN-WILDCARD`; all other accepted
+hosts compile to `DOMAIN`. The durable documents live under `custom-sites/`,
+outside the policy patch registry, so default-policy synchronization preserves
+them. See [Custom Site Routing](docs/custom-site-routing.md) for the complete
+ordering and transaction contract.
+
 ## Codex Companion Skill
 
 localClash ships an official Codex companion skill for MCP routing work. Its

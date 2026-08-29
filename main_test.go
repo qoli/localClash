@@ -18,6 +18,8 @@ import (
 	"localclash/internal/appinit"
 	"localclash/internal/chatgptavailable"
 	"localclash/internal/coredownload"
+	"localclash/internal/customsites"
+	"localclash/internal/mihomoapi"
 	"localclash/internal/rules"
 	"localclash/internal/runtimeprofile"
 	"localclash/internal/subscriptions"
@@ -101,6 +103,80 @@ func TestRunRuntimeStatusPrintsJSONEnvelope(t *testing.T) {
 	}
 	if !result.OK || !result.Status.Running || result.Status.PID != cmd.Process.Pid || result.Status.ExternalUIURL != "http://127.0.0.1:9090/ui" {
 		t.Fatalf("status result = %+v, want current pid and external UI", result)
+	}
+}
+
+func TestRunCustomSitesListReportsUninitializedAuthoritativeSnapshot(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+
+	output := captureStdout(t, func() error {
+		return run([]string{"custom-sites", "list", "--json"})
+	})
+	var result struct {
+		OK          bool `json:"ok"`
+		CustomSites struct {
+			Initialized  bool   `json:"initialized"`
+			ProxyCount   int    `json:"proxy_count"`
+			DirectCount  int    `json:"direct_count"`
+			ProxySHA256  string `json:"proxy_sha256"`
+			DirectSHA256 string `json:"direct_sha256"`
+		} `json:"custom_sites"`
+	}
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
+		t.Fatalf("custom-sites list JSON = %q, error = %v", output, err)
+	}
+	if !result.OK || result.CustomSites.Initialized || result.CustomSites.ProxyCount != 0 || result.CustomSites.DirectCount != 0 || result.CustomSites.ProxySHA256 != "" || result.CustomSites.DirectSHA256 != "" {
+		t.Fatalf("result = %+v, want explicit uninitialized empty snapshot", result)
+	}
+}
+
+func TestRunCustomSitesTransactFailureKeepsTopLevelContract(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	input := filepath.Join(dir, "operation.json")
+	if err := os.WriteFile(input, []byte(`{"version":1,"operation":"add","pattern":"abc.com","route":"proxy"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	output, err := captureStdoutAllowError(t, func() error {
+		return run([]string{"custom-sites", "transact", "--input", input, "--json"})
+	})
+	if err == nil {
+		t.Fatal("transaction should fail without subscription/runtime prerequisites")
+	}
+	var result struct {
+		OK          bool            `json:"ok"`
+		Summary     string          `json:"summary"`
+		CustomSites json.RawMessage `json:"custom_sites"`
+		Apply       json.RawMessage `json:"apply"`
+	}
+	if decodeErr := json.Unmarshal([]byte(output), &result); decodeErr != nil {
+		t.Fatalf("transaction error JSON = %q, error = %v", output, decodeErr)
+	}
+	if result.OK || result.Summary == "" || len(result.CustomSites) == 0 || len(result.Apply) == 0 {
+		t.Fatalf("result = %+v, want top-level summary/custom_sites/apply", result)
+	}
+}
+
+func TestVerifyCustomSitesRuntimeReadBackRequiresSemanticOrderAndGroups(t *testing.T) {
+	pair := customsites.EmptyPair()
+	pair.Direct.Entries = []customsites.Entry{{ID: "old", Match: customsites.MatchFull, Pattern: "abc.com", Sequence: 1, AddedAt: "2026-08-01T00:00:00Z"}}
+	pair.Proxy.Entries = []customsites.Entry{{ID: "new", Match: customsites.MatchWildcard, Pattern: "abc.*cdn.com", Sequence: 2, AddedAt: "2026-08-05T00:00:00Z"}}
+	proxies := mihomoapi.Response{JSON: map[string]any{"proxies": map[string]any{
+		customsites.ProxyPolicyGroup:  map[string]any{},
+		customsites.DirectPolicyGroup: map[string]any{},
+	}}}
+	rules := mihomoapi.Response{JSON: map[string]any{"rules": []any{
+		map[string]any{"type": "DomainWildcard", "payload": "abc.*cdn.com", "proxy": customsites.ProxyPolicyGroup},
+		map[string]any{"type": "Domain", "payload": "abc.com", "proxy": customsites.DirectPolicyGroup},
+	}}}
+	if err := verifyCustomSitesRuntimeReadBack(pair, rules, proxies); err != nil {
+		t.Fatal(err)
+	}
+	raw := rules.JSON.(map[string]any)["rules"].([]any)
+	raw[0], raw[1] = raw[1], raw[0]
+	if err := verifyCustomSitesRuntimeReadBack(pair, rules, proxies); err == nil || !strings.Contains(err.Error(), "rule 1 mismatch") {
+		t.Fatalf("error = %v, want semantic order mismatch", err)
 	}
 }
 

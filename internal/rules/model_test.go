@@ -233,6 +233,47 @@ func TestRenderFragmentRendersTransportRulesBeforeCustomRulesAndPacks(t *testing
 	}
 }
 
+func TestRenderFragmentRendersPriorityCustomRulesBeforeTransportRules(t *testing.T) {
+	selection := Selection{
+		PriorityCustomRules: []CustomRule{{
+			ID:     "custom-sites",
+			Target: "DIRECT",
+			Rules:  []CustomRuleLine{{Type: "domain", Value: "latest.example"}},
+		}},
+		TransportRules: []TransportRule{{
+			ID:      "quic",
+			Target:  "REJECT",
+			Network: "udp",
+			DstPort: 443,
+		}},
+		CustomRules: []CustomRule{{
+			ID:     "ordinary",
+			Target: "DIRECT",
+			Rules:  []CustomRuleLine{{Type: "domain", Value: "ordinary.example"}},
+		}},
+	}
+	fragment, err := RenderFragment(selection, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"DOMAIN,latest.example,DIRECT",
+		"AND,((NETWORK,UDP),(DST-PORT,443)),REJECT",
+		"DOMAIN,ordinary.example,DIRECT",
+	}
+	if !reflect.DeepEqual(fragment.Rules, want) {
+		t.Fatalf("rules = %#v, want priority custom then transport then ordinary custom %#v", fragment.Rules, want)
+	}
+}
+
+func TestRenderSelectionStatsReportsPriorityCustomRulesSeparately(t *testing.T) {
+	stats := RenderSelectionStats{PriorityCustomRules: 2, CustomRules: 3}
+	fields := stats.Fields()
+	if fields["priority_custom_rules"] != 2 || fields["custom_rules"] != 3 {
+		t.Fatalf("stats fields = %+v, want distinct priority and ordinary custom rule counts", fields)
+	}
+}
+
 func TestRenderFragmentRejectsMissingV2FlyDLCGeoSiteSelectorBase(t *testing.T) {
 	selection := Selection{EnabledPack: []SelectedPack{
 		{Source: "v2fly-dlc", Pack: "category-games@cn", Target: "DIRECT"},
@@ -651,6 +692,7 @@ func TestRenderFragmentRendersCustomRulesBeforePacks(t *testing.T) {
 				ID:     "huggingface_temp",
 				Target: "TempLine",
 				Rules: []CustomRuleLine{
+					{Type: "domain_wildcard", Value: "abc.*cdn?.com"},
 					{Type: "domain_suffix", Value: "huggingface.co"},
 					{Type: "domain_regex", Value: `^a[0-9]+vod-hls-pv-ta-amazon\.akamaized\.net$`},
 					{Type: "geoip", Value: "telegram", NoResolve: true},
@@ -665,17 +707,20 @@ func TestRenderFragmentRendersCustomRulesBeforePacks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := fragment.Rules[0]; got != "DOMAIN-SUFFIX,huggingface.co,TempLine" {
-		t.Fatalf("first rule = %q, want custom rule before packs", got)
+	if got := fragment.Rules[0]; got != "DOMAIN-WILDCARD,abc.*cdn?.com,TempLine" {
+		t.Fatalf("first rule = %q, want DOMAIN-WILDCARD custom rule", got)
 	}
-	if got := fragment.Rules[1]; got != `DOMAIN-REGEX,^a[0-9]+vod-hls-pv-ta-amazon\.akamaized\.net$,TempLine` {
-		t.Fatalf("second rule = %q, want DOMAIN-REGEX prime video custom rule", got)
+	if got := fragment.Rules[1]; got != "DOMAIN-SUFFIX,huggingface.co,TempLine" {
+		t.Fatalf("second rule = %q, want custom rule before packs", got)
 	}
-	if got := fragment.Rules[2]; got != "GEOIP,telegram,TempLine,no-resolve" {
-		t.Fatalf("third rule = %q, want GEOIP telegram custom rule", got)
+	if got := fragment.Rules[2]; got != `DOMAIN-REGEX,^a[0-9]+vod-hls-pv-ta-amazon\.akamaized\.net$,TempLine` {
+		t.Fatalf("third rule = %q, want DOMAIN-REGEX prime video custom rule", got)
 	}
-	if got := fragment.Rules[3]; got != "RULE-SET,sukkaw_ai_non_ip,TempLine" {
-		t.Fatalf("fourth rule = %q, want pack after custom rule", got)
+	if got := fragment.Rules[3]; got != "GEOIP,telegram,TempLine,no-resolve" {
+		t.Fatalf("fourth rule = %q, want GEOIP telegram custom rule", got)
+	}
+	if got := fragment.Rules[4]; got != "RULE-SET,sukkaw_ai_non_ip,TempLine" {
+		t.Fatalf("fifth rule = %q, want pack after custom rule", got)
 	}
 	if !proxyGroupNames(fragment.ProxyGroups)["TempLine"] {
 		t.Fatalf("missing proxy group TempLine in %+v", fragment.ProxyGroups)

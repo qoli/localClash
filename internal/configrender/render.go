@@ -12,6 +12,7 @@ import (
 	"unicode"
 
 	"localclash/internal/configmeta"
+	"localclash/internal/customsites"
 	"localclash/internal/resolverconfig"
 	rulespkg "localclash/internal/rules"
 	"localclash/internal/runtimeprofile"
@@ -37,6 +38,8 @@ type Options struct {
 	RulesCacheDir      string
 	RuntimeProfilePath string
 	ResolverConfigPath string
+	CustomSitesProxy   string
+	CustomSitesDirect  string
 	Force              bool
 	OnStage            func(StageEvent) `json:"-"`
 }
@@ -164,6 +167,24 @@ func Render(opts Options) (Result, error) {
 				return Result{}, err
 			}
 			selection = &loadedSelection
+		}
+		if strings.TrimSpace(opts.CustomSitesProxy) != "" || strings.TrimSpace(opts.CustomSitesDirect) != "" {
+			if strings.TrimSpace(opts.CustomSitesProxy) == "" || strings.TrimSpace(opts.CustomSitesDirect) == "" {
+				err := errors.New("custom site proxy and direct paths must be configured together")
+				finish(err, nil)
+				return Result{}, err
+			}
+			pair, err := customsites.Load(customsites.Paths{Proxy: opts.CustomSitesProxy, Direct: opts.CustomSitesDirect})
+			if err != nil {
+				finish(err, nil)
+				return Result{}, err
+			}
+			customSelection, err := customsites.ApplyToSelection(*selection, pair)
+			if err != nil {
+				finish(err, nil)
+				return Result{}, err
+			}
+			selection = &customSelection
 		}
 		selection = selectionWithRequiredTargets(selection, requiredTargets)
 		renderedFragment, renderStats, err := rulespkg.RenderSelectionWithStats(*selection, opts.RulesCacheDir, proxyNames)
@@ -442,6 +463,9 @@ func buildLocalClashMetadata(selection *rulespkg.Selection, fragment *rulespkg.F
 		}
 		for _, transport := range selection.TransportRules {
 			markTarget(transport.Target)
+		}
+		for _, custom := range selection.PriorityCustomRules {
+			markTarget(custom.Target)
 		}
 		for _, custom := range selection.CustomRules {
 			markTarget(custom.Target)

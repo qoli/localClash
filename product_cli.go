@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -22,8 +23,12 @@ import (
 	"localclash/internal/configrender"
 	"localclash/internal/coredownload"
 	"localclash/internal/corerun"
+	"localclash/internal/customsites"
+	"localclash/internal/customsitesapply"
 	"localclash/internal/dashboard"
 	"localclash/internal/localconfig"
+	"localclash/internal/mihomoapi"
+	"localclash/internal/mihomotest"
 	"localclash/internal/policytemplate"
 	"localclash/internal/reset"
 	"localclash/internal/runtimefacts"
@@ -49,6 +54,41 @@ type productErrorEnvelope struct {
 	Details     any      `json:"details,omitempty"`
 	NextActions []string `json:"next_actions"`
 }
+
+type customSitesProductEnvelope struct {
+	OK          bool                          `json:"ok"`
+	Changed     bool                          `json:"changed"`
+	Summary     string                        `json:"summary"`
+	CustomSites customsites.Snapshot          `json:"custom_sites"`
+	Apply       *customsitesapply.ApplyStatus `json:"apply,omitempty"`
+	Operation   string                        `json:"operation,omitempty"`
+	Entry       *customsites.Entry            `json:"entry,omitempty"`
+	Changes     []string                      `json:"changes"`
+	Warnings    []string                      `json:"warnings"`
+	NextActions []string                      `json:"next_actions"`
+}
+
+type customSitesProductErrorEnvelope struct {
+	OK          bool                         `json:"ok"`
+	Changed     bool                         `json:"changed"`
+	Code        string                       `json:"code"`
+	Summary     string                       `json:"summary"`
+	Message     string                       `json:"message"`
+	CustomSites customsites.Snapshot         `json:"custom_sites"`
+	Apply       customsitesapply.ApplyStatus `json:"apply"`
+	Operation   string                       `json:"operation,omitempty"`
+	Entry       *customsites.Entry           `json:"entry,omitempty"`
+	Changes     []string                     `json:"changes"`
+	Warnings    []string                     `json:"warnings"`
+	NextActions []string                     `json:"next_actions"`
+}
+
+type customSitesTransactionError struct {
+	cause  error
+	result customsitesapply.TransactionResult
+}
+
+func (err customSitesTransactionError) Error() string { return err.cause.Error() }
 
 type codedProductError struct {
 	code        string
@@ -84,6 +124,8 @@ func runProductCommand(args []string, state appinit.RuntimeState) (bool, error) 
 		if len(args) >= 2 && (args[1] == "status" || args[1] == "apply-template" || (args[1] == "render" && hasFlag(args[2:], "json"))) {
 			err = runProductConfig(args[1:], state)
 		}
+	case "custom-sites":
+		err = runProductCustomSites(args[1:], state)
 	case "runtime":
 		err = runProductRuntime(args[1:], state)
 	case "apply":
@@ -112,7 +154,7 @@ func productCommandWasHandled(args []string) bool {
 		return false
 	}
 	switch args[0] {
-	case "component", "runtime", "apply":
+	case "component", "runtime", "apply", "custom-sites":
 		return true
 	case "status":
 		return hasFlag(args[1:], "json")
@@ -469,6 +511,228 @@ func runProductConfig(args []string, state appinit.RuntimeState) error {
 	default:
 		return fmt.Errorf("unknown config subcommand %q", args[0])
 	}
+}
+
+func runProductCustomSites(args []string, state appinit.RuntimeState) error {
+	if len(args) == 0 {
+		return fmt.Errorf("custom-sites subcommand is required: list or transact")
+	}
+	paths := customsites.Paths{Proxy: state.Paths.CustomSitesProxy, Direct: state.Paths.CustomSitesDirect}
+	switch args[0] {
+	case "list":
+		if err := parseJSONOnly("custom-sites list", args[1:]); err != nil {
+			return err
+		}
+		pair, err := customsites.Load(paths)
+		if err != nil {
+			return err
+		}
+		snapshot, err := customsites.SnapshotChecked(pair)
+		if err != nil {
+			return err
+		}
+		return printJSON(customSitesProductEnvelope{
+			OK:          true,
+			Summary:     "Custom website routing list read.",
+			CustomSites: snapshot,
+			Changes:     []string{},
+			Warnings:    []string{},
+			NextActions: []string{},
+		})
+	case "transact":
+		var input customsitesapply.TransactionInput
+		if err := parseInputJSON("custom-sites transact", args[1:], &input); err != nil {
+			return err
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
+		defer cancel()
+		result, err := customsitesapply.Transact(ctx, customSitesTransactionOptions(state, paths, input))
+		if err != nil {
+			return customSitesTransactionError{cause: err, result: result}
+		}
+		summary := "Custom website routing saved; it will become effective on the next runtime start."
+		if result.Apply.Effective {
+			summary = "Custom website routing saved and loaded by the active runtime."
+		}
+		return printJSON(customSitesProductEnvelope{
+			OK:          true,
+			Changed:     true,
+			Summary:     summary,
+			CustomSites: result.Snapshot,
+			Apply:       &result.Apply,
+			Operation:   result.Operation,
+			Entry:       &result.Entry,
+			Changes:     []string{"custom_sites_updated", "config_rendered"},
+			Warnings:    []string{},
+			NextActions: []string{},
+		})
+	default:
+		return fmt.Errorf("unknown custom-sites subcommand %q", args[0])
+	}
+}
+
+func customSitesTransactionOptions(state appinit.RuntimeState, paths customsites.Paths, input customsitesapply.TransactionInput) customsitesapply.TransactionOptions {
+	attestationPath := mihomotest.DefaultAttestationPath(state.Paths.MihomoRuntimeDir)
+	return customsitesapply.TransactionOptions{
+		Paths:           paths,
+		GeneratedConfig: state.Paths.GeneratedConfig,
+		AttestationPath: attestationPath,
+		Input:           input,
+		Hooks: customsitesapply.TransactionHooks{
+			Render: func(ctx context.Context, candidatePaths customsites.Paths, output string) error {
+				_, err := configrender.Render(configrender.Options{
+					SourcePath:         state.Paths.SubscriptionPath,
+					OutputPath:         output,
+					PacksSelectionPath: state.Paths.PacksSelectionPath,
+					RulesCacheDir:      state.Paths.RulesCacheDir,
+					RuntimeProfilePath: state.Paths.RuntimeProfilePath,
+					CustomSitesProxy:   candidatePaths.Proxy,
+					CustomSitesDirect:  candidatePaths.Direct,
+					Force:              true,
+				})
+				return err
+			},
+			Validate: func(ctx context.Context, configPath, candidateAttestation string) (customsitesapply.ValidationStatus, error) {
+				result, err := mihomotest.Test(ctx, mihomotest.TestOptions{
+					ValidationOptions: mihomotest.ValidationOptions{
+						CorePath:   state.Paths.CorePath,
+						ConfigPath: configPath,
+						WorkDir:    state.Paths.MihomoRuntimeDir,
+						CachePath:  mihomotest.DefaultCachePath(state.Paths.MihomoRuntimeDir),
+						Force:      true,
+					},
+					Record:             true,
+					AttestationPath:    candidateAttestation,
+					PromotedConfigPath: state.Paths.GeneratedConfig,
+				})
+				return customsitesapply.ValidationStatus{ConfigSHA256: result.ConfigSHA256}, err
+			},
+			RuntimeStatus: func() (customsitesapply.RuntimeStatus, error) {
+				status := corerun.Status(runtimeStatusOptions(state))
+				return customsitesapply.RuntimeStatus{Running: status.Running}, nil
+			},
+			Reload: func(ctx context.Context, configSHA256 string) (customsitesapply.ReloadStatus, error) {
+				validation, err := mihomotest.ValidateCached(ctx, mihomotest.ValidationOptions{
+					CorePath:   state.Paths.CorePath,
+					ConfigPath: state.Paths.GeneratedConfig,
+					WorkDir:    state.Paths.MihomoRuntimeDir,
+					CachePath:  mihomotest.DefaultCachePath(state.Paths.MihomoRuntimeDir),
+					Force:      true,
+				})
+				if err != nil {
+					return customsitesapply.ReloadStatus{}, fmt.Errorf("validate promoted config before hot reload: %w", err)
+				}
+				if validation.ConfigSHA256 != configSHA256 {
+					return customsitesapply.ReloadStatus{}, fmt.Errorf("promoted config hash %s does not match transaction hash %s", validation.ConfigSHA256, configSHA256)
+				}
+				opts := runtimeRestartOptions(state)
+				opts.Strategy = corerun.RestartStrategyHotReload
+				opts.ConfigSHA256 = configSHA256
+				result, err := corerun.Restart(ctx, opts)
+				if err != nil {
+					return customsitesapply.ReloadStatus{}, err
+				}
+				if result.Error != "" {
+					return customsitesapply.ReloadStatus{}, errors.New(result.Error)
+				}
+				if !result.Reloaded {
+					return customsitesapply.ReloadStatus{}, errors.New("Mihomo hot reload did not report success")
+				}
+				client, err := mihomoapi.NewFromConfig(state.Paths.GeneratedConfig)
+				if err != nil {
+					return customsitesapply.ReloadStatus{Reloaded: true}, err
+				}
+				pair, err := customsites.Load(paths)
+				if err != nil {
+					return customsitesapply.ReloadStatus{Reloaded: true}, fmt.Errorf("load promoted custom site state for runtime read-back: %w", err)
+				}
+				rulesResponse, err := client.Request(ctx, mihomoapi.RequestOptions{Method: "GET", Path: "/rules", Timeout: 10 * time.Second, MaxBytes: 4 * 1024 * 1024})
+				if err != nil {
+					return customsitesapply.ReloadStatus{Reloaded: true}, fmt.Errorf("read back Mihomo rules after hot reload: %w", err)
+				}
+				proxiesResponse, err := client.Request(ctx, mihomoapi.RequestOptions{Method: "GET", Path: "/proxies", Timeout: 10 * time.Second, MaxBytes: 2 * 1024 * 1024})
+				if err != nil {
+					return customsitesapply.ReloadStatus{Reloaded: true}, fmt.Errorf("read back Mihomo proxies after hot reload: %w", err)
+				}
+				if err := verifyCustomSitesRuntimeReadBack(pair, rulesResponse, proxiesResponse); err != nil {
+					return customsitesapply.ReloadStatus{Reloaded: true}, err
+				}
+				status := corerun.Status(runtimeStatusOptions(state))
+				if !status.Running {
+					return customsitesapply.ReloadStatus{Reloaded: true}, errors.New("runtime stopped before hot reload read-back completed")
+				}
+				return customsitesapply.ReloadStatus{Reloaded: true, ReadBack: true}, nil
+			},
+		},
+	}
+}
+
+func verifyCustomSitesRuntimeReadBack(pair customsites.Pair, rulesResponse, proxiesResponse mihomoapi.Response) error {
+	if rulesResponse.Truncated || proxiesResponse.Truncated {
+		return errors.New("custom site runtime read-back response was truncated")
+	}
+	proxiesDoc, ok := proxiesResponse.JSON.(map[string]any)
+	if !ok {
+		return errors.New("Mihomo /proxies read-back is not a JSON object")
+	}
+	proxyMap, ok := proxiesDoc["proxies"].(map[string]any)
+	if !ok {
+		return errors.New("Mihomo /proxies read-back is missing proxies")
+	}
+	for _, name := range []string{customsites.ProxyPolicyGroup, customsites.DirectPolicyGroup} {
+		if _, exists := proxyMap[name]; !exists {
+			return fmt.Errorf("Mihomo /proxies read-back is missing reserved policy group %q", name)
+		}
+	}
+	rulesDoc, ok := rulesResponse.JSON.(map[string]any)
+	if !ok {
+		return errors.New("Mihomo /rules read-back is not a JSON object")
+	}
+	rawRules, ok := rulesDoc["rules"].([]any)
+	if !ok {
+		return errors.New("Mihomo /rules read-back is missing rules")
+	}
+	actual := make([]map[string]any, 0)
+	for _, raw := range rawRules {
+		rule, ok := raw.(map[string]any)
+		if !ok {
+			return errors.New("Mihomo /rules read-back contains a non-object rule")
+		}
+		proxy, _ := rule["proxy"].(string)
+		if proxy == customsites.ProxyPolicyGroup || proxy == customsites.DirectPolicyGroup {
+			actual = append(actual, rule)
+		}
+	}
+	expected := append([]customsites.Entry{}, pair.Proxy.Entries...)
+	for index := range expected {
+		expected[index].Route = customsites.RouteProxy
+	}
+	direct := append([]customsites.Entry{}, pair.Direct.Entries...)
+	for index := range direct {
+		direct[index].Route = customsites.RouteDirect
+	}
+	expected = append(expected, direct...)
+	sort.SliceStable(expected, func(i, j int) bool { return expected[i].Sequence > expected[j].Sequence })
+	if len(actual) != len(expected) {
+		return fmt.Errorf("Mihomo /rules custom site count %d does not match durable count %d", len(actual), len(expected))
+	}
+	for index, entry := range expected {
+		wantType := "Domain"
+		if entry.Match == customsites.MatchWildcard {
+			wantType = "DomainWildcard"
+		}
+		wantProxy := customsites.DirectPolicyGroup
+		if entry.Route == customsites.RouteProxy {
+			wantProxy = customsites.ProxyPolicyGroup
+		}
+		gotType, _ := actual[index]["type"].(string)
+		gotPayload, _ := actual[index]["payload"].(string)
+		gotProxy, _ := actual[index]["proxy"].(string)
+		if gotType != wantType || gotPayload != entry.Pattern || gotProxy != wantProxy {
+			return fmt.Errorf("Mihomo /rules custom site rule %d mismatch: got type=%q payload=%q proxy=%q, want type=%q payload=%q proxy=%q", index+1, gotType, gotPayload, gotProxy, wantType, entry.Pattern, wantProxy)
+		}
+	}
+	return nil
 }
 
 func runProductRuntime(args []string, state appinit.RuntimeState) error {
@@ -1246,6 +1510,8 @@ func configRenderOptions(state appinit.RuntimeState) configrender.Options {
 		PacksSelectionPath: state.Paths.PacksSelectionPath,
 		RulesCacheDir:      state.Paths.RulesCacheDir,
 		RuntimeProfilePath: state.Paths.RuntimeProfilePath,
+		CustomSitesProxy:   state.Paths.CustomSitesProxy,
+		CustomSitesDirect:  state.Paths.CustomSitesDirect,
 		Force:              true,
 	}
 }
@@ -1387,6 +1653,23 @@ func printProductOK(envelope productEnvelope) error {
 }
 
 func printProductError(err error) error {
+	var customSitesErr customSitesTransactionError
+	if errors.As(err, &customSitesErr) {
+		result := customSitesErr.result
+		return printJSON(customSitesProductErrorEnvelope{
+			OK:          false,
+			Code:        "custom_sites_transaction_failed",
+			Summary:     "Custom website routing transaction failed.",
+			Message:     customSitesErr.Error(),
+			CustomSites: result.Snapshot,
+			Apply:       result.Apply,
+			Operation:   result.Operation,
+			Entry:       &result.Entry,
+			Changes:     []string{},
+			Warnings:    []string{},
+			NextActions: []string{"Inspect apply and custom_sites; existing files remain authoritative unless rolled_back is false."},
+		})
+	}
 	code := "command_failed"
 	message := err.Error()
 	var details any

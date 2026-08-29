@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"localclash/internal/customsites"
 	"localclash/internal/rules"
 	"localclash/internal/runtimeprofile"
 	"localclash/internal/subscriptions"
@@ -24,6 +25,8 @@ type Options struct {
 	CorePath            string
 	PacksSelectionPath  string
 	RuntimeProfilePath  string
+	CustomSitesProxy    string
+	CustomSitesDirect   string
 }
 
 type RuntimeState struct {
@@ -50,6 +53,8 @@ type RuntimePaths struct {
 	CorePath            string `json:"core_path"`
 	PacksSelectionPath  string `json:"packs_selection_path,omitempty"`
 	RuntimeProfilePath  string `json:"runtime_profile_path"`
+	CustomSitesProxy    string `json:"custom_sites_proxy"`
+	CustomSitesDirect   string `json:"custom_sites_direct"`
 }
 
 type CoreState struct {
@@ -110,6 +115,8 @@ func Bootstrap(ctx context.Context, opts Options) RuntimeState {
 			CorePath:            opts.CorePath,
 			PacksSelectionPath:  opts.PacksSelectionPath,
 			RuntimeProfilePath:  opts.RuntimeProfilePath,
+			CustomSitesProxy:    opts.CustomSitesProxy,
+			CustomSitesDirect:   opts.CustomSitesDirect,
 		},
 		Core:   CoreState{Path: opts.CorePath},
 		Rules:  RulesState{CacheDir: opts.RulesCacheDir, Details: map[string]rules.PackDetail{}},
@@ -155,6 +162,13 @@ func normalizeOptions(opts Options) Options {
 	if strings.TrimSpace(opts.RuntimeProfilePath) == "" {
 		opts.RuntimeProfilePath = defaultPath(baseDir, runtimeprofile.DefaultPath)
 	}
+	customSitePaths := customsites.DefaultPaths(baseDir)
+	if strings.TrimSpace(opts.CustomSitesProxy) == "" {
+		opts.CustomSitesProxy = customSitePaths.Proxy
+	}
+	if strings.TrimSpace(opts.CustomSitesDirect) == "" {
+		opts.CustomSitesDirect = customSitePaths.Direct
+	}
 	if strings.TrimSpace(opts.CorePath) == "" {
 		if corePath, err := runtimeprofile.ActiveCorePath(opts.RuntimeProfilePath); err == nil && strings.TrimSpace(corePath) != "" {
 			opts.CorePath = defaultPath(baseDir, corePath)
@@ -194,7 +208,9 @@ func hasExplicitPath(opts Options) bool {
 		strings.TrimSpace(opts.MihomoRuntimeDir) != "" ||
 		strings.TrimSpace(opts.CorePath) != "" ||
 		strings.TrimSpace(opts.PacksSelectionPath) != "" ||
-		strings.TrimSpace(opts.RuntimeProfilePath) != ""
+		strings.TrimSpace(opts.RuntimeProfilePath) != "" ||
+		strings.TrimSpace(opts.CustomSitesProxy) != "" ||
+		strings.TrimSpace(opts.CustomSitesDirect) != ""
 }
 
 func looksLikeWorkDir(dir string) bool {
