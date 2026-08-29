@@ -20,8 +20,30 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
-| localClash Core | [v0.1.68](https://github.com/qoli/localClash/releases/tag/v0.1.68) | 2026-08-28 UTC+8 |
+| localClash Core | [v0.1.69](https://github.com/qoli/localClash/releases/tag/v0.1.69) | 2026-08-29 UTC+8 |
 | localclash-luci | [v0.1.0-58](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-58) | 2026-08-27 UTC+8 |
+
+## 2026-08-29
+
+### localClash Core v0.1.69
+
+Changes:
+
+- 新增獨立的自訂代理／直連網站儲存與渲染契約，支援完整網域及 Mihomo
+  `DOMAIN-WILDCARD`，並以最後成功加入的規則取得最高優先級。
+- 保留 `自訂代理網站`、`自訂直連網站` 策略組名稱，避免 MCP／AI patch 覆蓋；
+  預設策略同步不會清除使用者網站列表。
+- 儲存交易會完成候選 config render、`mihomo -t`、原子 promotion、active runtime
+  hot reload 與語義 read-back；任何失敗都明確回滾，並輸出可供 LuCI 顯示的階段 log。
+
+Release:
+
+- [qoli/localClash v0.1.69](https://github.com/qoli/localClash/releases/tag/v0.1.69)
+
+Verification:
+
+- `go test ./...`、iStoreOS 24.10.8 x86_64 QEMU 的兩條重疊規則互動、runtime
+  rule order／policy group read-back 與 rollback failure path 均通過。
 
 ## 2026-08-28
 
