@@ -12,6 +12,7 @@ localclash-packs.gob
 localclash-subscriptions.json
 localclash-runtime.json
 /profiles/
+/custom-sites/
 *.secret.yaml
 *.local.yaml
 subscription*.yaml

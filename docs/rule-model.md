@@ -93,6 +93,13 @@ Examples:
 Overrides are for small, concrete fixes. They should not become a hidden
 category system.
 
+The LuCI-facing custom-site slice specializes this layer with two isolated,
+versioned JSON documents for proxy and direct website decisions. Core compiles
+them newest-first into reserved `自訂代理網站` and `自訂直連網站` policy groups;
+they are not patch-registry files and survive a complete default-policy patch
+reset. Its persistence, wildcard, ordering, update, and transaction contract is
+defined in [Custom Site Routing](custom-site-routing.md).
+
 ### 3. Optional Rule Packs
 
 Optional rule packs are the primary web UI customization layer. Users should
@@ -269,6 +276,10 @@ Current code has:
 - MCP patch tools for proxy groups, policy groups, transport rules, custom
   rules, external rule-providers, reviewed config apply, and atomic generated
   config rendering
+- Core and LuCI support for the custom-site routing contract in
+  `docs/custom-site-routing.md`, including separate durable JSON documents,
+  newest-first priority, reserved policy groups, candidate config validation,
+  and active-runtime reload/read-back
 
 Current code still does not yet have:
 

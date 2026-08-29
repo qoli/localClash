@@ -1774,6 +1774,28 @@ func TestToolsCallProxyGroupBuildReturnsReusableIntent(t *testing.T) {
 	}
 }
 
+func TestToolsCallProxyGroupBuildRejectsReservedCustomSiteNames(t *testing.T) {
+	for _, name := range []string{localconfig.CustomProxySitesPolicyGroupName, localconfig.CustomDirectSitesPolicyGroupName} {
+		t.Run(name, func(t *testing.T) {
+			resp := callHandle(t, map[string]any{
+				"jsonrpc": "2.0",
+				"id":      1,
+				"method":  "tools/call",
+				"params": map[string]any{
+					"name": "proxy_group_build",
+					"arguments": map[string]any{
+						"id":   name,
+						"mode": "direct",
+					},
+				},
+			})
+			if resp.Error == nil || !strings.Contains(resp.Error.Message, "reserved_policy_group_name: "+name) {
+				t.Fatalf("error = %+v, want explicit reserved_policy_group_name", resp.Error)
+			}
+		})
+	}
+}
+
 func TestToolsCallPolicyGroupBuildReturnsReusableIntent(t *testing.T) {
 	resp := callHandle(t, map[string]any{
 		"jsonrpc": "2.0",
@@ -1813,6 +1835,29 @@ func TestToolsCallPolicyGroupBuildReturnsReusableIntent(t *testing.T) {
 	}
 }
 
+func TestToolsCallPolicyGroupBuildRejectsReservedCustomSiteNames(t *testing.T) {
+	for _, name := range []string{localconfig.CustomProxySitesPolicyGroupName, localconfig.CustomDirectSitesPolicyGroupName} {
+		t.Run(name, func(t *testing.T) {
+			resp := callHandle(t, map[string]any{
+				"jsonrpc": "2.0",
+				"id":      1,
+				"method":  "tools/call",
+				"params": map[string]any{
+					"name": "policy_group_build",
+					"arguments": map[string]any{
+						"id":    name,
+						"mode":  "manual",
+						"exits": []string{"DIRECT"},
+					},
+				},
+			})
+			if resp.Error == nil || !strings.Contains(resp.Error.Message, "reserved_policy_group_name: "+name) {
+				t.Fatalf("error = %+v, want explicit reserved_policy_group_name", resp.Error)
+			}
+		})
+	}
+}
+
 func TestToolsCallCustomRulesBuildReturnsReusableIntent(t *testing.T) {
 	resp := callHandle(t, map[string]any{
 		"jsonrpc": "2.0",
@@ -1824,6 +1869,7 @@ func TestToolsCallCustomRulesBuildReturnsReusableIntent(t *testing.T) {
 				"id":     "huggingface_temp",
 				"target": "TempLine",
 				"rules": []map[string]any{
+					{"type": "domain_wildcard", "value": "abc.*cdn?.com"},
 					{"type": "domain_suffix", "value": "huggingface.co"},
 					{"type": "domain_regex", "value": `^a[0-9]+vod-hls-pv-ta-amazon\.akamaized\.net$`},
 					{"type": "geoip", "value": "telegram", "no_resolve": true},
@@ -1837,8 +1883,8 @@ func TestToolsCallCustomRulesBuildReturnsReusableIntent(t *testing.T) {
 	}
 	result := marshalToolResult(t, resp.Result)
 	content := result.StructuredContent.(map[string]any)
-	if content["target"] != "TempLine" || content["rule_count"] != float64(3) {
-		t.Fatalf("custom rule content = %+v, want TempLine with three rules", content)
+	if content["target"] != "TempLine" || content["rule_count"] != float64(4) {
+		t.Fatalf("custom rule content = %+v, want TempLine with four rules", content)
 	}
 }
 

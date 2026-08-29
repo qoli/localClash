@@ -18,6 +18,7 @@ import (
 
 	"localclash/internal/configplan"
 	"localclash/internal/configrender"
+	"localclash/internal/customsites"
 	"localclash/internal/localconfig"
 	"localclash/internal/mihomotest"
 	"localclash/internal/policytemplate"
@@ -990,12 +991,15 @@ func buildArtifacts(ctx context.Context, config localconfig.Config, opts buildOp
 	if err := localconfig.WriteSelection(targetSelection, resolved.Selection); err != nil {
 		return result, err
 	}
+	customSitePaths := customsites.DefaultPaths(filepath.Dir(opts.ConfigPath))
 	renderResult, err := configrender.Render(configrender.Options{
 		SourcePath:         opts.Subscription,
 		OutputPath:         targetOutput,
 		PacksSelectionPath: targetSelection,
 		RulesCacheDir:      opts.RulesCache,
 		RuntimeProfilePath: opts.RuntimeProfilePath,
+		CustomSitesProxy:   customSitePaths.Proxy,
+		CustomSitesDirect:  customSitePaths.Direct,
 		Force:              true,
 	})
 	if err != nil {
@@ -1387,6 +1391,16 @@ func validatePatch(patch Patch) error {
 	}
 	if strings.Contains(patch.Source, "/") || strings.Contains(patch.Source, "\\") {
 		return fmt.Errorf("patch %q has invalid source %q", patch.PatchID, patch.Source)
+	}
+	for _, group := range patch.Overlay.ProxyGroups {
+		if err := localconfig.ValidateMutablePolicyGroupName(group.ID); err != nil {
+			return err
+		}
+	}
+	for _, group := range patch.Overlay.PolicyGroups {
+		if err := localconfig.ValidateMutablePolicyGroupName(group.ID); err != nil {
+			return err
+		}
 	}
 	return nil
 }

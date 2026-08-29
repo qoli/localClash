@@ -21,6 +21,7 @@ func TestRunDryRunDoesNotDeleteFactoryResetTargets(t *testing.T) {
 	writeResetFile(t, "localclash-packs.gob", "version: 1\n")
 	writeResetFile(t, "localclash-subscriptions.json", "sources: []\n")
 	writeResetFile(t, "localclash-runtime.json", "active: router\n")
+	writeResetFile(t, filepath.Join("custom-sites", "proxy.json"), "{}\n")
 	writeResetFile(t, filepath.Join("profiles", "router.yaml"), "mihomo: {}\n")
 	writeResetFile(t, "subscription.gob", "proxies: []\n")
 	writeResetFile(t, "subscription-backup.gob", "proxies: []\n")
@@ -30,10 +31,10 @@ func TestRunDryRunDoesNotDeleteFactoryResetTargets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !result.DryRun || len(result.Deleted) != 9 {
-		t.Fatalf("result = %+v, want dry-run with nine delete targets", result)
+	if !result.DryRun || len(result.Deleted) != 10 {
+		t.Fatalf("result = %+v, want dry-run with ten delete targets", result)
 	}
-	for _, path := range []string{".runtime", "generated", "localclash-intent.json", "localclash-subscriptions.json", "localclash-runtime.json", "profiles", "subscription.gob", "subscription-backup.gob"} {
+	for _, path := range []string{".runtime", "generated", "localclash-intent.json", "localclash-subscriptions.json", "localclash-runtime.json", "custom-sites", "profiles", "subscription.gob", "subscription-backup.gob"} {
 		if _, err := os.Stat(path); err != nil {
 			t.Fatalf("%s should remain after dry-run: %v", path, err)
 		}
@@ -56,6 +57,7 @@ func TestRunDeletesFactoryResetTargetsWithYes(t *testing.T) {
 	writeResetFile(t, "localclash-packs.gob", "version: 1\n")
 	writeResetFile(t, "localclash-subscriptions.json", "sources: []\n")
 	writeResetFile(t, "localclash-runtime.json", "active: router\n")
+	writeResetFile(t, filepath.Join("custom-sites", "direct.json"), "{}\n")
 	writeResetFile(t, filepath.Join("profiles", "normal.yaml"), "mihomo: {}\n")
 	writeResetFile(t, "subscription.gob", "proxies: []\n")
 
@@ -63,7 +65,7 @@ func TestRunDeletesFactoryResetTargetsWithYes(t *testing.T) {
 	if _, err := Run(Options{Yes: true, Out: &out}); err != nil {
 		t.Fatal(err)
 	}
-	for _, path := range []string{".runtime", "generated", "localclash-intent.json", "localclash-packs.gob", "localclash-subscriptions.json", "localclash-runtime.json", "profiles", "subscription.gob"} {
+	for _, path := range []string{".runtime", "generated", "localclash-intent.json", "localclash-packs.gob", "localclash-subscriptions.json", "localclash-runtime.json", "custom-sites", "profiles", "subscription.gob"} {
 		if _, err := os.Stat(path); !os.IsNotExist(err) {
 			t.Fatalf("%s should be deleted, err=%v", path, err)
 		}

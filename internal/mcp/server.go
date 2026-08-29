@@ -26,6 +26,7 @@ import (
 	"localclash/internal/configplan"
 	"localclash/internal/configrender"
 	"localclash/internal/corerun"
+	"localclash/internal/customsites"
 	"localclash/internal/doctor"
 	"localclash/internal/envinspect"
 	"localclash/internal/fileops"
@@ -883,12 +884,15 @@ func renderConfigIntentPreview(result *configIntentInspectContextResult, in conf
 	}
 
 	outputPath := filepath.Join(tempDir, "mihomo.yaml")
+	customSitePaths := customsites.DefaultPaths(filepath.Dir(in.Config))
 	_, err = configrender.Render(configrender.Options{
 		SourcePath:         in.Subscription,
 		OutputPath:         outputPath,
 		PacksSelectionPath: selectionPath,
 		RulesCacheDir:      in.RulesCache,
 		RuntimeProfilePath: in.RuntimeProfile,
+		CustomSitesProxy:   customSitePaths.Proxy,
+		CustomSitesDirect:  customSitePaths.Direct,
 		Force:              true,
 	})
 	if err != nil {
@@ -975,6 +979,9 @@ func (s *Server) callProxyGroupBuild(args json.RawMessage) (toolResult, error) {
 	if id == "" {
 		return toolResult{}, fmt.Errorf("id is required")
 	}
+	if err := localconfig.ValidateMutablePolicyGroupName(id); err != nil {
+		return toolResult{}, err
+	}
 	group := localconfig.ProxyGroup{
 		Mode:          in.Mode,
 		Match:         in.Match,
@@ -1024,6 +1031,9 @@ func callPolicyGroupBuild(args json.RawMessage) (toolResult, error) {
 	id := strings.TrimSpace(in.ID)
 	if id == "" {
 		return toolResult{}, fmt.Errorf("id is required")
+	}
+	if err := localconfig.ValidateMutablePolicyGroupName(id); err != nil {
+		return toolResult{}, err
 	}
 	mode := strings.ToLower(strings.TrimSpace(in.Mode))
 	if mode != "manual" && mode != "auto" && mode != "smart" {
@@ -1481,6 +1491,7 @@ func renderCurrentConfig(ctx context.Context, in configToolInput, force bool) (m
 		})
 	}
 	finish := startTaskStage(ctx, "render_generated_config", map[string]any{"output": in.Output})
+	customSitePaths := customsites.DefaultPaths(filepath.Dir(in.Config))
 	result, err := configrender.Render(configrender.Options{
 		SourcePath:         in.Subscription,
 		OutputPath:         in.Output,
@@ -1488,6 +1499,8 @@ func renderCurrentConfig(ctx context.Context, in configToolInput, force bool) (m
 		PacksSelectionPath: selectionPath,
 		RulesCacheDir:      in.RulesCache,
 		RuntimeProfilePath: in.RuntimeProfile,
+		CustomSitesProxy:   customSitePaths.Proxy,
+		CustomSitesDirect:  customSitePaths.Direct,
 		OnStage:            configRenderTaskLogger(ctx, "render_generated_config"),
 	})
 	if err != nil {
@@ -2569,6 +2582,7 @@ func (s *Server) evaluateLocalClashAfterRefresh(ctx context.Context, configPath,
 	candidateOutputPath := outputPath + ".candidate"
 	defer os.Remove(candidateOutputPath)
 	finish = startTaskStage(ctx, "evaluate_localclash_impact.render_after_refresh", map[string]any{"output": candidateOutputPath, "subscription_source": renderSubscriptionSource(subscriptionDoc)})
+	customSitePaths := customsites.DefaultPaths(filepath.Dir(configPath))
 	_, err = configrender.Render(configrender.Options{
 		SourcePath:         subscriptionPath,
 		Source:             subscriptionDoc,
@@ -2576,6 +2590,8 @@ func (s *Server) evaluateLocalClashAfterRefresh(ctx context.Context, configPath,
 		Selection:          &resolved.Selection,
 		RulesCacheDir:      rulesCache,
 		RuntimeProfilePath: presetPath,
+		CustomSitesProxy:   customSitePaths.Proxy,
+		CustomSitesDirect:  customSitePaths.Direct,
 		Force:              true,
 		OnStage:            configRenderTaskLogger(ctx, "evaluate_localclash_impact.render_after_refresh"),
 	})

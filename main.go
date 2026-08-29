@@ -39,6 +39,8 @@ Usage:
   localclash config status --json
   localclash config apply-template --input config-request.json --json
   localclash config render --json
+  localclash custom-sites list --json
+  localclash custom-sites transact --input custom-site-operation.json --json
   localclash mihomo config-test --json
   localclash mihomo config-promote --json
   localclash runtime status --json
@@ -378,6 +380,8 @@ func runConfigRender(args []string, state appinit.RuntimeState) error {
 	fs.StringVar(&opts.PacksSelectionPath, "packs-selection", "", "packs selection gob; optional")
 	fs.StringVar(&opts.RulesCacheDir, "rules-cache", state.Paths.RulesCacheDir, "runtime pack cache directory")
 	fs.StringVar(&opts.RuntimeProfilePath, "runtime-profile", state.Paths.RuntimeProfilePath, "runtime profile JSON")
+	opts.CustomSitesProxy = state.Paths.CustomSitesProxy
+	opts.CustomSitesDirect = state.Paths.CustomSitesDirect
 	fs.BoolVar(&opts.Force, "force", false, "overwrite output if it exists")
 
 	if err := fs.Parse(args); err != nil {

@@ -86,16 +86,17 @@ type PackBackend struct {
 }
 
 type Selection struct {
-	Version         int                     `json:"version"`
-	ProxyGroups     map[string]ProxyGroup   `json:"proxy_groups,omitempty"`
-	PolicyGroups    map[string]PolicyGroup  `json:"policy_groups,omitempty"`
-	TransportRules  []TransportRule         `json:"transport_rules,omitempty"`
-	CustomRules     []CustomRule            `json:"custom_rules,omitempty"`
-	LocalRulePacks  []SelectedLocalRulePack `json:"local_rule_packs,omitempty"`
-	RuleProviders   []ExternalRuleProvider  `json:"rule_providers,omitempty"`
-	EnabledPack     []SelectedPack          `json:"enabled_packs"`
-	RequiredTargets []string                `json:"required_targets,omitempty"`
-	FallbackTarget  string                  `json:"fallback_target,omitempty"`
+	Version             int                     `json:"version"`
+	ProxyGroups         map[string]ProxyGroup   `json:"proxy_groups,omitempty"`
+	PolicyGroups        map[string]PolicyGroup  `json:"policy_groups,omitempty"`
+	PriorityCustomRules []CustomRule            `json:"priority_custom_rules,omitempty"`
+	TransportRules      []TransportRule         `json:"transport_rules,omitempty"`
+	CustomRules         []CustomRule            `json:"custom_rules,omitempty"`
+	LocalRulePacks      []SelectedLocalRulePack `json:"local_rule_packs,omitempty"`
+	RuleProviders       []ExternalRuleProvider  `json:"rule_providers,omitempty"`
+	EnabledPack         []SelectedPack          `json:"enabled_packs"`
+	RequiredTargets     []string                `json:"required_targets,omitempty"`
+	FallbackTarget      string                  `json:"fallback_target,omitempty"`
 }
 
 type ProxyGroup struct {
@@ -173,6 +174,7 @@ type RenderSelectionStats struct {
 	ProxyNames            int
 	ProxyGroups           int
 	PolicyGroups          int
+	PriorityCustomRules   int
 	TransportRules        int
 	EnabledPacks          int
 	LocalRulePacks        int
@@ -187,6 +189,7 @@ func (stats RenderSelectionStats) Fields() map[string]any {
 		"proxy_names":             stats.ProxyNames,
 		"proxy_groups":            stats.ProxyGroups,
 		"policy_groups":           stats.PolicyGroups,
+		"priority_custom_rules":   stats.PriorityCustomRules,
 		"transport_rules":         stats.TransportRules,
 		"enabled_packs":           stats.EnabledPacks,
 		"local_rule_packs":        stats.LocalRulePacks,
@@ -283,6 +286,7 @@ func RenderSelectionWithStats(selection Selection, cacheDir string, proxyNames [
 		ProxyNames:            len(proxyNames),
 		ProxyGroups:           len(selection.ProxyGroups),
 		PolicyGroups:          len(selection.PolicyGroups),
+		PriorityCustomRules:   len(selection.PriorityCustomRules),
 		TransportRules:        len(selection.TransportRules),
 		EnabledPacks:          len(selection.EnabledPack),
 		LocalRulePacks:        len(selection.LocalRulePacks),
@@ -455,6 +459,18 @@ func RenderFragment(selection Selection, caches map[string]PackCache, proxyNames
 	}
 	usedProxyGroups := map[string]bool{}
 	usedPolicyGroups := map[string]bool{}
+	for _, custom := range selection.PriorityCustomRules {
+		target, kind, err := renderTarget(custom.Target, targets)
+		if err != nil {
+			return Fragment{}, err
+		}
+		markUsedTarget(target, kind, usedProxyGroups, usedPolicyGroups)
+		lines, err := renderCustomRuleLines(custom, target)
+		if err != nil {
+			return Fragment{}, err
+		}
+		fragment.Rules = append(fragment.Rules, lines...)
+	}
 	for _, transport := range selection.TransportRules {
 		target, kind, err := renderTarget(transport.Target, targets)
 		if err != nil {
@@ -625,6 +641,8 @@ func renderCustomRuleLine(id string, rule CustomRuleLine, target string) (string
 		kind = "DOMAIN"
 	case "domain_suffix":
 		kind = "DOMAIN-SUFFIX"
+	case "domain_wildcard":
+		kind = "DOMAIN-WILDCARD"
 	case "domain_regex":
 		kind = "DOMAIN-REGEX"
 	case "ip_cidr":

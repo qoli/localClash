@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"localclash/internal/configrender"
+	"localclash/internal/customsites"
 	"localclash/internal/localconfig"
 	"localclash/internal/mihomotest"
 	"localclash/internal/rules"
@@ -349,12 +350,15 @@ func Render(ctx context.Context, opts Options) (Result, error) {
 	finish(nil, map[string]any{"selection": selectionPath})
 
 	finish = stage("render_candidate", map[string]any{"output": outputPath})
+	customSitePaths := customsites.DefaultPaths(filepath.Dir(opts.ConfigPath))
 	if _, err := configrender.Render(configrender.Options{
 		SourcePath:         opts.Subscription,
 		OutputPath:         outputPath,
 		PacksSelectionPath: selectionPath,
 		RulesCacheDir:      opts.RulesCache,
 		RuntimeProfilePath: opts.RuntimeProfilePath,
+		CustomSitesProxy:   customSitePaths.Proxy,
+		CustomSitesDirect:  customSitePaths.Direct,
 		Force:              true,
 		OnStage:            nestedConfigRenderStage(opts.OnStage, "render_candidate"),
 	}); err != nil {
@@ -480,12 +484,15 @@ func Apply(ctx context.Context, opts ApplyOptions) (ApplyResult, error) {
 	finish(nil, map[string]any{"temp_dir": tempDir})
 
 	finish = stage("render_candidate", map[string]any{"output": tempOutput})
+	customSitePaths := customsites.DefaultPaths(filepath.Dir(opts.ConfigPath))
 	renderResult, err := configrender.Render(configrender.Options{
 		SourcePath:         opts.Subscription,
 		OutputPath:         tempOutput,
 		PacksSelectionPath: tempSelection,
 		RulesCacheDir:      opts.RulesCache,
 		RuntimeProfilePath: opts.RuntimeProfilePath,
+		CustomSitesProxy:   customSitePaths.Proxy,
+		CustomSitesDirect:  customSitePaths.Direct,
 		Force:              true,
 		OnStage:            nestedConfigRenderStage(opts.OnStage, "render_candidate"),
 	})

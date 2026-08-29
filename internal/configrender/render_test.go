@@ -8,8 +8,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"localclash/internal/configmeta"
+	"localclash/internal/customsites"
 	"localclash/internal/resolverconfig"
 	"localclash/internal/rules"
 	"localclash/internal/runtimeprofile"
@@ -206,6 +208,73 @@ func TestRenderWithPacksSelectionIncludesProxyGroupFragment(t *testing.T) {
 		t.Fatalf("proxy group mode = %v, want manual", got)
 	}
 	assertNoSensitiveConfigMetadata(t, metadata)
+}
+
+func TestRenderLoadsCustomSitesNewestFirstBeforeConfiguredRules(t *testing.T) {
+	paths := writeRenderFixture(t)
+	writeFile(t, paths.selection, `version: 1
+proxy_groups:
+  "⚡ 自动选择":
+    nodes: ["🇯🇵日本01 | JP"]
+    auto: true
+  "🎯 手动选择":
+    nodes: ["🇯🇵日本01 | JP"]
+    manual: true
+  "🇯🇵 日本节点":
+    nodes: ["🇯🇵日本01 | JP"]
+    auto: true
+    optional: true
+  AI:
+    nodes: ["🇯🇵日本01 | JP"]
+    manual: true
+enabled_packs:
+  - source: sukkaw
+    pack: ai
+    target: AI
+`)
+	customPaths := customsites.DefaultPaths(paths.dir)
+	addedAt := time.Date(2026, 8, 29, 0, 0, 0, 0, time.UTC).Format(time.RFC3339Nano)
+	pair := customsites.EmptyPair()
+	pair.Direct.Entries = []customsites.Entry{{ID: "older", Match: customsites.MatchFull, Pattern: "abc.com", Sequence: 1, AddedAt: addedAt}}
+	pair.Proxy.Entries = []customsites.Entry{{ID: "newer", Match: customsites.MatchWildcard, Pattern: "abc.*cdn.com", Sequence: 2, AddedAt: addedAt}}
+	for path, document := range map[string]customsites.Document{customPaths.Proxy: pair.Proxy, customPaths.Direct: pair.Direct} {
+		data, err := customsites.MarshalDocument(document)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	result, err := Render(Options{
+		SourcePath:         paths.subscription,
+		OutputPath:         filepath.Join(paths.dir, "with-custom-sites.yaml"),
+		PacksSelectionPath: paths.selection,
+		RulesCacheDir:      paths.cacheDir,
+		RuntimeProfilePath: filepath.Join(paths.dir, "localclash-runtime.json"),
+		CustomSitesProxy:   customPaths.Proxy,
+		CustomSitesDirect:  customPaths.Direct,
+		Force:              true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	config := readTestYAML(t, result.OutputPath)
+	renderedRules := testStringSlice(config["rules"])
+	newer := indexOf(renderedRules, "DOMAIN-WILDCARD,abc.*cdn.com,"+customsites.ProxyPolicyGroup)
+	older := indexOf(renderedRules, "DOMAIN,abc.com,"+customsites.DirectPolicyGroup)
+	pack := indexOf(renderedRules, "RULE-SET,sukkaw_ai_non_ip,AI")
+	if newer <= 0 || older <= newer || pack <= older {
+		t.Fatalf("custom/pack rule indexes newer=%d older=%d pack=%d rules=%+v", newer, older, pack, renderedRules)
+	}
+	groups := proxyGroupNamesFromConfig(config)
+	if !groups[customsites.ProxyPolicyGroup] || !groups[customsites.DirectPolicyGroup] {
+		t.Fatalf("generated proxy groups = %+v, want reserved custom-site groups", groups)
+	}
 }
 
 func TestRenderUsesSelectionFallbackTarget(t *testing.T) {
