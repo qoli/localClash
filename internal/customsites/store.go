@@ -344,6 +344,7 @@ func ApplyToSelection(selection rules.Selection, pair Pair) (rules.Selection, er
 	exits = append(exits, regionNames...)
 	out.PolicyGroups[ProxyPolicyGroup] = rules.PolicyGroup{Exits: exits, Manual: true}
 	out.PolicyGroups[DirectPolicyGroup] = rules.PolicyGroup{Exits: []string{rules.TerminalDirect}, Manual: true}
+	out.RequiredTargets = append(out.RequiredTargets, ProxyPolicyGroup, DirectPolicyGroup)
 
 	entries := append(cloneEntries(pair.Proxy.Entries, RouteProxy), cloneEntries(pair.Direct.Entries, RouteDirect)...)
 	sortEntries(entries)
@@ -392,6 +393,7 @@ func cloneSelection(selection rules.Selection) rules.Selection {
 		out.PolicyGroups[key] = value
 	}
 	out.PriorityCustomRules = append([]rules.CustomRule{}, selection.PriorityCustomRules...)
+	out.RequiredTargets = append([]string{}, selection.RequiredTargets...)
 	return out
 }
 

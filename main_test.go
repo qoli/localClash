@@ -182,6 +182,19 @@ func TestVerifyCustomSitesRuntimeReadBackRequiresSemanticOrderAndGroups(t *testi
 	}
 }
 
+func TestVerifyCustomSitesRuntimeReadBackAcceptsUninitializedAbsence(t *testing.T) {
+	pair := customsites.Pair{Initialized: false}
+	proxies := mihomoapi.Response{JSON: map[string]any{"proxies": map[string]any{}}}
+	rules := mihomoapi.Response{JSON: map[string]any{"rules": []any{}}}
+	if err := verifyCustomSitesRuntimeReadBack(pair, rules, proxies); err != nil {
+		t.Fatal(err)
+	}
+	proxies.JSON.(map[string]any)["proxies"].(map[string]any)[customsites.ProxyPolicyGroup] = map[string]any{}
+	if err := verifyCustomSitesRuntimeReadBack(pair, rules, proxies); err == nil || !strings.Contains(err.Error(), "unexpectedly retains") {
+		t.Fatalf("error = %v, want stale reserved group failure", err)
+	}
+}
+
 func TestWaitForCustomSitesRuntimeReadBackRetriesStaleControllerState(t *testing.T) {
 	pair := customsites.EmptyPair()
 	pair.Direct.Entries = []customsites.Entry{{ID: "direct", Match: customsites.MatchFull, Pattern: "priority.test.invalid", Sequence: 1, AddedAt: "2026-08-29T00:00:00Z"}}

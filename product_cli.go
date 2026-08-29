@@ -718,8 +718,12 @@ func verifyCustomSitesRuntimeReadBack(pair customsites.Pair, rulesResponse, prox
 		return errors.New("Mihomo /proxies read-back is missing proxies")
 	}
 	for _, name := range []string{customsites.ProxyPolicyGroup, customsites.DirectPolicyGroup} {
-		if _, exists := proxyMap[name]; !exists {
+		_, exists := proxyMap[name]
+		if pair.Initialized && !exists {
 			return fmt.Errorf("Mihomo /proxies read-back is missing reserved policy group %q", name)
+		}
+		if !pair.Initialized && exists {
+			return fmt.Errorf("Mihomo /proxies read-back unexpectedly retains reserved policy group %q", name)
 		}
 	}
 	rulesDoc, ok := rulesResponse.JSON.(map[string]any)

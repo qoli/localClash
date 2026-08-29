@@ -119,6 +119,9 @@ func TestApplyToSelectionUsesRequiredAndAvailableRegionalExits(t *testing.T) {
 	if got := resolved.PolicyGroups[DirectPolicyGroup].Exits; len(got) != 1 || got[0] != rules.TerminalDirect {
 		t.Fatalf("custom direct exits = %+v", got)
 	}
+	if got := resolved.RequiredTargets; len(got) < 2 || got[len(got)-2] != ProxyPolicyGroup || got[len(got)-1] != DirectPolicyGroup {
+		t.Fatalf("required targets = %+v, want both reserved policy groups", got)
+	}
 }
 
 func TestLoadRequiresBothStrictDocuments(t *testing.T) {
