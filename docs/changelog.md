@@ -16,6 +16,19 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 
 ## Unreleased
 
+## 目前最新版本
+
+| 渠道 | 最新版本 | 發佈時間 |
+| --- | --- | --- |
+| localClash Core | [v0.1.71](https://github.com/qoli/localClash/releases/tag/v0.1.71) | 2026-09-01 UTC+8 |
+| localclash-luci | [v0.1.0-62](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-62) | 2026-08-31 UTC+8 |
+
+## 2026-09-01
+
+### localClash Core v0.1.71
+
+Changes:
+
 - `⚡ 自动选择` 改由訂閱刷新生成的 `network.connectivity.g204.v1` 能力快照
   提供候選：先排除被鏈式節點引用的 `dialer-proxy` helper，再按解析後的實際
   第一跳 `IP:Port` 排重並保留先到者，最後透過隔離 Mihomo 嚴格驗證
@@ -27,12 +40,18 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
   會在候選 config 通過 `mihomo -t` 後一併提升所有 capability snapshots，任一
   探測、快照或提升失敗都不會產生全量節點 fallback。
 
-## 目前最新版本
+Release:
 
-| 渠道 | 最新版本 | 發佈時間 |
-| --- | --- | --- |
-| localClash Core | [v0.1.70](https://github.com/qoli/localClash/releases/tag/v0.1.70) | 2026-08-30 UTC+8 |
-| localclash-luci | [v0.1.0-62](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-62) | 2026-08-31 UTC+8 |
+- [qoli/localClash v0.1.71](https://github.com/qoli/localClash/releases/tag/v0.1.71)
+
+Verification:
+
+- `go test ./...`、focused race tests、`go vet ./...` 與 Smart Core
+  `mihomo -t` 全部通過。
+- iStoreOS QEMU 以兩份真實訂閱驗證 372 個原始節點：排除 20 個 helper、剔除
+  57 個重複第一跳，295 個候選均只探測一次，109 個通過 g204 並載入 Smart。
+- V2EX 經 Smart mixed port 強制 HTTP/1.1 成功回傳 HTTP 200，證明 TCP 路徑不依賴
+  QUIC 亦可用。
 
 ## 2026-08-31
 
