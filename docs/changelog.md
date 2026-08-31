@@ -52,6 +52,10 @@ Verification:
   57 個重複第一跳，295 個候選均只探測一次，109 個通過 g204 並載入 Smart。
 - V2EX 經 Smart mixed port 強制 HTTP/1.1 成功回傳 HTTP 200，證明 TCP 路徑不依賴
   QUIC 亦可用。
+- [Release workflow 33430792086](https://github.com/qoli/localClash/actions/runs/33430792086)
+  成功；公開 Release 的 7 個資產、三份 SHA256、amd64／arm64 ELF、base-assets
+  與 manifest `v0.1.71` 均通過驗證。遠端標籤精確指向
+  `2be47c3d8ba6b9e780f3ec4524d29058e601457c`。
 
 ## 2026-08-31
 
