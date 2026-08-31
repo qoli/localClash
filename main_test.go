@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"localclash/internal/appinit"
+	"localclash/internal/autoavailable"
 	"localclash/internal/chatgptavailable"
 	"localclash/internal/coredownload"
 	"localclash/internal/customsites"
@@ -553,13 +554,13 @@ custom_rules:
 	previousRebuild := rebuildProductChatGPT
 	t.Cleanup(func() { rebuildProductChatGPT = previousRebuild })
 	rebuildCalled := false
-	rebuildProductChatGPT = func(_ context.Context, proxies []map[string]any, _, runtimeParent, snapshotPath string) (chatgptavailable.Result, error) {
+	rebuildProductChatGPT = func(_ context.Context, proxies []map[string]any, _, runtimeParent, snapshotPath, previousSnapshotPath string) (chatgptavailable.Result, error) {
 		rebuildCalled = true
 		if len(proxies) != 1 || proxies[0]["name"] != "US 01" {
 			t.Fatalf("capability proxies = %+v, want refreshed merged proxy", proxies)
 		}
-		if runtimeParent != filepath.Join(dir, ".runtime", "capabilities") || snapshotPath != filepath.Join(runtimeParent, "chatgpt-available.json") {
-			t.Fatalf("capability paths = %q / %q", runtimeParent, snapshotPath)
+		if runtimeParent != filepath.Join(dir, ".runtime", "capabilities") || filepath.Dir(snapshotPath) == runtimeParent || previousSnapshotPath != filepath.Join(runtimeParent, "chatgpt-available.json") {
+			t.Fatalf("capability paths = runtime %q candidate %q previous %q", runtimeParent, snapshotPath, previousSnapshotPath)
 		}
 		writeMainTestFile(t, snapshotPath, `{
   "version": 5,
@@ -616,6 +617,56 @@ custom_rules:
 	}
 	if text := string(generated); !strings.Contains(text, "name: ChatGPT-available") || !strings.Contains(text, "US 01") {
 		t.Fatalf("one-click render did not consume refreshed capability:\n%s", text)
+	}
+}
+
+func TestRefreshProductCapabilitiesDoesNotPartiallyPromoteWhenSecondProbeFails(t *testing.T) {
+	dir := t.TempDir()
+	runtimeRoot := filepath.Join(dir, ".runtime")
+	capabilityRoot := filepath.Join(runtimeRoot, "capabilities")
+	writeMainTestFile(t, filepath.Join(dir, "localclash-intent.json"), `version: 4
+proxy_groups:
+  Auto:
+    mode: auto
+    capability: network.connectivity.g204.v1
+  ChatGPT-available:
+    mode: auto
+    capability: openai.chatgpt.statsig.v1
+    optional: true
+`)
+	oldAuto := fmt.Sprintf(`{"version":1,"profile":%q,"updated_at":"old","qualified":["old-auto"],"nodes":{}}`, autoavailable.ProfileID)
+	oldChat := fmt.Sprintf(`{"version":5,"profile":%q,"updated_at":"old","qualified":["old-chat"],"nodes":{}}`, chatgptavailable.ProfileID)
+	writeMainTestFile(t, filepath.Join(capabilityRoot, "auto-available.json"), oldAuto)
+	writeMainTestFile(t, filepath.Join(capabilityRoot, "chatgpt-available.json"), oldChat)
+
+	previousAuto := rebuildProductAutoAvailable
+	previousChat := rebuildProductChatGPT
+	t.Cleanup(func() {
+		rebuildProductAutoAvailable = previousAuto
+		rebuildProductChatGPT = previousChat
+	})
+	rebuildProductAutoAvailable = func(_ context.Context, _ []map[string]any, _, _, candidate, previous string) (autoavailable.Result, error) {
+		if previous != filepath.Join(capabilityRoot, "auto-available.json") || filepath.Dir(candidate) == capabilityRoot {
+			t.Fatalf("automatic candidate=%q previous=%q", candidate, previous)
+		}
+		writeMainTestFile(t, candidate, fmt.Sprintf(`{"version":1,"profile":%q,"updated_at":"new","qualified":["new-auto"],"nodes":{}}`, autoavailable.ProfileID))
+		return autoavailable.Result{Profile: autoavailable.ProfileID, SnapshotPath: candidate, Qualified: []string{"new-auto"}, QualifiedCount: 1}, nil
+	}
+	rebuildProductChatGPT = func(context.Context, []map[string]any, string, string, string, string) (chatgptavailable.Result, error) {
+		return chatgptavailable.Result{}, fmt.Errorf("Statsig unavailable")
+	}
+
+	_, err := refreshProductCapabilities(context.Background(), appinit.RuntimeState{Paths: appinit.RuntimePaths{
+		WorkspaceRoot: dir, RuntimeRoot: runtimeRoot, CorePath: filepath.Join(dir, "mihomo"),
+	}}, map[string]any{"proxies": []any{map[string]any{"name": "US 01"}}}, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "Statsig unavailable") {
+		t.Fatalf("error = %v, want second capability failure", err)
+	}
+	if got, loadErr := autoavailable.LoadQualified(filepath.Join(capabilityRoot, "auto-available.json")); loadErr != nil || len(got) != 1 || got[0] != "old-auto" {
+		t.Fatalf("automatic snapshot partially promoted: %v err=%v", got, loadErr)
+	}
+	if got, loadErr := chatgptavailable.LoadQualified(filepath.Join(capabilityRoot, "chatgpt-available.json")); loadErr != nil || len(got) != 1 || got[0] != "old-chat" {
+		t.Fatalf("ChatGPT snapshot changed: %v err=%v", got, loadErr)
 	}
 }
 

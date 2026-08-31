@@ -46,8 +46,12 @@ User selection belongs in a separate packs selection gob:
 `proxy_groups` materialize to Clash/Mihomo runtime proxy-groups. `nodes` must
 be exact proxy names from `subscription.gob`; use `subscription_nodes_search`
 to find candidate names first. Most groups do not verify egress regions with IP
-lookup or hostname geolocation. The built-in `openai.chatgpt.statsig.v1`
-capability is the exception: `subscriptions_refresh` derives its nodes by
+lookup or hostname geolocation. Two built-in capabilities are derived during
+`subscriptions_refresh`. `network.connectivity.g204.v1` excludes referenced
+`dialer-proxy` helpers, deduplicates selectable nodes by resolved effective
+first-hop IP set and port, and requires an exact HTTP 204 from
+`https://cp.cloudflare.com/generate_204` through an isolated temporary Mihomo.
+`openai.chatgpt.statsig.v1` derives its nodes by
 requiring a successful Brotli-compressed Statsig initialization at
 `https://ab.chatgpt.com/v1/initialize` through an isolated temporary Mihomo.
 HTTP 200, valid JSON, and a non-empty `derived_fields.country` are required.

@@ -20,6 +20,9 @@ import (
 	"time"
 
 	"localclash/internal/appinit"
+	"localclash/internal/autoavailable"
+	"localclash/internal/capability"
+	"localclash/internal/capabilitystore"
 	"localclash/internal/chatgptavailable"
 	"localclash/internal/configinspect"
 	"localclash/internal/configpatch"
@@ -54,6 +57,7 @@ type Server struct {
 	configPatchDraftSlot  *configPatchDraftSlot
 	watchdogNoticeMu      sync.Mutex
 	watchdogNotices       map[string]time.Time
+	rebuildAutoAvailable  func(context.Context, []map[string]any, string, string, string, string) (autoavailable.Result, error)
 	rebuildChatGPT        func(context.Context, []map[string]any, string, string, string, string) (chatgptavailable.Result, error)
 	testMihomoConfig      func(context.Context, mihomotest.TestOptions) (mihomotest.TestResult, error)
 	promoteMihomoConfig   func(string, string, string) (mihomotest.PromoteResult, error)
@@ -81,14 +85,15 @@ func NewServerWithState(state appinit.RuntimeState) *Server {
 func newServer(state *appinit.RuntimeState) *Server {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Server{
-		state:               state,
-		startedAt:           time.Now().UTC(),
-		taskCtx:             ctx,
-		taskCancel:          cancel,
-		watchdogNotices:     map[string]time.Time{},
-		rebuildChatGPT:      chatgptavailable.RebuildCandidateWithMihomo,
-		testMihomoConfig:    mihomotest.Test,
-		promoteMihomoConfig: mihomotest.PromoteConfig,
+		state:                state,
+		startedAt:            time.Now().UTC(),
+		taskCtx:              ctx,
+		taskCancel:           cancel,
+		watchdogNotices:      map[string]time.Time{},
+		rebuildAutoAvailable: autoavailable.RebuildCandidateWithMihomo,
+		rebuildChatGPT:       chatgptavailable.RebuildCandidateWithMihomo,
+		testMihomoConfig:     mihomotest.Test,
+		promoteMihomoConfig:  mihomotest.PromoteConfig,
 	}
 }
 
@@ -2398,7 +2403,7 @@ type localClashRefreshImpact struct {
 	HotReloadReady      bool                         `json:"hot_reload_ready"`
 	SelectionPath       string                       `json:"selection_path,omitempty"`
 	ProxyGroups         []localClashProxyGroupImpact `json:"proxy_groups,omitempty"`
-	Capabilities        []chatgptavailable.Result    `json:"capabilities,omitempty"`
+	Capabilities        []capability.Result          `json:"capabilities,omitempty"`
 	NextActions         []string                     `json:"next_actions,omitempty"`
 }
 
@@ -2471,15 +2476,10 @@ func (s *Server) evaluateLocalClashAfterRefresh(ctx context.Context, configPath,
 
 	capabilityNodes := map[string][]string{}
 	profiles := configuredCapabilityProfiles(config)
-	var capabilityCandidatePath string
-	var capabilitySnapshotPath string
+	var capabilityPromotions []capabilitySnapshotPromotion
 	var capabilityTransactionDir string
 	if len(profiles) > 0 {
-		if len(profiles) != 1 || profiles[0] != chatgptavailable.ProfileID {
-			err := fmt.Errorf("unsupported proxy-group capabilities: %s", strings.Join(profiles, ", "))
-			if len(profiles) == 1 && profiles[0] == chatgptavailable.LegacyProfileID {
-				err = fmt.Errorf("legacy ChatGPT capability %q is no longer supported; refresh the localclash-default policy-template patches before subscription refresh", chatgptavailable.LegacyProfileID)
-			}
+		if err := validateCapabilityProfiles(profiles); err != nil {
 			impact.State = "capability_probe_failed"
 			impact.RequiresAgentReplan = true
 			impact.Error = err.Error()
@@ -2492,7 +2492,7 @@ func (s *Server) evaluateLocalClashAfterRefresh(ctx context.Context, configPath,
 			impact.Error = fmt.Errorf("create capability transaction root: %w", err).Error()
 			return impact
 		}
-		capabilityTransactionDir, err = os.MkdirTemp(capabilityRoot, ".chatgpt-refresh-*")
+		capabilityTransactionDir, err = os.MkdirTemp(capabilityRoot, ".capability-refresh-*")
 		if err != nil {
 			impact.State = "capability_probe_failed"
 			impact.RequiresAgentReplan = true
@@ -2500,45 +2500,44 @@ func (s *Server) evaluateLocalClashAfterRefresh(ctx context.Context, configPath,
 			return impact
 		}
 		defer os.RemoveAll(capabilityTransactionDir)
-		capabilitySnapshotPath = filepath.Join(capabilityRoot, "chatgpt-available.json")
-		capabilityCandidatePath = filepath.Join(capabilityTransactionDir, "chatgpt-available.json")
-		finish = startTaskStage(ctx, "evaluate_localclash_impact.qualify_chatgpt", map[string]any{
-			"profile":     chatgptavailable.ProfileID,
-			"proxy_count": len(subscriptionNodes),
-			"candidate":   capabilityCandidatePath,
-		})
 		proxies, err := subscriptionProxyMaps(subscriptionDoc)
-		if err == nil {
-			result, rebuildErr := s.rebuildChatGPT(
-				ctx,
-				proxies,
-				corePath,
-				capabilityRoot,
-				capabilityCandidatePath,
-				capabilitySnapshotPath,
-			)
-			err = rebuildErr
-			if err == nil {
-				impact.Capabilities = append(impact.Capabilities, result)
-				capabilityNodes = chatgptavailable.QualifiedByProfile(result)
-				finishTaskStage(finish, nil, map[string]any{
-					"candidates":         result.Candidates,
-					"probed":             result.Probed,
-					"qualified":          result.QualifiedCount,
-					"observed_qualified": result.ObservedQualifiedCount,
-					"retained":           result.RetainedCount,
-					"unavailable":        result.UnavailableCount,
-					"probe_duration_ms":  result.DurationMS,
-				})
-			}
-		}
 		if err != nil {
-			finishTaskStage(finish, err, nil)
 			impact.State = "capability_probe_failed"
 			impact.RequiresAgentReplan = true
 			impact.Error = err.Error()
-			impact.NextActions = []string{"inspect the qualify_chatgpt task stage and capability snapshot", "retry subscriptions_refresh after the probe path is healthy"}
+			impact.NextActions = []string{"inspect the capability qualification task stage", "retry subscriptions_refresh after the probe path is healthy"}
 			return impact
+		}
+		for _, profile := range profiles {
+			filename := capabilitySnapshotFilename(profile)
+			promoted := filepath.Join(capabilityRoot, filename)
+			candidate := filepath.Join(capabilityTransactionDir, filename)
+			finish = startTaskStage(ctx, "evaluate_localclash_impact.qualify_capability", map[string]any{
+				"profile": profile, "proxy_count": len(subscriptionNodes), "candidate": candidate,
+			})
+			var result capability.Result
+			switch profile {
+			case autoavailable.ProfileID:
+				result, err = s.rebuildAutoAvailable(ctx, proxies, corePath, capabilityRoot, candidate, promoted)
+			case chatgptavailable.ProfileID:
+				result, err = s.rebuildChatGPT(ctx, proxies, corePath, capabilityRoot, candidate, promoted)
+			}
+			if err != nil {
+				finishTaskStage(finish, err, nil)
+				impact.State = "capability_probe_failed"
+				impact.RequiresAgentReplan = true
+				impact.Error = err.Error()
+				impact.NextActions = []string{"inspect the capability qualification task stage", "retry subscriptions_refresh after the probe path is healthy"}
+				return impact
+			}
+			impact.Capabilities = append(impact.Capabilities, result)
+			capabilityNodes[profile] = append([]string{}, result.Qualified...)
+			capabilityPromotions = append(capabilityPromotions, capabilitySnapshotPromotion{Profile: profile, Candidate: candidate, Promoted: promoted})
+			finishTaskStage(finish, nil, map[string]any{
+				"candidates": result.Candidates, "probed": result.Probed, "deduplicated": result.DeduplicatedCount, "helper_excluded": result.HelperExcludedCount,
+				"qualified": result.QualifiedCount, "observed_qualified": result.ObservedQualifiedCount,
+				"retained": result.RetainedCount, "unavailable": result.UnavailableCount, "probe_duration_ms": result.DurationMS,
+			})
 		}
 	}
 
@@ -2635,10 +2634,10 @@ func (s *Server) evaluateLocalClashAfterRefresh(ctx context.Context, configPath,
 	finishTaskStage(finish, nil, map[string]any{"passed": true, "config_sha256": validation.ConfigSHA256})
 	impact.CandidateValidated = true
 
-	var rollbackCapability func() error
-	if capabilityCandidatePath != "" {
-		finish = startTaskStage(ctx, "evaluate_localclash_impact.promote_capability", map[string]any{"candidate": capabilityCandidatePath, "promoted": capabilitySnapshotPath})
-		rollbackCapability, err = promoteCapabilitySnapshot(capabilityCandidatePath, capabilitySnapshotPath, capabilityTransactionDir)
+	var rollbackCapabilities func() error
+	if len(capabilityPromotions) > 0 {
+		finish = startTaskStage(ctx, "evaluate_localclash_impact.promote_capabilities", map[string]any{"count": len(capabilityPromotions)})
+		rollbackCapabilities, err = promoteCapabilitySnapshots(capabilityPromotions, capabilityTransactionDir)
 		if err != nil {
 			finishTaskStage(finish, err, nil)
 			impact.State = "capability_promote_failed"
@@ -2654,8 +2653,8 @@ func (s *Server) evaluateLocalClashAfterRefresh(ctx context.Context, configPath,
 	finish = startTaskStage(ctx, "evaluate_localclash_impact.promote_config", map[string]any{"candidate": candidateOutputPath, "promoted": outputPath})
 	promotion, err := s.promoteMihomoConfig(candidateOutputPath, outputPath, attestationPath)
 	if err != nil {
-		if rollbackCapability != nil {
-			if rollbackErr := rollbackCapability(); rollbackErr != nil {
+		if rollbackCapabilities != nil {
+			if rollbackErr := rollbackCapabilities(); rollbackErr != nil {
 				err = fmt.Errorf("promote candidate config: %w; rollback capability snapshot: %v", err, rollbackErr)
 			}
 		}
@@ -2711,40 +2710,62 @@ func configuredCapabilityProfiles(config localconfig.Config) []string {
 	for _, group := range config.ProxyGroups {
 		profiles = append(profiles, group.Capability)
 	}
-	return chatgptavailable.Profiles(profiles)
+	return capability.Profiles(profiles)
 }
 
-func promoteCapabilitySnapshot(candidate, promoted, transactionDir string) (func() error, error) {
-	if _, err := chatgptavailable.LoadQualified(candidate); err != nil {
-		return nil, fmt.Errorf("validate candidate capability snapshot: %w", err)
+func validateCapabilityProfiles(profiles []string) error {
+	for _, profile := range profiles {
+		switch profile {
+		case autoavailable.ProfileID, chatgptavailable.ProfileID:
+		case chatgptavailable.LegacyProfileID:
+			return fmt.Errorf("legacy ChatGPT capability %q is no longer supported; refresh the localclash-default policy-template patches before subscription refresh", profile)
+		default:
+			return fmt.Errorf("unsupported proxy-group capability: %s", profile)
+		}
 	}
-	backup := filepath.Join(transactionDir, "previous-chatgpt-available.json")
-	previousExists := false
-	if _, err := os.Stat(promoted); err == nil {
-		if err := os.Rename(promoted, backup); err != nil {
-			return nil, fmt.Errorf("backup current capability snapshot: %w", err)
-		}
-		previousExists = true
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return nil, fmt.Errorf("inspect current capability snapshot: %w", err)
+	return nil
+}
+
+func capabilitySnapshotFilename(profile string) string {
+	switch profile {
+	case autoavailable.ProfileID:
+		return "auto-available.json"
+	case chatgptavailable.ProfileID:
+		return "chatgpt-available.json"
+	default:
+		return ""
 	}
-	if err := os.Rename(candidate, promoted); err != nil {
-		if previousExists {
-			_ = os.Rename(backup, promoted)
-		}
-		return nil, fmt.Errorf("promote candidate capability snapshot: %w", err)
+}
+
+func validateCapabilitySnapshot(profile, path string) error {
+	switch profile {
+	case autoavailable.ProfileID:
+		_, err := autoavailable.LoadQualified(path)
+		return err
+	case chatgptavailable.ProfileID:
+		_, err := chatgptavailable.LoadQualified(path)
+		return err
+	default:
+		return fmt.Errorf("unsupported proxy-group capability: %s", profile)
 	}
-	return func() error {
-		if err := os.Remove(promoted); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf("remove promoted capability snapshot: %w", err)
-		}
-		if previousExists {
-			if err := os.Rename(backup, promoted); err != nil {
-				return fmt.Errorf("restore previous capability snapshot: %w", err)
-			}
-		}
-		return nil
-	}, nil
+}
+
+type capabilitySnapshotPromotion struct {
+	Profile   string
+	Candidate string
+	Promoted  string
+}
+
+func promoteCapabilitySnapshots(promotions []capabilitySnapshotPromotion, transactionDir string) (func() error, error) {
+	items := make([]capabilitystore.Item, 0, len(promotions))
+	for _, promotion := range promotions {
+		profile := promotion.Profile
+		items = append(items, capabilitystore.Item{
+			ID: profile, Candidate: promotion.Candidate, Promoted: promotion.Promoted,
+			Validate: func(path string) error { return validateCapabilitySnapshot(profile, path) },
+		})
+	}
+	return capabilitystore.Promote(items, transactionDir)
 }
 
 func promoteCandidateAttestation(candidate, promoted string) error {
@@ -2762,14 +2783,26 @@ func configuredCapabilityNodesFromSnapshot(config localconfig.Config, capability
 	if len(profiles) == 0 {
 		return map[string][]string{}, nil
 	}
-	if len(profiles) != 1 || profiles[0] != chatgptavailable.ProfileID {
-		return nil, fmt.Errorf("unsupported proxy-group capabilities: %s", strings.Join(profiles, ", "))
-	}
-	qualified, err := chatgptavailable.LoadQualified(filepath.Join(capabilityRoot, "chatgpt-available.json"))
-	if err != nil {
+	if err := validateCapabilityProfiles(profiles); err != nil {
 		return nil, err
 	}
-	return map[string][]string{chatgptavailable.ProfileID: qualified}, nil
+	nodes := make(map[string][]string, len(profiles))
+	for _, profile := range profiles {
+		path := filepath.Join(capabilityRoot, capabilitySnapshotFilename(profile))
+		var qualified []string
+		var err error
+		switch profile {
+		case autoavailable.ProfileID:
+			qualified, err = autoavailable.LoadQualified(path)
+		case chatgptavailable.ProfileID:
+			qualified, err = chatgptavailable.LoadQualified(path)
+		}
+		if err != nil {
+			return nil, err
+		}
+		nodes[profile] = qualified
+	}
+	return nodes, nil
 }
 
 func subscriptionProxyMaps(doc map[string]any) ([]map[string]any, error) {

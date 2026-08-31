@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"localclash/internal/appinit"
+	"localclash/internal/autoavailable"
 	"localclash/internal/chatgptavailable"
 	"localclash/internal/localconfig"
 	"localclash/internal/mihomotest"
@@ -1203,6 +1204,10 @@ sources:
 	writeMCPFile(t, intent, `{
   "version": 5,
   "proxy_groups": {
+    "⚡ 自动选择": {
+      "mode": "smart",
+      "capability": "network.connectivity.g204.v1"
+    },
     "ChatGPT-available": {
       "mode": "smart",
       "capability": "openai.chatgpt.statsig.v1",
@@ -1212,7 +1217,7 @@ sources:
   "policy_groups": {
     "ChatGPT": {
       "mode": "manual",
-      "exits": ["ChatGPT-available", "DIRECT"]
+      "exits": ["ChatGPT-available", "⚡ 自动选择", "DIRECT"]
     }
   },
   "custom_rules": [{
@@ -1233,6 +1238,13 @@ sources:
 		GeneratedConfig:     generated,
 		CorePath:            filepath.Join(dir, "unused-fake-core"),
 	}})
+	server.rebuildAutoAvailable = func(_ context.Context, proxies []map[string]any, _, runtimeParent, snapshotPath, previousSnapshotPath string) (autoavailable.Result, error) {
+		if len(proxies) != 2 || runtimeParent != capabilityRoot || filepath.Dir(snapshotPath) == capabilityRoot || previousSnapshotPath != filepath.Join(capabilityRoot, "auto-available.json") {
+			t.Fatalf("automatic capability inputs proxies=%+v runtime=%q candidate=%q previous=%q", proxies, runtimeParent, snapshotPath, previousSnapshotPath)
+		}
+		writeMCPFile(t, snapshotPath, fmt.Sprintf(`{"version":1,"profile":%q,"updated_at":"2026-08-15T00:00:00Z","qualified":["JP 01"],"nodes":{}}`, autoavailable.ProfileID))
+		return autoavailable.Result{Profile: autoavailable.ProfileID, SnapshotPath: snapshotPath, Candidates: 2, Probed: 2, Qualified: []string{"JP 01"}, QualifiedCount: 1, UnavailableCount: 1}, nil
+	}
 	server.rebuildChatGPT = func(_ context.Context, proxies []map[string]any, _, runtimeParent, snapshotPath, previousSnapshotPath string) (chatgptavailable.Result, error) {
 		if len(proxies) != 2 || proxies[0]["name"] != "US 01" || proxies[1]["name"] != "JP 01" {
 			t.Fatalf("probe proxies = %+v", proxies)
@@ -1282,7 +1294,7 @@ sources:
 		t.Fatalf("localClash impact = %+v", impact)
 	}
 	capabilities := impact["capabilities"].([]any)
-	if len(capabilities) != 1 || capabilities[0].(map[string]any)["qualified_count"] != float64(1) {
+	if len(capabilities) != 2 || capabilities[0].(map[string]any)["qualified_count"] != float64(1) || capabilities[1].(map[string]any)["qualified_count"] != float64(1) {
 		t.Fatalf("capabilities = %+v", capabilities)
 	}
 	resolvedIntent := readMCPFile(t, intent)
@@ -1295,8 +1307,12 @@ sources:
 		t.Fatalf("ChatGPT-available proxies = %+v", got)
 	}
 	chatGPT := findMCPProxyGroup(t, config, "ChatGPT")
-	if got := chatGPT["proxies"]; !reflect.DeepEqual(got, []any{"ChatGPT-available", "DIRECT"}) {
+	if got := chatGPT["proxies"]; !reflect.DeepEqual(got, []any{"ChatGPT-available", "⚡ 自动选择", "DIRECT"}) {
 		t.Fatalf("ChatGPT policy proxies = %+v", got)
+	}
+	auto := findMCPProxyGroup(t, config, "⚡ 自动选择")
+	if got := auto["proxies"]; !reflect.DeepEqual(got, []any{"JP 01"}) {
+		t.Fatalf("automatic proxies = %+v", got)
 	}
 }
 
@@ -1341,6 +1357,61 @@ func TestSubscriptionsRefreshCapabilityCollapseLeavesGeneratedConfigUnchanged(t 
 	}
 	if got := readMCPFile(t, generated); got != "sentinel: previous-generated-config\n" {
 		t.Fatalf("generated config changed after collapse: %q", got)
+	}
+}
+
+func TestConfiguredCapabilityNodesFromSnapshotLoadsAutomaticAndChatGPT(t *testing.T) {
+	dir := t.TempDir()
+	writeMCPFile(t, filepath.Join(dir, "auto-available.json"), fmt.Sprintf(`{"version":1,"profile":%q,"updated_at":"2026-09-01T00:00:00Z","qualified":["HK 01"],"nodes":{}}`, autoavailable.ProfileID))
+	writeMCPFile(t, filepath.Join(dir, "chatgpt-available.json"), fmt.Sprintf(`{"version":5,"profile":%q,"updated_at":"2026-09-01T00:00:00Z","qualified":["US 01"],"nodes":{}}`, chatgptavailable.ProfileID))
+	config := localconfig.Config{ProxyGroups: map[string]localconfig.ProxyGroup{
+		"⚡ 自动选择":            {Mode: "auto", Capability: autoavailable.ProfileID},
+		"ChatGPT-available": {Mode: "auto", Capability: chatgptavailable.ProfileID, Optional: true},
+	}}
+	nodes, err := configuredCapabilityNodesFromSnapshot(config, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(nodes[autoavailable.ProfileID], []string{"HK 01"}) || !reflect.DeepEqual(nodes[chatgptavailable.ProfileID], []string{"US 01"}) {
+		t.Fatalf("capability nodes = %+v", nodes)
+	}
+}
+
+func TestPromoteCapabilitySnapshotsRollsBackBothSnapshots(t *testing.T) {
+	dir := t.TempDir()
+	transaction := filepath.Join(dir, "transaction")
+	if err := os.MkdirAll(transaction, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	autoPromoted := filepath.Join(dir, "auto-available.json")
+	chatPromoted := filepath.Join(dir, "chatgpt-available.json")
+	autoCandidate := filepath.Join(transaction, "auto-available.json")
+	chatCandidate := filepath.Join(transaction, "chatgpt-available.json")
+	writeMCPFile(t, autoPromoted, fmt.Sprintf(`{"version":1,"profile":%q,"updated_at":"old","qualified":["old-auto"],"nodes":{}}`, autoavailable.ProfileID))
+	writeMCPFile(t, chatPromoted, fmt.Sprintf(`{"version":5,"profile":%q,"updated_at":"old","qualified":["old-chat"],"nodes":{}}`, chatgptavailable.ProfileID))
+	writeMCPFile(t, autoCandidate, fmt.Sprintf(`{"version":1,"profile":%q,"updated_at":"new","qualified":["new-auto"],"nodes":{}}`, autoavailable.ProfileID))
+	writeMCPFile(t, chatCandidate, fmt.Sprintf(`{"version":5,"profile":%q,"updated_at":"new","qualified":["new-chat"],"nodes":{}}`, chatgptavailable.ProfileID))
+	rollback, err := promoteCapabilitySnapshots([]capabilitySnapshotPromotion{
+		{Profile: autoavailable.ProfileID, Candidate: autoCandidate, Promoted: autoPromoted},
+		{Profile: chatgptavailable.ProfileID, Candidate: chatCandidate, Promoted: chatPromoted},
+	}, transaction)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := autoavailable.LoadQualified(autoPromoted); !reflect.DeepEqual(got, []string{"new-auto"}) {
+		t.Fatalf("promoted automatic snapshot = %v", got)
+	}
+	if got, _ := chatgptavailable.LoadQualified(chatPromoted); !reflect.DeepEqual(got, []string{"new-chat"}) {
+		t.Fatalf("promoted ChatGPT snapshot = %v", got)
+	}
+	if err := rollback(); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := autoavailable.LoadQualified(autoPromoted); !reflect.DeepEqual(got, []string{"old-auto"}) {
+		t.Fatalf("rolled back automatic snapshot = %v", got)
+	}
+	if got, _ := chatgptavailable.LoadQualified(chatPromoted); !reflect.DeepEqual(got, []string{"old-chat"}) {
+		t.Fatalf("rolled back ChatGPT snapshot = %v", got)
 	}
 }
 

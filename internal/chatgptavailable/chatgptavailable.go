@@ -9,9 +9,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"time"
+
+	"localclash/internal/capability"
 )
 
 const (
@@ -76,18 +77,7 @@ type Snapshot struct {
 	Nodes     map[string]NodeState `json:"nodes"`
 }
 
-type Result struct {
-	Profile                string   `json:"profile"`
-	SnapshotPath           string   `json:"snapshot_path"`
-	Candidates             int      `json:"candidates"`
-	Probed                 int      `json:"probed"`
-	Qualified              []string `json:"qualified"`
-	QualifiedCount         int      `json:"qualified_count"`
-	ObservedQualifiedCount int      `json:"observed_qualified_count"`
-	RetainedCount          int      `json:"retained_count"`
-	UnavailableCount       int      `json:"unavailable_count"`
-	DurationMS             int64    `json:"duration_ms"`
-}
+type Result = capability.Result
 
 type Options struct {
 	SnapshotPath         string
@@ -379,21 +369,9 @@ func stringValue(value any) string {
 }
 
 func QualifiedByProfile(result Result) map[string][]string {
-	return map[string][]string{result.Profile: append([]string{}, result.Qualified...)}
+	return capability.QualifiedByProfile(result)
 }
 
 func Profiles(configured []string) []string {
-	seen := map[string]bool{}
-	for _, profile := range configured {
-		profile = strings.TrimSpace(profile)
-		if profile != "" {
-			seen[profile] = true
-		}
-	}
-	out := make([]string, 0, len(seen))
-	for profile := range seen {
-		out = append(out, profile)
-	}
-	sort.Strings(out)
-	return out
+	return capability.Profiles(configured)
 }

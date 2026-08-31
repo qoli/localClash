@@ -310,9 +310,14 @@ MCP subscription bootstrap tools:
   logged HTTP/1.1 64 KiB range chunks. Recovery requires a consistent total,
   exact byte counts, matching 256-byte overlaps, and repeated first/last boundary
   reads; any mismatch fails without writing a partial or stale artifact.
-  If the compiled intent declares `capability: openai.chatgpt.statsig.v1`, refresh
-  also rebuilds that exit through an isolated temporary Mihomo. Every qualified
-  node must complete `POST https://ab.chatgpt.com/v1/initialize`, return HTTP
+  If the compiled intent declares `capability: network.connectivity.g204.v1`,
+  refresh rebuilds the global automatic exit through an isolated temporary
+  Mihomo after excluding referenced dialer helpers and deduplicating resolved
+  first-hop endpoints; every representative must return HTTP 204 from
+  `https://cp.cloudflare.com/generate_204`. If it declares
+  `capability: openai.chatgpt.statsig.v1`, refresh also rebuilds that service
+  exit through the same isolated-probe module. Every ChatGPT-qualified node must
+  complete `POST https://ab.chatgpt.com/v1/initialize`, return HTTP
   200 with Brotli encoding, and expose a non-empty `derived_fields.country`.
   localClash streams the response through bounded Brotli and JSON readers rather
   than retaining the multi-megabyte Statsig document. Probes use 16 workers;

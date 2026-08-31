@@ -43,6 +43,11 @@ business group -> exit group -> subscription nodes
 `minimal` defines `⚡ 自动选择`, `🎯 手动选择`, and `DNSProxy` in the minimal
 strategy layer. `DNSProxy` exits through `⚡ 自动选择`, so router DNS `#DNSProxy`
 references have a concrete target even without loading the default patch set.
+`⚡ 自动选择` is rebuilt by `subscriptions_refresh`: referenced `dialer-proxy`
+helpers are excluded from the selectable set, remaining nodes are deduplicated
+by their resolved effective first-hop IP set and port with the first occurrence
+retained, and every representative must return an exact HTTP 204 from
+`https://cp.cloudflare.com/generate_204` through an isolated Mihomo.
 
 `localclash-default` adds regional exits plus business routing groups. Its
 `🌐 全球直连` policy defaults to `DIRECT` while exposing automatic and regional
@@ -81,9 +86,10 @@ artifact-delivery boundary rather than a claim that every matched byte is an LLM
 weight download.
 
 Capability groups are derived configuration, not Mihomo health-check aliases.
-localClash starts an isolated temporary Mihomo, assigns one loopback mixed
-listener to each distinct proxy definition, and sends the Statsig initialize
-request through each listener. Endpoint checks use 16-worker bounded concurrency,
+localClash starts an isolated temporary Mihomo and assigns one loopback mixed
+listener to every capability candidate. The automatic-connectivity capability
+sends a strict generate-204 request; the ChatGPT capability sends the Statsig
+initialize request. Endpoint checks use 16-worker bounded concurrency,
 so subscriptions with hundreds of nodes can finish within the refresh window. It
 does not mutate or depend on the active core's `alive` state. The resulting secret-safe snapshot
 is stored below `.runtime/capabilities/`; raw proxy credentials are never written
@@ -93,7 +99,7 @@ generated config are not replaced, so a transient carrier outage cannot silently
 rewrite the policy graph.
 
 The product CLI `subscription refresh --json` and MCP `subscriptions_refresh`
-both rebuild the configured capability snapshot. Snapshot schema v5 records the
+both rebuild every configured capability snapshot. The snapshots record the
 ordered qualified node names as derived state so a following `config render
 --json` or MCP `config_render` can resolve the same capability even after the
 patch registry recompiles `localclash-intent.json`. A missing, legacy, malformed,
@@ -104,12 +110,17 @@ MCP subscription refresh renders a candidate config, runs isolated `mihomo -t`,
 and only then promotes the candidate snapshot and config. Applying the promoted
 config to an active runtime remains the explicit confirm-required hot-reload step.
 
-Qualification uses asymmetric hysteresis. A new proxy enters the group only
+Both qualifications use asymmetric hysteresis. A new proxy enters the group only
 after a successful observation. A previously qualified proxy remains eligible
 through two consecutive failed refresh observations and is removed on the third;
 the runtime automatic group can still avoid it while its transport is down. A
 successful observation resets the failure counter. This keeps an instantaneous
-carrier interruption from being mistaken for a durable ChatGPT capability change.
+carrier interruption from being mistaken for a durable capability change.
+
+When Smart Core is active, `⚡ 自动选择` applies HK `6`, JP `5`, SG `4`, TW `3`,
+US `2`, and Other `1` after g204 qualification and endpoint deduplication. The
+weights are soft Smart preferences, not a fallback chain. Meta Core receives the
+same qualified candidate set as a normal `url-test` group.
 
 When Smart Core is active, `ChatGPT-available` applies ordered proxy-name labels
 and weights: US `5`, JP `4`, SG `3`, TW `2`, and Other `1`. This is a soft

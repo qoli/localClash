@@ -16,6 +16,16 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 
 ## Unreleased
 
+- `⚡ 自动选择` 改由訂閱刷新生成的 `network.connectivity.g204.v1` 能力快照
+  提供候選：先排除被鏈式節點引用的 `dialer-proxy` helper，再按解析後的實際
+  第一跳 `IP:Port` 排重並保留先到者，最後透過隔離 Mihomo 嚴格驗證
+  `https://cp.cloudflare.com/generate_204` 回傳 HTTP 204。
+- Smart Core 為全域自動出口加入組別專屬權重：HK `6`、JP `5`、SG `4`、
+  TW `3`、US `2`、Other `1`；手動與地區組仍保留原始訂閱節點。
+- ChatGPT Statsig 與全域 g204 capability 共用隔離 Mihomo probe module；MCP
+  會在候選 config 通過 `mihomo -t` 後一併提升所有 capability snapshots，任一
+  探測、快照或提升失敗都不會產生全量節點 fallback。
+
 ## 目前最新版本
 
 | 渠道 | 最新版本 | 發佈時間 |

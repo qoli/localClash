@@ -194,8 +194,17 @@ func TestRealLocalClashDefaultTemplateIsLayered(t *testing.T) {
 	if group := config.ProxyGroups["🎯 手动选择"]; group.Mode != "manual" || group.Match == nil || group.Match.Pattern != ".*" {
 		t.Fatalf("default template manual selector = %+v, want explicit all-node selector", group)
 	}
-	if group := config.ProxyGroups["⚡ 自动选择"]; group.Mode != "auto" || group.Match == nil || group.Match.Pattern != ".*" {
-		t.Fatalf("default template auto selector = %+v, want explicit all-node selector", group)
+	auto := config.ProxyGroups["⚡ 自动选择"]
+	wantAutoPriority := []smartpolicy.Rule{
+		{Label: "HK", Pattern: `(🇭🇰|香港|(^|[^A-Za-z])HK([^A-Za-z]|$)|Hong.?Kong)`, Factor: 6},
+		{Label: "JP", Pattern: `(🇯🇵|日本|(^|[^A-Za-z])JP([^A-Za-z]|$)|Japan)`, Factor: 5},
+		{Label: "SG", Pattern: `(🇸🇬|新加坡|狮城|獅城|(^|[^A-Za-z])SG([^A-Za-z]|$)|Singapore)`, Factor: 4},
+		{Label: "TW", Pattern: `(🇹🇼|台湾|台灣|(^|[^A-Za-z])TW([^A-Za-z]|$)|Taiwan)`, Factor: 3},
+		{Label: "US", Pattern: `(🇺🇸|美国|美國|(^|[^A-Za-z])US([^A-Za-z]|$)|United.?States|America)`, Factor: 2},
+		{Label: "Other", Pattern: `.*`, Factor: 1},
+	}
+	if auto.Mode != "auto" || auto.Capability != "network.connectivity.g204.v1" || auto.Match != nil || !reflect.DeepEqual(auto.SmartPriority, wantAutoPriority) {
+		t.Fatalf("default template auto selector = %+v, want g204-qualified endpoint-deduplicated Smart selector", auto)
 	}
 	if !config.ProxyGroups["🇭🇰 香港节点"].Optional {
 		t.Fatalf("香港节点 group = %+v, want optional region selector", config.ProxyGroups["🇭🇰 香港节点"])

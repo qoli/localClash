@@ -16,7 +16,10 @@ import (
 	"time"
 
 	"localclash/internal/appinit"
+	"localclash/internal/autoavailable"
 	"localclash/internal/baseassets"
+	"localclash/internal/capability"
+	"localclash/internal/capabilitystore"
 	"localclash/internal/chatgptavailable"
 	"localclash/internal/configinspect"
 	"localclash/internal/configpatch"
@@ -98,7 +101,8 @@ type codedProductError struct {
 }
 
 var downloadCore = coredownload.Download
-var rebuildProductChatGPT = chatgptavailable.RebuildWithMihomo
+var rebuildProductChatGPT = chatgptavailable.RebuildCandidateWithMihomo
+var rebuildProductAutoAvailable = autoavailable.RebuildCandidateWithMihomo
 
 func (err codedProductError) Error() string {
 	return err.message
@@ -265,54 +269,80 @@ func runProductSubscription(args []string, state appinit.RuntimeState) error {
 
 type productSubscriptionRefreshStatus struct {
 	subscriptions.RefreshResult
-	Capabilities []chatgptavailable.Result `json:"capabilities,omitempty"`
+	Capabilities []capability.Result `json:"capabilities,omitempty"`
 }
 
-func refreshProductCapabilities(ctx context.Context, state appinit.RuntimeState, subscriptionDoc map[string]any, logOutput io.Writer) ([]chatgptavailable.Result, error) {
+func refreshProductCapabilities(ctx context.Context, state appinit.RuntimeState, subscriptionDoc map[string]any, logOutput io.Writer) ([]capability.Result, error) {
 	configPath := productWorkspacePath(state, "localclash-intent.json")
 	config, err := localconfig.Load(configPath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return []chatgptavailable.Result{}, nil
+			return []capability.Result{}, nil
 		}
 		return nil, err
 	}
 	profiles := configuredProductCapabilityProfiles(config)
 	if len(profiles) == 0 {
-		return []chatgptavailable.Result{}, nil
+		return []capability.Result{}, nil
 	}
-	if len(profiles) != 1 || profiles[0] != chatgptavailable.ProfileID {
-		if len(profiles) == 1 && profiles[0] == chatgptavailable.LegacyProfileID {
-			return nil, fmt.Errorf("legacy ChatGPT capability %q is no longer supported; refresh the localclash-default policy-template patches before subscription refresh", chatgptavailable.LegacyProfileID)
-		}
-		return nil, fmt.Errorf("unsupported proxy-group capabilities: %s", strings.Join(profiles, ", "))
+	if err := validateSupportedCapabilityProfiles(profiles); err != nil {
+		return nil, err
 	}
 	proxies, err := productSubscriptionProxyMaps(subscriptionDoc)
 	if err != nil {
 		return nil, err
 	}
 	capabilityRoot := productCapabilityRoot(state)
-	snapshotPath := filepath.Join(capabilityRoot, "chatgpt-available.json")
-	started := time.Now()
-	writeProductCapabilityStage(logOutput, "started", started, nil, map[string]any{
-		"profile":     chatgptavailable.ProfileID,
-		"proxy_count": len(proxies),
-	})
-	result, err := rebuildProductChatGPT(ctx, proxies, normalizeCorePathForState(state, state.Paths.CorePath), capabilityRoot, snapshotPath)
-	fields := map[string]any{"profile": chatgptavailable.ProfileID, "proxy_count": len(proxies)}
-	if err == nil {
-		fields["candidates"] = result.Candidates
-		fields["probed"] = result.Probed
-		fields["qualified"] = result.QualifiedCount
-		fields["observed_qualified"] = result.ObservedQualifiedCount
-		fields["retained"] = result.RetainedCount
-		fields["unavailable"] = result.UnavailableCount
+	if err := os.MkdirAll(capabilityRoot, 0o755); err != nil {
+		return nil, fmt.Errorf("create capability transaction root: %w", err)
 	}
-	writeProductCapabilityStage(logOutput, "done", started, err, fields)
+	transactionDir, err := os.MkdirTemp(capabilityRoot, ".capability-refresh-*")
 	if err != nil {
-		return nil, fmt.Errorf("refresh ChatGPT capability: %w", err)
+		return nil, fmt.Errorf("create capability transaction: %w", err)
 	}
-	return []chatgptavailable.Result{result}, nil
+	defer os.RemoveAll(transactionDir)
+	results := make([]capability.Result, 0, len(profiles))
+	promotions := make([]capabilitystore.Item, 0, len(profiles))
+	for _, profile := range profiles {
+		started := time.Now()
+		writeProductCapabilityStage(logOutput, "started", started, nil, map[string]any{"profile": profile, "proxy_count": len(proxies)})
+		var result capability.Result
+		filename := productCapabilitySnapshotFilename(profile)
+		promotedPath := filepath.Join(capabilityRoot, filename)
+		candidatePath := filepath.Join(transactionDir, filename)
+		switch profile {
+		case autoavailable.ProfileID:
+			result, err = rebuildProductAutoAvailable(ctx, proxies, normalizeCorePathForState(state, state.Paths.CorePath), capabilityRoot, candidatePath, promotedPath)
+		case chatgptavailable.ProfileID:
+			result, err = rebuildProductChatGPT(ctx, proxies, normalizeCorePathForState(state, state.Paths.CorePath), capabilityRoot, candidatePath, promotedPath)
+		}
+		fields := map[string]any{"profile": profile, "proxy_count": len(proxies)}
+		if err == nil {
+			fields["candidates"] = result.Candidates
+			fields["probed"] = result.Probed
+			fields["deduplicated"] = result.DeduplicatedCount
+			fields["helper_excluded"] = result.HelperExcludedCount
+			fields["qualified"] = result.QualifiedCount
+			fields["observed_qualified"] = result.ObservedQualifiedCount
+			fields["retained"] = result.RetainedCount
+			fields["unavailable"] = result.UnavailableCount
+		}
+		writeProductCapabilityStage(logOutput, "done", started, err, fields)
+		if err != nil {
+			return nil, fmt.Errorf("refresh capability %q: %w", profile, err)
+		}
+		validationProfile := profile
+		promotions = append(promotions, capabilitystore.Item{
+			ID: profile, Candidate: candidatePath, Promoted: promotedPath,
+			Validate: func(path string) error { return validateProductCapabilitySnapshot(validationProfile, path) },
+		})
+		result.SnapshotPath = promotedPath
+		results = append(results, result)
+	}
+	if _, err := capabilitystore.Promote(promotions, transactionDir); err != nil {
+		return nil, err
+	}
+	return results, nil
 }
 
 func writeProductCapabilityStage(w io.Writer, event string, started time.Time, stageErr error, fields map[string]any) {
@@ -322,7 +352,7 @@ func writeProductCapabilityStage(w io.Writer, event string, started time.Time, s
 	record := map[string]any{
 		"ts":          time.Now().UTC().Format(time.RFC3339Nano),
 		"component":   "capability_refresh",
-		"stage":       "qualify_chatgpt",
+		"stage":       "qualify_capability",
 		"event":       event,
 		"duration_ms": time.Since(started).Milliseconds(),
 	}
@@ -344,7 +374,44 @@ func configuredProductCapabilityProfiles(config localconfig.Config) []string {
 	for _, group := range config.ProxyGroups {
 		profiles = append(profiles, group.Capability)
 	}
-	return chatgptavailable.Profiles(profiles)
+	return capability.Profiles(profiles)
+}
+
+func validateSupportedCapabilityProfiles(profiles []string) error {
+	for _, profile := range profiles {
+		switch profile {
+		case autoavailable.ProfileID, chatgptavailable.ProfileID:
+		case chatgptavailable.LegacyProfileID:
+			return fmt.Errorf("legacy ChatGPT capability %q is no longer supported; refresh the localclash-default policy-template patches before subscription refresh", profile)
+		default:
+			return fmt.Errorf("unsupported proxy-group capability: %s", profile)
+		}
+	}
+	return nil
+}
+
+func productCapabilitySnapshotFilename(profile string) string {
+	switch profile {
+	case autoavailable.ProfileID:
+		return "auto-available.json"
+	case chatgptavailable.ProfileID:
+		return "chatgpt-available.json"
+	default:
+		return ""
+	}
+}
+
+func validateProductCapabilitySnapshot(profile, path string) error {
+	switch profile {
+	case autoavailable.ProfileID:
+		_, err := autoavailable.LoadQualified(path)
+		return err
+	case chatgptavailable.ProfileID:
+		_, err := chatgptavailable.LoadQualified(path)
+		return err
+	default:
+		return fmt.Errorf("unsupported proxy-group capability: %s", profile)
+	}
 }
 
 func productSubscriptionProxyMaps(doc map[string]any) ([]map[string]any, error) {
@@ -1624,14 +1691,26 @@ func loadProductCapabilityNodes(config localconfig.Config, state appinit.Runtime
 	if len(profiles) == 0 {
 		return map[string][]string{}, nil
 	}
-	if len(profiles) != 1 || profiles[0] != chatgptavailable.ProfileID {
-		return nil, fmt.Errorf("unsupported proxy-group capabilities: %s", strings.Join(profiles, ", "))
-	}
-	qualified, err := chatgptavailable.LoadQualified(filepath.Join(productCapabilityRoot(state), "chatgpt-available.json"))
-	if err != nil {
+	if err := validateSupportedCapabilityProfiles(profiles); err != nil {
 		return nil, err
 	}
-	return map[string][]string{chatgptavailable.ProfileID: qualified}, nil
+	root := productCapabilityRoot(state)
+	nodes := make(map[string][]string, len(profiles))
+	for _, profile := range profiles {
+		var qualified []string
+		var err error
+		switch profile {
+		case autoavailable.ProfileID:
+			qualified, err = autoavailable.LoadQualified(filepath.Join(root, "auto-available.json"))
+		case chatgptavailable.ProfileID:
+			qualified, err = chatgptavailable.LoadQualified(filepath.Join(root, "chatgpt-available.json"))
+		}
+		if err != nil {
+			return nil, err
+		}
+		nodes[profile] = qualified
+	}
+	return nodes, nil
 }
 
 func runtimeStatusOptions(state appinit.RuntimeState) corerun.StatusOptions {

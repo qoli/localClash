@@ -1,25 +1,20 @@
 package chatgptavailable
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
-	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/andybalholm/brotli"
-	"gopkg.in/yaml.v3"
+	"localclash/internal/proxyprobe"
 )
 
 const (
@@ -50,7 +45,7 @@ type MihomoOptions struct {
 
 type MihomoProber struct {
 	options MihomoOptions
-	probe   func(context.Context, int, string, string, time.Duration) statsigProbeResult
+	probe   func(context.Context, *http.Client, string, string, time.Duration) statsigProbeResult
 }
 
 func RebuildWithMihomo(ctx context.Context, proxies []map[string]any, corePath, runtimeParent, snapshotPath string) (Result, error) {
@@ -108,29 +103,24 @@ func (p *MihomoProber) Probe(ctx context.Context, candidates []Candidate) ([]Obs
 	if len(candidates) == 0 {
 		return nil, errors.New("ChatGPT capability probe candidates are required")
 	}
-	if err := os.MkdirAll(p.options.RuntimeParent, 0o755); err != nil {
-		return nil, fmt.Errorf("create ChatGPT capability probe runtime parent: %w", err)
+	names := make([]string, len(candidates))
+	definitions := make([]map[string]any, 0, len(candidates))
+	for index, candidate := range candidates {
+		names[index] = candidate.Name
+		candidateDefinitions := candidate.Definitions
+		if len(candidateDefinitions) == 0 {
+			candidateDefinitions = []map[string]any{candidate.Proxy}
+		}
+		definitions = append(definitions, candidateDefinitions...)
 	}
-	runtimeDir, err := os.MkdirTemp(p.options.RuntimeParent, "chatgpt-probe-")
-	if err != nil {
-		return nil, fmt.Errorf("create ChatGPT capability probe runtime: %w", err)
-	}
-	defer os.RemoveAll(runtimeDir)
-
-	ports, err := reservePorts(len(candidates))
-	if err != nil {
-		return nil, err
-	}
-	configPath := filepath.Join(runtimeDir, "config.yaml")
-	if err := writeProbeConfig(configPath, candidates, ports); err != nil {
-		return nil, err
-	}
-
-	process, err := startProbeCore(ctx, p.options.CorePath, runtimeDir, configPath, ports[0])
+	session, err := proxyprobe.Start(ctx, definitions, names, proxyprobe.Options{
+		CorePath: p.options.CorePath, RuntimeParent: p.options.RuntimeParent,
+		RuntimePrefix: "chatgpt-probe-", ListenerPrefix: "chatgpt-probe",
+	})
 	if err != nil {
 		return nil, err
 	}
-	defer process.stop()
+	defer session.Close()
 
 	observations := make([]Observation, len(candidates))
 	jobs := make(chan int)
@@ -144,7 +134,12 @@ func (p *MihomoProber) Probe(ctx context.Context, candidates []Candidate) ([]Obs
 		go func() {
 			defer wg.Done()
 			for index := range jobs {
-				observations[index] = p.probeCandidate(ctx, candidates[index], ports[index])
+				client, clientErr := session.HTTPClient(index, p.options.RequestTimeout)
+				if clientErr != nil {
+					observations[index] = Observation{Fingerprint: candidates[index].Fingerprint, Error: clientErr.Error()}
+					continue
+				}
+				observations[index] = p.probeCandidate(ctx, candidates[index], client)
 			}
 		}()
 	}
@@ -162,12 +157,12 @@ func (p *MihomoProber) Probe(ctx context.Context, candidates []Candidate) ([]Obs
 	return observations, nil
 }
 
-func (p *MihomoProber) probeCandidate(ctx context.Context, candidate Candidate, port int) Observation {
+func (p *MihomoProber) probeCandidate(ctx context.Context, candidate Candidate, client *http.Client) Observation {
 	started := time.Now()
 	observation := Observation{Fingerprint: candidate.Fingerprint}
 	for attempt := 1; attempt <= p.options.Attempts; attempt++ {
 		observation.Attempts = attempt
-		result := p.probe(ctx, port, p.options.Endpoint, p.options.ClientKey, p.options.RequestTimeout)
+		result := p.probe(ctx, client, p.options.Endpoint, p.options.ClientKey, p.options.RequestTimeout)
 		observation.StatsigStatus = result.decision
 		observation.StatsigHTTPStatus = result.httpStatus
 		observation.StatsigCountry = result.country
@@ -208,18 +203,7 @@ type statsigProbeResult struct {
 	err               error
 }
 
-func probeStatsig(parent context.Context, port int, endpoint, clientKey string, timeout time.Duration) statsigProbeResult {
-	proxyURL, err := url.Parse("http://127.0.0.1:" + strconv.Itoa(port))
-	if err != nil {
-		return statsigTransportError(err)
-	}
-	transport := &http.Transport{
-		Proxy:               http.ProxyURL(proxyURL),
-		DisableKeepAlives:   true,
-		TLSHandshakeTimeout: timeout,
-	}
-	defer transport.CloseIdleConnections()
-	client := &http.Client{Transport: transport}
+func probeStatsig(parent context.Context, client *http.Client, endpoint, clientKey string, timeout time.Duration) statsigProbeResult {
 	return requestStatsig(parent, client, endpoint, clientKey, timeout)
 }
 
@@ -392,151 +376,4 @@ func (r *countingReader) Read(data []byte) (int, error) {
 	n, err := r.reader.Read(data)
 	r.count += int64(n)
 	return n, err
-}
-
-func reservePorts(count int) ([]int, error) {
-	listeners := make([]net.Listener, 0, count)
-	defer func() {
-		for _, listener := range listeners {
-			_ = listener.Close()
-		}
-	}()
-	ports := make([]int, 0, count)
-	for range count {
-		listener, err := net.Listen("tcp", "127.0.0.1:0")
-		if err != nil {
-			return nil, fmt.Errorf("reserve ChatGPT capability probe port: %w", err)
-		}
-		listeners = append(listeners, listener)
-		ports = append(ports, listener.Addr().(*net.TCPAddr).Port)
-	}
-	return ports, nil
-}
-
-func writeProbeConfig(path string, candidates []Candidate, ports []int) error {
-	proxies := make([]any, 0, len(candidates))
-	listeners := make([]any, 0, len(candidates))
-	for index, candidate := range candidates {
-		definitions := candidate.Definitions
-		if len(definitions) == 0 {
-			definitions = []map[string]any{candidate.Proxy}
-		}
-		for _, definition := range definitions {
-			proxies = append(proxies, definition)
-		}
-		listeners = append(listeners, map[string]any{
-			"name":   fmt.Sprintf("chatgpt-probe-%d", index),
-			"type":   "mixed",
-			"listen": "127.0.0.1",
-			"port":   ports[index],
-			"proxy":  candidate.Name,
-		})
-	}
-	config := map[string]any{
-		"allow-lan":    false,
-		"bind-address": "127.0.0.1",
-		"ipv6":         true,
-		"log-level":    "warning",
-		"mode":         "rule",
-		"proxies":      proxies,
-		"listeners":    listeners,
-		"rules":        []string{"MATCH,DIRECT"},
-	}
-	data, err := yaml.Marshal(config)
-	if err != nil {
-		return fmt.Errorf("encode ChatGPT capability probe config: %w", err)
-	}
-	if err := os.WriteFile(path, data, 0o600); err != nil {
-		return fmt.Errorf("write ChatGPT capability probe config: %w", err)
-	}
-	return nil
-}
-
-type probeProcess struct {
-	cmd    *exec.Cmd
-	waitCh chan error
-	output *limitedBuffer
-	once   sync.Once
-}
-
-func startProbeCore(ctx context.Context, corePath, runtimeDir, configPath string, readinessPort int) (*probeProcess, error) {
-	processCtx, cancel := context.WithCancel(ctx)
-	cmd := exec.CommandContext(processCtx, corePath, "-d", runtimeDir, "-f", configPath)
-	output := &limitedBuffer{limit: 8192}
-	cmd.Stdout = output
-	cmd.Stderr = output
-	if err := cmd.Start(); err != nil {
-		cancel()
-		return nil, fmt.Errorf("start isolated Mihomo for ChatGPT capability probe: %w", err)
-	}
-	process := &probeProcess{cmd: cmd, waitCh: make(chan error, 1), output: output}
-	go func() {
-		process.waitCh <- cmd.Wait()
-		cancel()
-	}()
-
-	deadline := time.NewTimer(12 * time.Second)
-	defer deadline.Stop()
-	ticker := time.NewTicker(100 * time.Millisecond)
-	defer ticker.Stop()
-	address := "127.0.0.1:" + strconv.Itoa(readinessPort)
-	for {
-		connection, err := net.DialTimeout("tcp", address, 200*time.Millisecond)
-		if err == nil {
-			_ = connection.Close()
-			return process, nil
-		}
-		select {
-		case waitErr := <-process.waitCh:
-			return nil, fmt.Errorf("isolated Mihomo exited before ChatGPT capability probe was ready: %v: %s", waitErr, output.String())
-		case <-ticker.C:
-		case <-deadline.C:
-			process.stop()
-			return nil, fmt.Errorf("isolated Mihomo did not become ready for ChatGPT capability probe: %s", output.String())
-		case <-ctx.Done():
-			process.stop()
-			return nil, ctx.Err()
-		}
-	}
-}
-
-func (p *probeProcess) stop() {
-	p.once.Do(func() {
-		if p.cmd.Process == nil {
-			return
-		}
-		_ = p.cmd.Process.Signal(os.Interrupt)
-		select {
-		case <-p.waitCh:
-		case <-time.After(2 * time.Second):
-			_ = p.cmd.Process.Kill()
-			<-p.waitCh
-		}
-	})
-}
-
-type limitedBuffer struct {
-	mu    sync.Mutex
-	limit int
-	data  []byte
-}
-
-func (b *limitedBuffer) Write(data []byte) (int, error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	original := len(data)
-	remaining := b.limit - len(b.data)
-	if remaining > 0 {
-		if len(data) > remaining {
-			data = data[:remaining]
-		}
-		b.data = append(b.data, data...)
-	}
-	return original, nil
-}
-
-func (b *limitedBuffer) String() string {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return strings.TrimSpace(string(bytes.Clone(b.data)))
 }

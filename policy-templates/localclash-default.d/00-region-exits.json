@@ -16,13 +16,17 @@
       },
       "⚡ 自动选择": {
         "mode": "auto",
-        "match": {
-          "type": "name_regex",
-          "pattern": ".*",
-          "min": 1
-        },
-        "reason": "面向 Dashboard 的自动出口选择，包含全部订阅节点。",
-        "boundary": "all_subscription_nodes"
+        "capability": "network.connectivity.g204.v1",
+        "smart_priority": [
+          {"label": "HK", "pattern": "(🇭🇰|香港|(^|[^A-Za-z])HK([^A-Za-z]|$)|Hong.?Kong)", "factor": 6},
+          {"label": "JP", "pattern": "(🇯🇵|日本|(^|[^A-Za-z])JP([^A-Za-z]|$)|Japan)", "factor": 5},
+          {"label": "SG", "pattern": "(🇸🇬|新加坡|狮城|獅城|(^|[^A-Za-z])SG([^A-Za-z]|$)|Singapore)", "factor": 4},
+          {"label": "TW", "pattern": "(🇹🇼|台湾|台灣|(^|[^A-Za-z])TW([^A-Za-z]|$)|Taiwan)", "factor": 3},
+          {"label": "US", "pattern": "(🇺🇸|美国|美國|(^|[^A-Za-z])US([^A-Za-z]|$)|United.?States|America)", "factor": 2},
+          {"label": "Other", "pattern": ".*", "factor": 1}
+        ],
+        "reason": "面向 Dashboard 的免维护自动出口；订阅刷新时按实际入口排重并通过 generate_204 资格验证。",
+        "boundary": "g204_qualified_unique_physical_endpoints"
       },
       "🇹🇼 台湾节点": {
         "mode": "auto",
