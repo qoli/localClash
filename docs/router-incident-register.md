@@ -4,6 +4,84 @@ This document records router-facing usability and performance incidents that
 must be investigated with evidence. Do not treat post-removal or wrong-window
 samples as proof for an incident.
 
+## 2026-09-01 Runtime Watchdog Does Not Reconcile Router Takeover
+
+Status: known issue; recovery ownership is unresolved.
+
+Observed symptom:
+
+- When a supervised Mihomo process exits, the Core runtime watchdog can restart
+  it and verify the replacement process and controller health successfully.
+- The same recovery does not verify or restore LuCI-owned router takeover.
+  The resulting state can therefore be `runtime_running: true` while
+  `takeover_effective: false`.
+- From the user's perspective, Mihomo appears to have recovered but router
+  traffic remains outside the expected localClash takeover path.
+
+Evidence captured in the iStoreOS test environment on 2026-09-01:
+
+- A fault-injection run terminated the supervised Mihomo PID `29711` while a
+  one-click update was in progress.
+- Core watchdog events recorded `runtime_exit_observed`,
+  `runtime_restart_attempt`, and `runtime_restart_recovered`; the recovered PID
+  was `2916`.
+- The same-boot takeover repair ticket still contained `applied`, but Core
+  watchdog recovery did not consume that intent or inspect
+  `takeover_effective`.
+- The one-click update failure finalizer added in LuCI commit `633c1e1`
+  independently detected the ineffective takeover, applied it, and verified
+  the final healthy state. This proves that the update-scoped mitigation works;
+  it does not provide general watchdog recovery.
+
+Current responsibility boundary:
+
+- Core owns Mihomo runtime supervision, managed-process identity, validated
+  runtime inputs, controller health, bounded restart attempts, and watchdog
+  events.
+- LuCI owns fw4/nft rules, policy routing, DNS hijack, takeover intent and
+  repair markers, and `status`/`apply`/`stop`/`reconcile` operations.
+- Core must not execute LuCI takeover commands merely because it restarted a
+  Mihomo process.
+- No component currently owns reconciliation between the Core event
+  `runtime_restart_recovered` and the LuCI observation
+  `takeover_effective: false`.
+
+Unresolved design questions:
+
+- Should LuCI react to a versioned Core recovery event, periodically reconcile
+  desired and observed takeover state, or use an OpenWrt/procd lifecycle hook?
+- Which component owns the transaction when runtime recovery overlaps an
+  intentional start, stop, restart, update, cancellation, or package re-exec?
+- How should reconciliation prove same-boot takeover intent without turning a
+  temporary repair ticket into persistent boot policy?
+- What lock, generation, or transaction identity prevents a recovery worker
+  from re-applying takeover during an intentional transition?
+- Where should bounded retry, terminal failure, and user-visible
+  `attention_required` state live?
+
+Safety boundary while unresolved:
+
+- Do not make the Core watchdog directly invoke fw4, nft, UCI, policy-routing,
+  or LuCI helper commands.
+- Do not add an uncoordinated polling loop that applies takeover whenever
+  `effective` is false; that can race intentional transitions and explicit
+  user stop operations.
+- Keep the update-scoped failure finalizer as a bounded mitigation, not as
+  evidence that general runtime supervision now restores router takeover.
+
+Required evidence before choosing an owner:
+
+- A state-transition trace correlating update/task transaction identity, Core
+  watchdog events, runtime PID, takeover repair intent, and observed takeover
+  state.
+- Reproductions for an unexpected runtime exit while idle, during one-click
+  update, during explicit restart, and after task cancellation.
+- Proof that explicit takeover stop remains stopped and cannot be undone by a
+  delayed recovery worker.
+- Verification that the selected design remains safe when the Core or LuCI
+  package is upgraded independently and when recovery events are missed or
+  duplicated.
+
 ## 2026-06-04 Router Reset Left Incomplete localClash Home
 
 Observed symptom:

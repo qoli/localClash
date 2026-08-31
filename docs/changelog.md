@@ -21,7 +21,7 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
 | localClash Core | [v0.1.71](https://github.com/qoli/localClash/releases/tag/v0.1.71) | 2026-09-01 UTC+8 |
-| localclash-luci | [v0.1.0-62](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-62) | 2026-08-31 UTC+8 |
+| localclash-luci | [v0.1.0-63](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-63) | 2026-09-01 UTC+8 |
 
 ## 2026-09-01
 
@@ -56,6 +56,39 @@ Verification:
   成功；公開 Release 的 7 個資產、三份 SHA256、amd64／arm64 ELF、base-assets
   與 manifest `v0.1.71` 均通過驗證。遠端標籤精確指向
   `2be47c3d8ba6b9e780f3ec4524d29058e601457c`。
+
+### localclash-luci v0.1.0-63
+
+Changes:
+
+- 概覽頁在 Mihomo 運行但網絡接管中斷時顯示「應用接管」按鈕，可直接重新套用
+  並驗證 LuCI 管理的接管狀態。
+- 一鍵更新在 Core／配置更新階段失敗後，會保留更新前的接管意圖、等待 watchdog
+  恢復 Mihomo，並按需重新應用及驗證接管；同時保留原始更新錯誤。
+- 恢復失敗或初始快照矛盾時明確回報 `attention_required`，不使用隱藏 fallback。
+
+Known limitation:
+
+- Core watchdog 自主恢復只驗證 Mihomo 與 Controller，不負責 LuCI 的
+  `takeover_effective`；跨模組恢復責任仍未決定，已登記於
+  [Router Incident Register](router-incident-register.md#2026-09-01-runtime-watchdog-does-not-reconcile-router-takeover)。
+
+Release:
+
+- [qoli/localclash-luci v0.1.0-63](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-63)
+
+Verification:
+
+- iStoreOS QEMU 正常更新通過；故障注入在 dnsqualify 失敗期間終止 Mihomo，
+  watchdog 恢復後由失敗收斂器重新應用接管。最終
+  `runtime_running=true`、`effective=true`、`fwmark_route_v4=true` 且預設路由為
+  `dev utun`。
+- [main CI 33447011298](https://github.com/qoli/localclash-luci/actions/runs/33447011298)
+  與 [Release workflow 33447137877](https://github.com/qoli/localclash-luci/actions/runs/33447137877)
+  全部成功。
+- 公開 Release 的 13 個受管資產與 6 份 sidecar SHA256 全部通過；x86_64／
+  aarch64 `.run` 的 `--info`、`--list`、`--check` 與 `--noexec` 均通過。
+  遠端標籤精確指向 `0fb45560ea13214d032491206a33300d2e44b18c`。
 
 ## 2026-08-31
 
