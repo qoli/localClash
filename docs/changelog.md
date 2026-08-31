@@ -21,9 +21,30 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
 | localClash Core | [v0.1.70](https://github.com/qoli/localClash/releases/tag/v0.1.70) | 2026-08-30 UTC+8 |
-| localclash-luci | [v0.1.0-61](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-61) | 2026-08-31 UTC+8 |
+| localclash-luci | [v0.1.0-62](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-62) | 2026-08-31 UTC+8 |
 
 ## 2026-08-31
+
+### localclash-luci v0.1.0-62
+
+Changes:
+
+- 修正更新任務完成時的狀態競態：背景更新已成功結束時，狀態輪詢不再以
+  `task_interrupted` 覆蓋剛寫入的成功結果。
+- 更新步驟、下載候選與運行時切換流程保持不變；本次只修正最終狀態判定。
+
+Release:
+
+- [qoli/localclash-luci v0.1.0-62](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-62)
+
+Verification:
+
+- [main CI 33392530344](https://github.com/qoli/localclash-luci/actions/runs/33392530344)
+  與 [Release workflow 33392704448](https://github.com/qoli/localclash-luci/actions/runs/33392704448)
+  全部成功。
+- 公開 Release 的 13 個受管資產與 6 份 sidecar SHA256 全部通過；x86_64／
+  aarch64 `.run` 的 `--info`、`--list`、`--check` 與 `--noexec` 均通過。
+  遠端標籤精確指向 `bad18ccc9fe17448e3611201ace8421d3d29db95`。
 
 ### localclash-luci v0.1.0-61
 
