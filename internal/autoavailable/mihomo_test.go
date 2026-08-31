@@ -33,20 +33,17 @@ func TestProbeGenerate204RequiresExactEmpty204(t *testing.T) {
 	}
 }
 
-func TestProbeCandidateRetriesTransportOrStatusFailure(t *testing.T) {
+func TestProbeCandidateSingleFailureDoesNotRetry(t *testing.T) {
 	calls := 0
 	prober := &MihomoProber{
-		options: MihomoOptions{Attempts: 3, RetryDelay: time.Nanosecond, RequestTimeout: time.Second},
+		options: MihomoOptions{RequestTimeout: time.Second},
 		probe: func(context.Context, *http.Client, string, time.Duration) g204Result {
 			calls++
-			if calls == 1 {
-				return g204Result{httpStatus: 500, err: context.DeadlineExceeded}
-			}
-			return g204Result{httpStatus: 204}
+			return g204Result{httpStatus: 500, err: context.DeadlineExceeded}
 		},
 	}
 	observation := prober.probeCandidate(context.Background(), Candidate{EndpointFingerprint: "endpoint"}, &http.Client{})
-	if !observation.Available || observation.Attempts != 2 || observation.HTTPStatus != 204 || calls != 2 || strings.TrimSpace(observation.Error) != "" {
+	if observation.Available || observation.Attempts != 1 || observation.HTTPStatus != 500 || calls != 1 || strings.TrimSpace(observation.Error) == "" {
 		t.Fatalf("observation = %+v calls=%d", observation, calls)
 	}
 }

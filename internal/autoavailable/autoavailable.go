@@ -21,7 +21,7 @@ import (
 const (
 	ProfileID                   = "network.connectivity.g204.v1"
 	SnapshotVersion             = 1
-	ConsecutiveFailureThreshold = 3
+	ConsecutiveFailureThreshold = 1
 )
 
 var (

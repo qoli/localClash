@@ -119,19 +119,13 @@ func TestLoadQualifiedRejectsExplicitEmptySnapshot(t *testing.T) {
 	}
 }
 
-func TestRebuildRetainsPreviouslyAvailableEndpointForTwoFailures(t *testing.T) {
+func TestRebuildRemovesPreviouslyAvailableEndpointAfterOneFailure(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "auto-available.json")
 	proxies := []map[string]any{{"name": "US01", "server": "192.0.2.10", "port": 443}}
 	if _, err := Rebuild(context.Background(), proxies, fakeProber{available: map[string]bool{"US01": true}}, Options{SnapshotPath: path}); err != nil {
 		t.Fatal(err)
 	}
-	for failure := 1; failure <= 2; failure++ {
-		result, err := Rebuild(context.Background(), proxies, fakeProber{}, Options{SnapshotPath: path})
-		if err != nil || !reflect.DeepEqual(result.Qualified, []string{"US01"}) || result.RetainedCount != 1 {
-			t.Fatalf("failure %d result=%+v err=%v", failure, result, err)
-		}
-	}
 	if _, err := Rebuild(context.Background(), proxies, fakeProber{}, Options{SnapshotPath: path}); !errors.Is(err, ErrQualificationCollapse) {
-		t.Fatalf("third failure error = %v, want collapse", err)
+		t.Fatalf("first failure error = %v, want collapse", err)
 	}
 }

@@ -89,8 +89,10 @@ Capability groups are derived configuration, not Mihomo health-check aliases.
 localClash starts an isolated temporary Mihomo and assigns one loopback mixed
 listener to every capability candidate. The automatic-connectivity capability
 sends a strict generate-204 request; the ChatGPT capability sends the Statsig
-initialize request. Endpoint checks use 16-worker bounded concurrency,
-so subscriptions with hundreds of nodes can finish within the refresh window. It
+initialize request. Endpoint checks use 16-worker bounded concurrency, and the
+automatic-connectivity capability makes exactly one request per candidate with
+no retry, so subscriptions with hundreds of nodes can finish within the refresh
+window. It
 does not mutate or depend on the active core's `alive` state. The resulting secret-safe snapshot
 is stored below `.runtime/capabilities/`; raw proxy credentials are never written
 there. Probe infrastructure errors fail the localClash refresh impact explicitly. If an
@@ -110,12 +112,12 @@ MCP subscription refresh renders a candidate config, runs isolated `mihomo -t`,
 and only then promotes the candidate snapshot and config. Applying the promoted
 config to an active runtime remains the explicit confirm-required hot-reload step.
 
-Both qualifications use asymmetric hysteresis. A new proxy enters the group only
-after a successful observation. A previously qualified proxy remains eligible
-through two consecutive failed refresh observations and is removed on the third;
-the runtime automatic group can still avoid it while its transport is down. A
-successful observation resets the failure counter. This keeps an instantaneous
-carrier interruption from being mistaken for a durable capability change.
+The automatic-connectivity qualification is intentionally strict: one successful
+HTTP 204 observation admits a candidate, while one failed observation removes it.
+It has no per-candidate retry or failure hysteresis because `⚡ 自动选择` is a
+high-quality input set for Mihomo Smart, not a list of marginal paths that need
+retries to work. ChatGPT Statsig qualification retains its separate asymmetric
+hysteresis for transient service-control-plane failures.
 
 When Smart Core is active, `⚡ 自动选择` applies HK `6`, JP `5`, SG `4`, TW `3`,
 US `2`, and Other `1` after g204 qualification and endpoint deduplication. The

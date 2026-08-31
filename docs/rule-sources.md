@@ -51,6 +51,8 @@ lookup or hostname geolocation. Two built-in capabilities are derived during
 `dialer-proxy` helpers, deduplicates selectable nodes by resolved effective
 first-hop IP set and port, and requires an exact HTTP 204 from
 `https://cp.cloudflare.com/generate_204` through an isolated temporary Mihomo.
+Each candidate is observed once with no retry or failure hysteresis: one success
+admits it and one failure removes it from the high-quality automatic set.
 `openai.chatgpt.statsig.v1` derives its nodes by
 requiring a successful Brotli-compressed Statsig initialization at
 `https://ab.chatgpt.com/v1/initialize` through an isolated temporary Mihomo.
