@@ -52,7 +52,7 @@ func TestBuildLocalClashDefaultTemplate(t *testing.T) {
 	}
 }
 
-func TestRealMinimalTemplateUsesAllSelectableNodesWithoutChangingSmartPriority(t *testing.T) {
+func TestRealMinimalTemplateUsesAllSelectableNodesWithNarrowSmartPriority(t *testing.T) {
 	config, _, err := Build(filepath.Join("..", "..", DefaultDir), TemplateMinimal)
 	if err != nil {
 		t.Fatal(err)
@@ -67,7 +67,15 @@ func TestRealMinimalTemplateUsesAllSelectableNodesWithoutChangingSmartPriority(t
 	if auto.Match == nil || auto.Match.Pattern != ".*" || auto.Match.Min != 1 || auto.Capability != "" {
 		t.Fatalf("minimal automatic selector = %+v, want required all-node match", auto)
 	}
-	if len(auto.SmartPriority) != 6 || auto.SmartPriority[0].Label != "HK" || auto.SmartPriority[0].Factor != 6 || auto.SmartPriority[5].Label != "Other" || auto.SmartPriority[5].Factor != 1 {
+	wantPriority := []smartpolicy.Rule{
+		{Label: "HK", Pattern: `(🇭🇰|香港|(^|[^A-Za-z])HK([^A-Za-z]|$)|Hong.?Kong)`, Factor: 1.25},
+		{Label: "JP", Pattern: `(🇯🇵|日本|(^|[^A-Za-z])JP([^A-Za-z]|$)|Japan)`, Factor: 1.2},
+		{Label: "SG", Pattern: `(🇸🇬|新加坡|狮城|獅城|(^|[^A-Za-z])SG([^A-Za-z]|$)|Singapore)`, Factor: 1.15},
+		{Label: "TW", Pattern: `(🇹🇼|台湾|台灣|(^|[^A-Za-z])TW([^A-Za-z]|$)|Taiwan)`, Factor: 1.1},
+		{Label: "US", Pattern: `(🇺🇸|美国|美國|(^|[^A-Za-z])US([^A-Za-z]|$)|United.?States|America)`, Factor: 1.05},
+		{Label: "Other", Pattern: `.*`, Factor: 1},
+	}
+	if !reflect.DeepEqual(auto.SmartPriority, wantPriority) {
 		t.Fatalf("minimal automatic Smart priority changed: %+v", auto.SmartPriority)
 	}
 }
@@ -216,11 +224,11 @@ func TestRealLocalClashDefaultTemplateIsLayered(t *testing.T) {
 	}
 	auto := config.ProxyGroups["⚡ 自动选择"]
 	wantAutoPriority := []smartpolicy.Rule{
-		{Label: "HK", Pattern: `(🇭🇰|香港|(^|[^A-Za-z])HK([^A-Za-z]|$)|Hong.?Kong)`, Factor: 6},
-		{Label: "JP", Pattern: `(🇯🇵|日本|(^|[^A-Za-z])JP([^A-Za-z]|$)|Japan)`, Factor: 5},
-		{Label: "SG", Pattern: `(🇸🇬|新加坡|狮城|獅城|(^|[^A-Za-z])SG([^A-Za-z]|$)|Singapore)`, Factor: 4},
-		{Label: "TW", Pattern: `(🇹🇼|台湾|台灣|(^|[^A-Za-z])TW([^A-Za-z]|$)|Taiwan)`, Factor: 3},
-		{Label: "US", Pattern: `(🇺🇸|美国|美國|(^|[^A-Za-z])US([^A-Za-z]|$)|United.?States|America)`, Factor: 2},
+		{Label: "HK", Pattern: `(🇭🇰|香港|(^|[^A-Za-z])HK([^A-Za-z]|$)|Hong.?Kong)`, Factor: 1.25},
+		{Label: "JP", Pattern: `(🇯🇵|日本|(^|[^A-Za-z])JP([^A-Za-z]|$)|Japan)`, Factor: 1.2},
+		{Label: "SG", Pattern: `(🇸🇬|新加坡|狮城|獅城|(^|[^A-Za-z])SG([^A-Za-z]|$)|Singapore)`, Factor: 1.15},
+		{Label: "TW", Pattern: `(🇹🇼|台湾|台灣|(^|[^A-Za-z])TW([^A-Za-z]|$)|Taiwan)`, Factor: 1.1},
+		{Label: "US", Pattern: `(🇺🇸|美国|美國|(^|[^A-Za-z])US([^A-Za-z]|$)|United.?States|America)`, Factor: 1.05},
 		{Label: "Other", Pattern: `.*`, Factor: 1},
 	}
 	if auto.Mode != "auto" || auto.Capability != "" || auto.Match == nil || auto.Match.Pattern != ".*" || auto.Match.Min != 1 || !reflect.DeepEqual(auto.SmartPriority, wantAutoPriority) {
