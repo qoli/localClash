@@ -16,14 +16,37 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 
 ## Unreleased
 
+- LuCI 訂閱頁新增預設關閉的 g204 選項，rpcd 保存及讀回同一設定。
+
 ## 目前最新版本
 
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
-| localClash Core | [v0.1.75](https://github.com/qoli/localClash/releases/tag/v0.1.75) | 2026-09-01 UTC+8 |
+| localClash Core | [v0.1.76](https://github.com/qoli/localClash/releases/tag/v0.1.76) | 2026-09-01 UTC+8 |
 | localclash-luci | [v0.1.0-68](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-68) | 2026-09-01 UTC+8 |
 
 ## 2026-09-01
+
+### localClash Core v0.1.76
+
+Changes:
+
+- 訂閱設定新增 `g204_filter_enabled`，預設關閉；關閉時 `⚡ 自动选择` 直接使用
+  完整可選訂閱節點，避免 g204 篩選降低實際網絡品質。
+- 移除 g204 候選的 endpoint 排重與本機 DNS 預解析；每個可選代理定義均由隔離
+  Mihomo 獨立探測，即使共用 hostname、IP、port 或使用不同協議也不會被合併。
+- `ChatGPT-available` 始終獨立建立。g204 關閉時以完整可選訂閱節點探測；開啟時
+  才使用同輪 g204 合格集合，不再把 g204 當成 ChatGPT capability 的存在條件。
+
+Release:
+
+- [qoli/localClash v0.1.76](https://github.com/qoli/localClash/releases/tag/v0.1.76)
+
+Verification:
+
+- `go test ./...`、`go vet ./...`、CLI／MCP capability refresh 回歸測試及
+  `git diff --check` 通過。
+- 本版本未把本機測試宣稱為實體路由器 WAN／Smart 網絡驗收。
 
 ### localClash Core v0.1.75
 

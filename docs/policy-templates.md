@@ -43,11 +43,13 @@ business group -> exit group -> subscription nodes
 `minimal` defines `⚡ 自动选择`, `🎯 手动选择`, and `DNSProxy` in the minimal
 strategy layer. `DNSProxy` exits through `⚡ 自动选择`, so router DNS `#DNSProxy`
 references have a concrete target even without loading the default patch set.
-`⚡ 自动选择` is rebuilt by `subscriptions_refresh`: referenced `dialer-proxy`
-helpers are excluded from the selectable set, remaining nodes are deduplicated
-by their resolved effective first-hop IP set and port with the first occurrence
-retained, and every representative must return an exact HTTP 204 from
-`https://cp.cloudflare.com/generate_204` through an isolated Mihomo.
+`⚡ 自动选择` uses the complete selectable subscription set by default.
+Referenced `dialer-proxy` helpers are excluded, but nodes are not collapsed by
+hostname, resolved IP, port, protocol, or credentials. Subscription settings can
+enable `g204_filter_enabled`; only then does `subscriptions_refresh` require each
+selectable proxy definition to return an exact HTTP 204 from
+`https://cp.cloudflare.com/generate_204` through an isolated Mihomo before it is
+admitted to this group.
 
 `localclash-default` adds regional exits plus business routing groups. Its
 `🌐 全球直连` policy defaults to `DIRECT` while exposing automatic and regional
@@ -92,8 +94,10 @@ listener to every capability candidate. It waits for every listener before
 starting HTTP workers and checks the process plus all listeners again after the
 workers complete; a startup race or listener collapse is an infrastructure
 failure, not an empty capability observation. The automatic-connectivity capability
-sends a strict generate-204 request; the ChatGPT capability sends the Statsig
-initialize request only for the current g204-qualified unique endpoints. Endpoint
+sends a strict generate-204 request only when the subscription option is enabled.
+The ChatGPT capability is always rebuilt: it sends the Statsig initialize request
+for every selectable subscription proxy when g204 filtering is disabled, or for
+the current g204-qualified set when it is enabled. Endpoint
 checks use 16-worker bounded concurrency. A failed g204 or ChatGPT request is
 retried once; either attempt may qualify the candidate, while two failures remove
 it. Large subscriptions finish according to
@@ -107,17 +111,19 @@ publishes an explicit empty capability snapshot instead of being misclassified
 as probe failure. No previous snapshot, alternate endpoint, or all-node set is
 substituted for the observed result.
 
-DNS resolution is part of automatic-connectivity candidate eligibility rather
-than probe infrastructure. A hostname that returns no address is recorded as an
-explicit unavailable candidate with zero HTTP attempts and its resolver error;
-other candidates continue through the strict g204 probe. Structural subscription
-errors such as duplicate names, missing or cyclic `dialer-proxy` references,
-missing servers, and invalid ports still fail the entire qualification. If no
-candidate qualifies, the snapshot records the per-candidate failures and an
-explicit empty `qualified` list.
+DNS resolution belongs to the isolated Mihomo probe path. localClash does not
+pre-resolve or merge candidates by their effective endpoint, so definitions that
+share a hostname, resolved address, port, or protocol are still probed
+independently. Structural subscription errors such as duplicate names and missing
+or cyclic `dialer-proxy` references still fail qualification. If no candidate
+qualifies, the snapshot records the per-candidate failures and an explicit empty
+`qualified` list.
 
 The product CLI `subscription refresh --json` and MCP `subscriptions_refresh`
-both rebuild every configured capability snapshot. The snapshots record the
+both rebuild the capabilities selected by the subscription policy. ChatGPT is
+always rebuilt when it is declared by the product template. The g204 snapshot is
+rebuilt only when `g204_filter_enabled` is true; otherwise `⚡ 自动选择` resolves
+directly from the complete selectable subscription set. The snapshots record the
 ordered qualified node names as derived state so a following `config render
 --json` or MCP `config_render` can resolve the same capability even after the
 patch registry recompiles `localclash-intent.json`. A missing, legacy, malformed,
@@ -143,15 +149,17 @@ The automatic-connectivity qualification requires one strict HTTP 204 response.
 An initial failure receives one bounded retry; two failures remove the candidate.
 ChatGPT Statsig qualification uses the same two-attempt failure threshold.
 There is no cross-refresh failure hysteresis or stale-result retention.
-Consequently, `ChatGPT-available` is always a subset of the current g204-qualified
-set.
+When g204 filtering is enabled, `ChatGPT-available` is a subset of the current
+g204-qualified set. When it is disabled, ChatGPT qualification starts from every
+selectable subscription proxy and remains independent of g204.
 
 When Smart Core is active, `⚡ 自动选择` applies HK `6`, JP `5`, SG `4`, TW `3`,
-US `2`, and Other `1` after g204 qualification and endpoint deduplication. The
+US `2`, and Other `1` to the complete selectable set by default, or after g204
+qualification when the subscription option is enabled. The
 weights are soft Smart preferences, not a fallback chain. Meta Core receives the
 same qualified candidate set as a normal `url-test` group.
 
-If a completed g204 probe qualifies no nodes, `⚡ 自动选择` falls back to its
+If enabled g204 filtering completes but qualifies no nodes, `⚡ 自动选择` falls back to its
 pre-g204 structure: the current subscription's complete node list in source
 order, with the same automatic group type and Smart priorities. The empty g204
 snapshot remains the observed capability fact. This fallback does not apply to

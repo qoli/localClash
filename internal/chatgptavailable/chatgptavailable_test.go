@@ -17,6 +17,21 @@ type fakeProber struct {
 	err          error
 }
 
+func TestSelectableProxyNamesKeepsAllProtocolsAndExcludesOnlyDialerHelpers(t *testing.T) {
+	proxies := []map[string]any{
+		{"name": "entry", "type": "ss", "server": "same.example", "port": 443},
+		{"name": "HK ss", "type": "ss", "server": "same.example", "port": 443, "dialer-proxy": "entry"},
+		{"name": "HK trojan", "type": "trojan", "server": "same.example", "port": 443},
+	}
+	names, err := SelectableProxyNames(proxies)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(names, []string{"HK ss", "HK trojan"}) {
+		t.Fatalf("selectable names = %v, want protocol-distinct exits without helper", names)
+	}
+}
+
 func (p fakeProber) Probe(_ context.Context, candidates []Candidate) ([]Observation, error) {
 	if p.err != nil {
 		return nil, p.err

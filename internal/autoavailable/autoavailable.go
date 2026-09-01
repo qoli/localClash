@@ -7,11 +7,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net"
 	"os"
 	"path/filepath"
-	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -20,15 +17,13 @@ import (
 
 const (
 	ProfileID                   = "network.connectivity.g204.v1"
-	SnapshotVersion             = 1
+	SnapshotVersion             = 2
 	ConsecutiveFailureThreshold = 1
 )
 
 type Candidate struct {
 	Name                string
 	EndpointFingerprint string
-	Aliases             []string
-	PreflightError      string
 }
 
 type Observation struct {
@@ -44,22 +39,17 @@ type Prober interface {
 	Probe(context.Context, []map[string]any, []Candidate) ([]Observation, error)
 }
 
-type Resolver interface {
-	LookupIPAddr(context.Context, string) ([]net.IPAddr, error)
-}
-
 type NodeState struct {
-	Name                string   `json:"name"`
-	Aliases             []string `json:"aliases,omitempty"`
-	Available           bool     `json:"available"`
-	ObservedAvailable   bool     `json:"observed_available"`
-	ConsecutiveFailures int      `json:"consecutive_failures"`
-	Attempts            int      `json:"attempts"`
-	HTTPStatus          int      `json:"http_status,omitempty"`
-	Error               string   `json:"error,omitempty"`
-	CheckedAt           string   `json:"checked_at"`
-	LastAvailableAt     string   `json:"last_available_at,omitempty"`
-	DurationMS          int64    `json:"duration_ms"`
+	Name                string `json:"name"`
+	Available           bool   `json:"available"`
+	ObservedAvailable   bool   `json:"observed_available"`
+	ConsecutiveFailures int    `json:"consecutive_failures"`
+	Attempts            int    `json:"attempts"`
+	HTTPStatus          int    `json:"http_status,omitempty"`
+	Error               string `json:"error,omitempty"`
+	CheckedAt           string `json:"checked_at"`
+	LastAvailableAt     string `json:"last_available_at,omitempty"`
+	DurationMS          int64  `json:"duration_ms"`
 }
 
 type Snapshot struct {
@@ -75,13 +65,11 @@ type Result = capability.Result
 type Options struct {
 	SnapshotPath         string
 	PreviousSnapshotPath string
-	Resolver             Resolver
 	Now                  func() time.Time
 }
 
 type candidateBuildStats struct {
 	HelperExcluded int
-	Deduplicated   int
 }
 
 func Rebuild(ctx context.Context, proxies []map[string]any, prober Prober, opts Options) (Result, error) {
@@ -92,14 +80,11 @@ func Rebuild(ctx context.Context, proxies []map[string]any, prober Prober, opts 
 	if strings.TrimSpace(opts.SnapshotPath) == "" {
 		return Result{}, errors.New("automatic connectivity snapshot path is required")
 	}
-	if opts.Resolver == nil {
-		opts.Resolver = net.DefaultResolver
-	}
 	if opts.Now == nil {
 		opts.Now = time.Now
 	}
 
-	candidates, buildStats, err := buildCandidates(ctx, proxies, opts.Resolver)
+	candidates, buildStats, err := buildCandidates(proxies)
 	if err != nil {
 		return Result{}, err
 	}
@@ -114,28 +99,12 @@ func Rebuild(ctx context.Context, proxies []map[string]any, prober Prober, opts 
 	if err != nil {
 		return Result{}, err
 	}
-	probeCandidates := make([]Candidate, 0, len(candidates))
-	observations := make([]Observation, 0, len(candidates))
-	for _, candidate := range candidates {
-		if candidate.PreflightError == "" {
-			probeCandidates = append(probeCandidates, candidate)
-			continue
-		}
-		observations = append(observations, Observation{
-			EndpointFingerprint: candidate.EndpointFingerprint,
-			Available:           false,
-			Error:               candidate.PreflightError,
-		})
+	observations, err := prober.Probe(ctx, proxies, candidates)
+	if err != nil {
+		return Result{}, fmt.Errorf("probe automatic connectivity: %w", err)
 	}
-	if len(probeCandidates) > 0 {
-		probed, err := prober.Probe(ctx, proxies, probeCandidates)
-		if err != nil {
-			return Result{}, fmt.Errorf("probe automatic connectivity: %w", err)
-		}
-		if len(probed) != len(probeCandidates) {
-			return Result{}, fmt.Errorf("automatic connectivity probe returned %d observations for %d candidates", len(probed), len(probeCandidates))
-		}
-		observations = append(observations, probed...)
+	if len(observations) != len(candidates) {
+		return Result{}, fmt.Errorf("automatic connectivity probe returned %d observations for %d candidates", len(observations), len(candidates))
 	}
 	observed := make(map[string]Observation, len(observations))
 	known := make(map[string]bool, len(candidates))
@@ -164,7 +133,7 @@ func Rebuild(ctx context.Context, proxies []map[string]any, prober Prober, opts 
 		}
 		previousState := previous.Nodes[candidate.EndpointFingerprint]
 		state := NodeState{
-			Name: candidate.Name, Aliases: append([]string{}, candidate.Aliases...), Available: observation.Available,
+			Name: candidate.Name, Available: observation.Available,
 			ObservedAvailable: observation.Available, Attempts: observation.Attempts, HTTPStatus: observation.HTTPStatus,
 			Error: observation.Error, CheckedAt: now.Format(time.RFC3339Nano), DurationMS: observation.Duration.Milliseconds(),
 		}
@@ -192,15 +161,15 @@ func Rebuild(ctx context.Context, proxies []map[string]any, prober Prober, opts 
 		return Result{}, err
 	}
 	return Result{
-		Profile: ProfileID, SnapshotPath: opts.SnapshotPath, Candidates: len(proxies), Probed: len(probeCandidates),
-		DeduplicatedCount: buildStats.Deduplicated, HelperExcludedCount: buildStats.HelperExcluded,
-		Qualified: qualified, QualifiedCount: len(qualified),
+		Profile: ProfileID, SnapshotPath: opts.SnapshotPath, Candidates: len(proxies), Probed: len(candidates),
+		HelperExcludedCount: buildStats.HelperExcluded,
+		Qualified:           qualified, QualifiedCount: len(qualified),
 		ObservedQualifiedCount: observedQualified, RetainedCount: retained, UnavailableCount: len(candidates) - len(qualified),
 		DurationMS: time.Since(started).Milliseconds(),
 	}, nil
 }
 
-func buildCandidates(ctx context.Context, proxies []map[string]any, resolver Resolver) ([]Candidate, candidateBuildStats, error) {
+func buildCandidates(proxies []map[string]any) ([]Candidate, candidateBuildStats, error) {
 	byName := make(map[string]map[string]any, len(proxies))
 	referencedDialers := map[string]bool{}
 	stats := candidateBuildStats{}
@@ -217,131 +186,44 @@ func buildCandidates(ctx context.Context, proxies []map[string]any, resolver Res
 			referencedDialers[dialer] = true
 		}
 	}
-	representatives := map[string]int{}
 	candidates := make([]Candidate, 0, len(proxies))
-	resolvedHosts := map[string][]string{}
 	for _, proxy := range proxies {
 		name := strings.TrimSpace(stringValue(proxy["name"]))
 		if referencedDialers[name] {
 			stats.HelperExcluded++
 			continue
 		}
-		endpoint, err := effectiveEndpoint(ctx, name, byName, resolver, resolvedHosts)
-		if err != nil {
-			var resolutionErr *endpointResolutionError
-			if !errors.As(err, &resolutionErr) {
-				return nil, stats, err
-			}
-			if ctxErr := ctx.Err(); ctxErr != nil {
-				return nil, stats, ctxErr
-			}
-			endpoint = resolutionErr.Identity
+		if err := validateDialerChain(name, byName); err != nil {
+			return nil, stats, err
 		}
-		sum := sha256.Sum256([]byte(endpoint))
+		definition, err := json.Marshal(proxy)
+		if err != nil {
+			return nil, stats, fmt.Errorf("fingerprint automatic connectivity candidate %q: %w", name, err)
+		}
+		sum := sha256.Sum256(definition)
 		fingerprint := hex.EncodeToString(sum[:])
-		if index, exists := representatives[fingerprint]; exists {
-			candidates[index].Aliases = append(candidates[index].Aliases, name)
-			stats.Deduplicated++
-			continue
-		}
-		representatives[fingerprint] = len(candidates)
-		candidate := Candidate{Name: name, EndpointFingerprint: fingerprint}
-		if err != nil {
-			candidate.PreflightError = err.Error()
-		}
-		candidates = append(candidates, candidate)
+		candidates = append(candidates, Candidate{Name: name, EndpointFingerprint: fingerprint})
 	}
 	return candidates, stats, nil
 }
 
-type endpointResolutionError struct {
-	Identity string
-	Cause    error
-}
-
-func (e *endpointResolutionError) Error() string {
-	return e.Cause.Error()
-}
-
-func (e *endpointResolutionError) Unwrap() error {
-	return e.Cause
-}
-
-func effectiveEndpoint(ctx context.Context, name string, byName map[string]map[string]any, resolver Resolver, resolvedHosts map[string][]string) (string, error) {
+func validateDialerChain(name string, byName map[string]map[string]any) error {
 	seen := map[string]bool{}
 	current := name
 	for {
 		if seen[current] {
-			return "", fmt.Errorf("automatic connectivity candidate %q has a dialer-proxy cycle at %q", name, current)
+			return fmt.Errorf("automatic connectivity candidate %q has a dialer-proxy cycle at %q", name, current)
 		}
 		seen[current] = true
 		proxy, ok := byName[current]
 		if !ok {
-			return "", fmt.Errorf("automatic connectivity candidate %q references unknown dialer-proxy %q", name, current)
+			return fmt.Errorf("automatic connectivity candidate %q references unknown dialer-proxy %q", name, current)
 		}
 		if dialer := strings.TrimSpace(stringValue(proxy["dialer-proxy"])); dialer != "" {
 			current = dialer
 			continue
 		}
-		server := strings.TrimSpace(stringValue(proxy["server"]))
-		if server == "" {
-			return "", fmt.Errorf("automatic connectivity candidate %q first hop %q has no server", name, current)
-		}
-		port, err := intValue(proxy["port"])
-		if err != nil || port < 1 || port > 65535 {
-			return "", fmt.Errorf("automatic connectivity candidate %q first hop %q has invalid port", name, current)
-		}
-		addresses := []string{}
-		if ip := net.ParseIP(server); ip != nil {
-			addresses = append(addresses, ip.String())
-		} else {
-			cacheKey := strings.ToLower(server)
-			identity := "unresolved:" + cacheKey + ":" + strconv.Itoa(port)
-			addresses = append(addresses, resolvedHosts[cacheKey]...)
-			if len(addresses) == 0 {
-				resolved, err := resolver.LookupIPAddr(ctx, server)
-				if err != nil {
-					return "", &endpointResolutionError{Identity: identity, Cause: fmt.Errorf("resolve automatic connectivity candidate %q first hop %q: %w", name, server, err)}
-				}
-				seenAddresses := map[string]bool{}
-				for _, address := range resolved {
-					if address.IP == nil {
-						continue
-					}
-					text := address.IP.String()
-					if !seenAddresses[text] {
-						seenAddresses[text] = true
-						addresses = append(addresses, text)
-					}
-				}
-				if len(addresses) > 0 {
-					resolvedHosts[cacheKey] = append([]string{}, addresses...)
-				}
-			}
-			if len(addresses) == 0 {
-				return "", &endpointResolutionError{Identity: identity, Cause: fmt.Errorf("automatic connectivity candidate %q first hop %q resolved no IP addresses", name, server)}
-			}
-		}
-		sort.Strings(addresses)
-		return strings.Join(addresses, ",") + ":" + strconv.Itoa(port), nil
-	}
-}
-
-func intValue(value any) (int, error) {
-	switch typed := value.(type) {
-	case int:
-		return typed, nil
-	case int64:
-		return int(typed), nil
-	case uint64:
-		return int(typed), nil
-	case float64:
-		if typed != float64(int(typed)) {
-			return 0, errors.New("not an integer")
-		}
-		return int(typed), nil
-	default:
-		return 0, errors.New("not numeric")
+		return nil
 	}
 }
 
@@ -356,6 +238,9 @@ func readSnapshot(path string) (Snapshot, bool, error) {
 	var snapshot Snapshot
 	if err := json.Unmarshal(data, &snapshot); err != nil {
 		return Snapshot{}, false, fmt.Errorf("decode automatic connectivity snapshot: %w", err)
+	}
+	if snapshot.Version > 0 && snapshot.Version < SnapshotVersion {
+		return Snapshot{}, false, nil
 	}
 	if snapshot.Version != SnapshotVersion {
 		return Snapshot{}, false, fmt.Errorf("automatic connectivity snapshot version must be %d, got %d", SnapshotVersion, snapshot.Version)

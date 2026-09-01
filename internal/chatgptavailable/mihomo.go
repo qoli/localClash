@@ -54,7 +54,11 @@ func RebuildWithMihomo(ctx context.Context, proxies []map[string]any, corePath, 
 }
 
 func RebuildCandidateWithMihomo(ctx context.Context, proxies []map[string]any, corePath, runtimeParent, snapshotPath, previousSnapshotPath string) (Result, error) {
-	return RebuildSelectedCandidateWithMihomo(ctx, proxies, proxyNames(proxies), corePath, runtimeParent, snapshotPath, previousSnapshotPath)
+	eligible, err := SelectableProxyNames(proxies)
+	if err != nil {
+		return Result{}, err
+	}
+	return RebuildSelectedCandidateWithMihomo(ctx, proxies, eligible, corePath, runtimeParent, snapshotPath, previousSnapshotPath)
 }
 
 func RebuildSelectedCandidateWithMihomo(ctx context.Context, proxies []map[string]any, eligible []string, corePath, runtimeParent, snapshotPath, previousSnapshotPath string) (Result, error) {
@@ -171,12 +175,30 @@ func (p *MihomoProber) Probe(ctx context.Context, candidates []Candidate) ([]Obs
 	return observations, nil
 }
 
-func proxyNames(proxies []map[string]any) []string {
-	names := make([]string, 0, len(proxies))
-	for _, proxy := range proxies {
-		names = append(names, strings.TrimSpace(stringValue(proxy["name"])))
+func SelectableProxyNames(proxies []map[string]any) ([]string, error) {
+	byName := make(map[string]bool, len(proxies))
+	referencedDialers := make(map[string]bool)
+	for index, proxy := range proxies {
+		name := strings.TrimSpace(stringValue(proxy["name"]))
+		if name == "" {
+			return nil, fmt.Errorf("ChatGPT capability candidate %d has no name", index)
+		}
+		if byName[name] {
+			return nil, fmt.Errorf("ChatGPT capability contains duplicate proxy name %q", name)
+		}
+		byName[name] = true
+		if dialer := strings.TrimSpace(stringValue(proxy["dialer-proxy"])); dialer != "" {
+			referencedDialers[dialer] = true
+		}
 	}
-	return names
+	eligible := make([]string, 0, len(proxies)-len(referencedDialers))
+	for _, proxy := range proxies {
+		name := strings.TrimSpace(stringValue(proxy["name"]))
+		if !referencedDialers[name] {
+			eligible = append(eligible, name)
+		}
+	}
+	return eligible, nil
 }
 
 func (p *MihomoProber) probeCandidate(ctx context.Context, candidate Candidate, client *http.Client) Observation {

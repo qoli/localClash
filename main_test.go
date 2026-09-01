@@ -500,7 +500,7 @@ custom_rules:
 	  "nodes": {}
 	}`)
 	writeMainTestFile(t, filepath.Join(".runtime", "capabilities", "auto-available.json"), `{
-  "version": 1,
+	  "version": 2,
   "profile": "network.connectivity.g204.v1",
   "updated_at": "2026-08-15T00:00:00Z",
   "qualified": ["US 01"],
@@ -547,9 +547,10 @@ func TestRunProductSubscriptionRefreshBuildsCapabilityForFollowingRender(t *test
 	t.Cleanup(subscriptionServer.Close)
 	replace := true
 	if _, err := subscriptions.Configure(subscriptions.ConfigureOptions{
-		ConfigPath: filepath.Join(dir, "localclash-subscriptions.json"),
-		Sources:    []subscriptions.Source{{URL: subscriptionServer.URL + "/sub", DisplayName: "01"}},
-		Replace:    &replace,
+		ConfigPath:        filepath.Join(dir, "localclash-subscriptions.json"),
+		Sources:           []subscriptions.Source{{URL: subscriptionServer.URL + "/sub", DisplayName: "01"}},
+		Replace:           &replace,
+		G204FilterEnabled: true,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -578,7 +579,7 @@ custom_rules:
 		rebuildProductChatGPT = previousRebuild
 	})
 	rebuildProductAutoAvailable = func(_ context.Context, _ []map[string]any, _, _, snapshotPath, _ string) (autoavailable.Result, error) {
-		writeMainTestFile(t, snapshotPath, fmt.Sprintf(`{"version":1,"profile":%q,"updated_at":"now","qualified":["US 01"],"nodes":{}}`, autoavailable.ProfileID))
+		writeMainTestFile(t, snapshotPath, fmt.Sprintf(`{"version":2,"profile":%q,"updated_at":"now","qualified":["US 01"],"nodes":{}}`, autoavailable.ProfileID))
 		return autoavailable.Result{Profile: autoavailable.ProfileID, Qualified: []string{"US 01"}, QualifiedCount: 1}, nil
 	}
 	rebuildCalled := false
@@ -651,6 +652,34 @@ custom_rules:
 	}
 }
 
+func TestRunProductSubscriptionSetPersistsG204FilterOption(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	t.Setenv("LOCALCLASH_WORKDIR", dir)
+	input := filepath.Join(dir, "subscription-input.json")
+	writeMainTestFile(t, input, `{"version":1,"uris":["https://example.com/sub"],"g204_filter_enabled":true}`)
+
+	output := captureStdout(t, func() error {
+		return run([]string{"subscription", "set", "--input", input, "--json"})
+	})
+	var result struct {
+		OK     bool `json:"ok"`
+		Status struct {
+			G204FilterEnabled bool `json:"g204_filter_enabled"`
+		} `json:"status"`
+	}
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
+		t.Fatalf("subscription set JSON = %q, error = %v", output, err)
+	}
+	if !result.OK || !result.Status.G204FilterEnabled {
+		t.Fatalf("subscription set result = %+v, want enabled g204 filter", result)
+	}
+	configured, err := subscriptions.G204FilterEnabled(filepath.Join(dir, "localclash-subscriptions.json"))
+	if err != nil || !configured {
+		t.Fatalf("persisted g204 option = %v error=%v", configured, err)
+	}
+}
+
 func TestRunProductSubscriptionRefreshFallsBackToOriginalAutomaticGroupWhenG204IsEmpty(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
@@ -662,9 +691,10 @@ func TestRunProductSubscriptionRefreshFallsBackToOriginalAutomaticGroupWhenG204I
 	t.Cleanup(subscriptionServer.Close)
 	replace := true
 	if _, err := subscriptions.Configure(subscriptions.ConfigureOptions{
-		ConfigPath: filepath.Join(dir, "localclash-subscriptions.json"),
-		Sources:    []subscriptions.Source{{URL: subscriptionServer.URL + "/sub", DisplayName: "01"}},
-		Replace:    &replace,
+		ConfigPath:        filepath.Join(dir, "localclash-subscriptions.json"),
+		Sources:           []subscriptions.Source{{URL: subscriptionServer.URL + "/sub", DisplayName: "01"}},
+		Replace:           &replace,
+		G204FilterEnabled: true,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -687,7 +717,7 @@ proxy_groups:
 		rebuildProductChatGPT = previousChat
 	})
 	rebuildProductAutoAvailable = func(_ context.Context, _ []map[string]any, _, _, candidate, _ string) (autoavailable.Result, error) {
-		writeMainTestFile(t, candidate, fmt.Sprintf(`{"version":1,"profile":%q,"updated_at":"now","qualified":[],"nodes":{}}`, autoavailable.ProfileID))
+		writeMainTestFile(t, candidate, fmt.Sprintf(`{"version":2,"profile":%q,"updated_at":"now","qualified":[],"nodes":{}}`, autoavailable.ProfileID))
 		return autoavailable.Result{Profile: autoavailable.ProfileID, SnapshotPath: candidate, Candidates: 1, Probed: 1, Qualified: []string{}, UnavailableCount: 1}, nil
 	}
 	rebuildProductChatGPT = func(_ context.Context, _ []map[string]any, eligible []string, _, _, candidate, _ string) (chatgptavailable.Result, error) {
@@ -748,7 +778,7 @@ proxy_groups:
     capability: openai.chatgpt.statsig.v1
     optional: true
 `)
-	oldAuto := fmt.Sprintf(`{"version":1,"profile":%q,"updated_at":"old","qualified":["old-auto"],"nodes":{}}`, autoavailable.ProfileID)
+	oldAuto := fmt.Sprintf(`{"version":2,"profile":%q,"updated_at":"old","qualified":["old-auto"],"nodes":{}}`, autoavailable.ProfileID)
 	oldChat := fmt.Sprintf(`{"version":5,"profile":%q,"updated_at":"old","qualified":["old-chat"],"nodes":{}}`, chatgptavailable.ProfileID)
 	writeMainTestFile(t, filepath.Join(capabilityRoot, "auto-available.json"), oldAuto)
 	writeMainTestFile(t, filepath.Join(capabilityRoot, "chatgpt-available.json"), oldChat)
@@ -763,7 +793,7 @@ proxy_groups:
 		if previous != filepath.Join(capabilityRoot, "auto-available.json") || filepath.Dir(candidate) == capabilityRoot {
 			t.Fatalf("automatic candidate=%q previous=%q", candidate, previous)
 		}
-		writeMainTestFile(t, candidate, fmt.Sprintf(`{"version":1,"profile":%q,"updated_at":"new","qualified":["new-auto"],"nodes":{}}`, autoavailable.ProfileID))
+		writeMainTestFile(t, candidate, fmt.Sprintf(`{"version":2,"profile":%q,"updated_at":"new","qualified":["new-auto"],"nodes":{}}`, autoavailable.ProfileID))
 		return autoavailable.Result{Profile: autoavailable.ProfileID, SnapshotPath: candidate, Qualified: []string{"new-auto"}, QualifiedCount: 1}, nil
 	}
 	rebuildProductChatGPT = func(_ context.Context, _ []map[string]any, eligible []string, _, _, _, _ string) (chatgptavailable.Result, error) {
@@ -775,7 +805,7 @@ proxy_groups:
 
 	_, err := refreshProductCapabilities(context.Background(), appinit.RuntimeState{Paths: appinit.RuntimePaths{
 		WorkspaceRoot: dir, RuntimeRoot: runtimeRoot, CorePath: filepath.Join(dir, "mihomo"),
-	}}, map[string]any{"proxies": []any{map[string]any{"name": "US 01"}}}, io.Discard)
+	}}, map[string]any{"proxies": []any{map[string]any{"name": "US 01"}}}, true, io.Discard)
 	if err == nil || !strings.Contains(err.Error(), "Statsig unavailable") {
 		t.Fatalf("error = %v, want second capability failure", err)
 	}
@@ -787,10 +817,60 @@ proxy_groups:
 	}
 }
 
-func TestValidateSupportedCapabilityProfilesRequiresG204ForChatGPT(t *testing.T) {
-	err := validateSupportedCapabilityProfiles([]string{chatgptavailable.ProfileID})
-	if err == nil || !strings.Contains(err.Error(), autoavailable.ProfileID) {
-		t.Fatalf("error = %v, want explicit g204 prerequisite", err)
+func TestRefreshProductCapabilitiesAlwaysBuildsChatGPTWhenG204FilterDisabled(t *testing.T) {
+	dir := t.TempDir()
+	runtimeRoot := filepath.Join(dir, ".runtime")
+	capabilityRoot := filepath.Join(runtimeRoot, "capabilities")
+	writeMainTestFile(t, filepath.Join(dir, "localclash-intent.json"), `version: 4
+proxy_groups:
+  Auto:
+    mode: auto
+    capability: network.connectivity.g204.v1
+  ChatGPT-available:
+    mode: auto
+    capability: openai.chatgpt.statsig.v1
+    optional: true
+`)
+
+	previousAuto := rebuildProductAutoAvailable
+	previousChat := rebuildProductChatGPT
+	t.Cleanup(func() {
+		rebuildProductAutoAvailable = previousAuto
+		rebuildProductChatGPT = previousChat
+	})
+	rebuildProductAutoAvailable = func(context.Context, []map[string]any, string, string, string, string) (autoavailable.Result, error) {
+		t.Fatal("g204 capability must not be rebuilt while its subscription filter is disabled")
+		return autoavailable.Result{}, nil
+	}
+	rebuildProductChatGPT = func(_ context.Context, _ []map[string]any, eligible []string, _, _, candidate, _ string) (chatgptavailable.Result, error) {
+		if !reflect.DeepEqual(eligible, []string{"HK exit", "US 01"}) {
+			t.Fatalf("ChatGPT eligible nodes = %+v, want all selectable subscription proxies", eligible)
+		}
+		writeMainTestFile(t, candidate, fmt.Sprintf(`{"version":5,"profile":%q,"updated_at":"new","qualified":["US 01"],"nodes":{}}`, chatgptavailable.ProfileID))
+		return chatgptavailable.Result{Profile: chatgptavailable.ProfileID, SnapshotPath: candidate, Qualified: []string{"US 01"}, QualifiedCount: 1}, nil
+	}
+
+	results, err := refreshProductCapabilities(context.Background(), appinit.RuntimeState{Paths: appinit.RuntimePaths{
+		WorkspaceRoot: dir, RuntimeRoot: runtimeRoot, CorePath: filepath.Join(dir, "mihomo"),
+	}}, map[string]any{"proxies": []any{
+		map[string]any{"name": "dialer helper", "type": "ss", "server": "entry.example", "port": 443},
+		map[string]any{"name": "HK exit", "type": "ss", "server": "hk.example", "port": 443, "dialer-proxy": "dialer helper"},
+		map[string]any{"name": "US 01", "type": "trojan", "server": "us.example", "port": 443},
+	}}, false, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 || results[0].Profile != chatgptavailable.ProfileID {
+		t.Fatalf("capability results = %+v, want ChatGPT only", results)
+	}
+	if got, loadErr := chatgptavailable.LoadQualified(filepath.Join(capabilityRoot, "chatgpt-available.json")); loadErr != nil || !reflect.DeepEqual(got, []string{"US 01"}) {
+		t.Fatalf("ChatGPT snapshot = %v error=%v", got, loadErr)
+	}
+}
+
+func TestValidateSupportedCapabilityProfilesAcceptsChatGPTWithoutG204(t *testing.T) {
+	if err := validateSupportedCapabilityProfiles([]string{chatgptavailable.ProfileID}); err != nil {
+		t.Fatalf("ChatGPT capability should be independent of g204: %v", err)
 	}
 }
 
@@ -942,9 +1022,10 @@ func TestApplyTemplateTransactionRestoresPriorIntentAndRegistryWhenCapabilityRef
 	t.Cleanup(server.Close)
 	replace := true
 	if _, err := subscriptions.Configure(subscriptions.ConfigureOptions{
-		ConfigPath: state.Paths.SubscriptionConfig,
-		Sources:    []subscriptions.Source{{URL: server.URL + "/sub", DisplayName: "01"}},
-		Replace:    &replace,
+		ConfigPath:        state.Paths.SubscriptionConfig,
+		Sources:           []subscriptions.Source{{URL: server.URL + "/sub", DisplayName: "01"}},
+		Replace:           &replace,
+		G204FilterEnabled: true,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -1036,9 +1117,10 @@ func TestApplyTemplateTransactionMigratesOldIntentAndCommitsCapabilityMaterial(t
 	t.Cleanup(server.Close)
 	replace := true
 	if _, err := subscriptions.Configure(subscriptions.ConfigureOptions{
-		ConfigPath: state.Paths.SubscriptionConfig,
-		Sources:    []subscriptions.Source{{URL: server.URL + "/sub", DisplayName: "01"}},
-		Replace:    &replace,
+		ConfigPath:        state.Paths.SubscriptionConfig,
+		Sources:           []subscriptions.Source{{URL: server.URL + "/sub", DisplayName: "01"}},
+		Replace:           &replace,
+		G204FilterEnabled: true,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -1068,7 +1150,7 @@ func TestApplyTemplateTransactionMigratesOldIntentAndCommitsCapabilityMaterial(t
 	previousAuto := rebuildProductAutoAvailable
 	t.Cleanup(func() { rebuildProductAutoAvailable = previousAuto })
 	rebuildProductAutoAvailable = func(_ context.Context, _ []map[string]any, _, _, candidate, _ string) (autoavailable.Result, error) {
-		writeMainTestFile(t, candidate, fmt.Sprintf(`{"version":1,"profile":%q,"updated_at":"now","qualified":["healthy"],"nodes":{}}`, autoavailable.ProfileID))
+		writeMainTestFile(t, candidate, fmt.Sprintf(`{"version":2,"profile":%q,"updated_at":"now","qualified":["healthy"],"nodes":{}}`, autoavailable.ProfileID))
 		return autoavailable.Result{Profile: autoavailable.ProfileID, SnapshotPath: candidate, Candidates: 1, Probed: 1, Qualified: []string{"healthy"}, QualifiedCount: 1}, nil
 	}
 	result, warnings, err := applyTemplateInput(context.Background(), configInput{

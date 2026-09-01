@@ -469,8 +469,9 @@ func inputSchemaForTool(name string) map[string]any {
 			"type":                 "object",
 			"additionalProperties": false,
 			"properties": map[string]any{
-				"sources": map[string]any{"type": "array", "items": source, "description": "Complete subscription source list to write."},
-				"replace": map[string]any{"type": "boolean", "description": "Replace existing sources. Defaults to true; false is not supported in the first version."},
+				"sources":             map[string]any{"type": "array", "items": source, "description": "Complete subscription source list to write."},
+				"replace":             map[string]any{"type": "boolean", "description": "Replace existing sources. Defaults to true; false is not supported in the first version."},
+				"g204_filter_enabled": map[string]any{"type": "boolean", "description": "Filter the automatic selection group through g204 qualification. Defaults to false. ChatGPT qualification remains enabled independently."},
 			},
 			"required": []string{"sources"},
 		}

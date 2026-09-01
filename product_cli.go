@@ -232,9 +232,10 @@ func runProductSubscription(args []string, state appinit.RuntimeState) error {
 		}
 		replace := true
 		result, err := subscriptions.Configure(subscriptions.ConfigureOptions{
-			ConfigPath: state.Paths.SubscriptionConfig,
-			URIs:       uris,
-			Replace:    &replace,
+			ConfigPath:        state.Paths.SubscriptionConfig,
+			URIs:              uris,
+			Replace:           &replace,
+			G204FilterEnabled: input.G204FilterEnabled,
 		})
 		if err != nil {
 			return err
@@ -256,7 +257,7 @@ func runProductSubscription(args []string, state appinit.RuntimeState) error {
 		if err != nil {
 			return err
 		}
-		capabilities, err := refreshProductCapabilities(ctx, state, result.MergedDoc, os.Stderr)
+		capabilities, err := refreshProductCapabilities(ctx, state, result.MergedDoc, result.G204FilterEnabled, os.Stderr)
 		if err != nil {
 			return err
 		}
@@ -272,7 +273,7 @@ type productSubscriptionRefreshStatus struct {
 	Capabilities []capability.Result `json:"capabilities,omitempty"`
 }
 
-func refreshProductCapabilities(ctx context.Context, state appinit.RuntimeState, subscriptionDoc map[string]any, logOutput io.Writer) ([]capability.Result, error) {
+func refreshProductCapabilities(ctx context.Context, state appinit.RuntimeState, subscriptionDoc map[string]any, g204FilterEnabled bool, logOutput io.Writer) ([]capability.Result, error) {
 	configPath := productWorkspacePath(state, "localclash-intent.json")
 	config, err := localconfig.Load(configPath)
 	if err != nil {
@@ -304,12 +305,24 @@ func refreshProductCapabilities(ctx context.Context, state appinit.RuntimeState,
 	results := make([]capability.Result, 0, len(profiles))
 	promotions := make([]capabilitystore.Item, 0, len(profiles))
 	var g204Qualified []string
+	chatGPTEligible, err := chatgptavailable.SelectableProxyNames(proxies)
+	if err != nil {
+		return nil, err
+	}
 	for _, profile := range profiles {
+		if profile == autoavailable.ProfileID && !g204FilterEnabled {
+			continue
+		}
 		started := time.Now()
 		startedFields := map[string]any{"profile": profile, "proxy_count": len(proxies)}
 		if profile == chatgptavailable.ProfileID {
-			startedFields["input_candidates"] = len(g204Qualified)
-			startedFields["input_profile"] = autoavailable.ProfileID
+			if g204FilterEnabled {
+				chatGPTEligible = g204Qualified
+				startedFields["input_profile"] = autoavailable.ProfileID
+			} else {
+				startedFields["input_profile"] = "subscription.selectable"
+			}
+			startedFields["input_candidates"] = len(chatGPTEligible)
 		}
 		writeProductCapabilityStage(logOutput, "started", started, nil, startedFields)
 		var result capability.Result
@@ -320,7 +333,7 @@ func refreshProductCapabilities(ctx context.Context, state appinit.RuntimeState,
 		case autoavailable.ProfileID:
 			result, err = rebuildProductAutoAvailable(ctx, proxies, normalizeCorePathForState(state, state.Paths.CorePath), capabilityRoot, candidatePath, promotedPath)
 		case chatgptavailable.ProfileID:
-			result, err = rebuildProductChatGPT(ctx, proxies, g204Qualified, normalizeCorePathForState(state, state.Paths.CorePath), capabilityRoot, candidatePath, promotedPath)
+			result, err = rebuildProductChatGPT(ctx, proxies, chatGPTEligible, normalizeCorePathForState(state, state.Paths.CorePath), capabilityRoot, candidatePath, promotedPath)
 		}
 		fields := map[string]any{"profile": profile, "proxy_count": len(proxies)}
 		if err == nil {
@@ -348,8 +361,10 @@ func refreshProductCapabilities(ctx context.Context, state appinit.RuntimeState,
 		result.SnapshotPath = promotedPath
 		results = append(results, result)
 	}
-	if _, err := capabilitystore.Promote(promotions, transactionDir); err != nil {
-		return nil, err
+	if len(promotions) > 0 {
+		if _, err := capabilitystore.Promote(promotions, transactionDir); err != nil {
+			return nil, err
+		}
 	}
 	return results, nil
 }
@@ -387,9 +402,7 @@ func configuredProductCapabilityProfiles(config localconfig.Config) []string {
 }
 
 func validateSupportedCapabilityProfiles(profiles []string) error {
-	configured := make(map[string]bool, len(profiles))
 	for _, profile := range profiles {
-		configured[profile] = true
 		switch profile {
 		case autoavailable.ProfileID, chatgptavailable.ProfileID:
 		case chatgptavailable.LegacyProfileID:
@@ -397,9 +410,6 @@ func validateSupportedCapabilityProfiles(profiles []string) error {
 		default:
 			return fmt.Errorf("unsupported proxy-group capability: %s", profile)
 		}
-	}
-	if configured[chatgptavailable.ProfileID] && !configured[autoavailable.ProfileID] {
-		return fmt.Errorf("ChatGPT capability %q requires current %q qualification in the same refresh", chatgptavailable.ProfileID, autoavailable.ProfileID)
 	}
 	return nil
 }
@@ -1320,9 +1330,10 @@ type resetInput struct {
 }
 
 type subscriptionInput struct {
-	Version int      `json:"version"`
-	URIs    []string `json:"uris"`
-	URLs    []string `json:"urls"`
+	Version           int      `json:"version"`
+	URIs              []string `json:"uris"`
+	URLs              []string `json:"urls"`
+	G204FilterEnabled bool     `json:"g204_filter_enabled"`
 }
 
 type configInput struct {
@@ -1660,7 +1671,7 @@ func applyTemplateTransaction(ctx context.Context, input configInput, state appi
 		if err != nil {
 			return fmt.Errorf("refresh subscriptions for policy template: %w", err)
 		}
-		capabilities, err = refreshProductCapabilities(ctx, state, refreshResult.MergedDoc, os.Stderr)
+		capabilities, err = refreshProductCapabilities(ctx, state, refreshResult.MergedDoc, refreshResult.G204FilterEnabled, os.Stderr)
 		if err != nil {
 			return fmt.Errorf("refresh policy capabilities: %w", err)
 		}
@@ -1808,7 +1819,30 @@ func loadProductCapabilityNodes(config localconfig.Config, state appinit.Runtime
 	}
 	root := productCapabilityRoot(state)
 	nodes := make(map[string][]string, len(profiles))
+	g204FilterEnabled, err := subscriptions.G204FilterEnabled(state.Paths.SubscriptionConfig)
+	if err != nil {
+		return nil, err
+	}
+	var unfilteredAutomaticNodes []string
+	if !g204FilterEnabled {
+		subscriptionNodes, loadErr := localconfig.LoadSubscriptionNodes(localconfig.SubscriptionNodeOptions{
+			SubscriptionPath: state.Paths.SubscriptionPath, SubscriptionConfig: state.Paths.SubscriptionConfig, SubscriptionRuntime: state.Paths.SubscriptionRuntime,
+		})
+		if loadErr != nil {
+			return nil, loadErr
+		}
+		unfilteredAutomaticNodes = make([]string, 0, len(subscriptionNodes))
+		for _, node := range subscriptionNodes {
+			if name := strings.TrimSpace(node.Name); name != "" {
+				unfilteredAutomaticNodes = append(unfilteredAutomaticNodes, name)
+			}
+		}
+	}
 	for _, profile := range profiles {
+		if profile == autoavailable.ProfileID && !g204FilterEnabled {
+			nodes[profile] = append([]string{}, unfilteredAutomaticNodes...)
+			continue
+		}
 		var qualified []string
 		var err error
 		switch profile {
