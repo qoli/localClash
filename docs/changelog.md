@@ -20,10 +20,64 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
-| localClash Core | [v0.1.73](https://github.com/qoli/localClash/releases/tag/v0.1.73) | 2026-09-01 UTC+8 |
-| localclash-luci | [v0.1.0-66](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-66) | 2026-09-01 UTC+8 |
+| localClash Core | [v0.1.74](https://github.com/qoli/localClash/releases/tag/v0.1.74) | 2026-09-01 UTC+8 |
+| localclash-luci | [v0.1.0-67](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-67) | 2026-09-01 UTC+8 |
 
 ## 2026-09-01
+
+### localClash Core v0.1.74
+
+Changes:
+
+- Smart Core 冷啟動的 Controller readiness 上限由 20 秒調整為 2 分鐘，涵蓋
+  首次下載 `Model.bin` 與大型 GeoSite 初始化；Controller 一旦就緒仍會立即
+  返回，不會固定等待完整上限。
+- runtime start 與 watchdog recovery 共用相同上限，避免正常初始化中的
+  `lc-mihomo-smart` 被誤判失敗並由啟動清理流程終止。
+
+Release:
+
+- [qoli/localClash v0.1.74](https://github.com/qoli/localClash/releases/tag/v0.1.74)
+
+Verification:
+
+- `go test ./...`、`go vet ./...` 與 runtime health 預設值回歸測試通過。
+- iStoreOS x86_64 QEMU 刪除 `Model.bin` 後實際冷啟動 Smart；模型重新下載、
+  配置初始化與 Controller readiness 成功，程序讀回為 `lc-mihomo-smart`。
+- 同輪真實訂閱刷新將 42 個代理去重為 20 個 g204 端點，15 個通過；ChatGPT
+  只探測這 15 個並選出 4 個。Controller 讀回兩組均為 Smart，成員與能力快照
+  一致，並載入 `uselightgbm` 與組別專屬 `policy-priority`。
+- [Release workflow 33463681758](https://github.com/qoli/localClash/actions/runs/33463681758)
+  成功；公開 Release 的 7 個受管資產、三份 SHA256、manifest 與兩個 Linux
+  架構資產均已讀回驗證。
+
+### localclash-luci v0.1.0-67
+
+Changes:
+
+- standalone takeover helper 的預設 Core 路徑改為實際安裝位置
+  `/usr/local/bin/localclash`，預設工作目錄改為 iStore 使用的
+  `/root/localclash`；直接執行 `takeover status/apply` 不再誤報 Core 或配置
+  缺失。
+- x86_64／aarch64 iStore 離線 bundle 固定攜帶 Core `v0.1.74`。
+
+Release:
+
+- [qoli/localclash-luci v0.1.0-67](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-67)
+
+Verification:
+
+- 全部 rpcd、takeover、hotplug、task-timeout、Python、dnsqualify test/vet 與
+  release candidate 建置通過；本地 x86_64 bundle 完成離線實裝並驗證 checksum
+  與架構錯誤會 fail closed。
+- iStoreOS QEMU 以修正後 helper 實際套用接管，最終
+  `runtime_running=true`、`controller_ready=true`、`effective=true`；fwmark route、
+  nft chains、TCP redirect、UDP TUN mark 與 DNS hijack 均讀回有效。
+- Main [CI workflow 33464013645](https://github.com/qoli/localclash-luci/actions/runs/33464013645)
+  與 tag-triggered [Release workflow 33464187681](https://github.com/qoli/localclash-luci/actions/runs/33464187681)
+  成功；公開 Release 的 13 個受管資產與全部 SHA-256 已驗證，x86_64／aarch64
+  `.run` 均通過 `--info`、`--list`、`--check` 與 `--noexec`。
+- 實體 ARM64 路由器未安裝本版本；本次不宣稱公開 aarch64 bundle 的真機驗收。
 
 ### localclash-luci v0.1.0-66
 
