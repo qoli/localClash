@@ -58,7 +58,8 @@ requiring a successful Brotli-compressed Statsig initialization at
 `https://ab.chatgpt.com/v1/initialize` through an isolated temporary Mihomo.
 HTTP 200, valid JSON, and a non-empty `derived_fields.country` are required.
 Rejection, connection reset, timeout, malformed response, or a bounded-size
-violation uses explicit evidence and failure hysteresis. A `capability` group
+violation removes the candidate after one failed observation without retry or
+failure hysteresis. A `capability` group
 cannot also declare `nodes` or `match`. Choose either
 `auto: true` or `manual: true`; enabling both is rejected because it would
 create competing runtime groups for the same target.

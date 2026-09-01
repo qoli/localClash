@@ -63,9 +63,10 @@ choice. That localClash-owned automatic exit is rebuilt during
 Statsig control plane at `ab.chatgpt.com/v1/initialize`. Qualification requires
 HTTP 200, Brotli encoding, valid JSON, and a non-empty service-observed
 `derived_fields.country`. Rejections, connection resets, timeouts, malformed
-responses, and bounded-size violations are recorded explicitly; transient
-failures use hysteresis for previously-qualified nodes. The regional exits
-remain available before that opt-in choice. `🚦 QUIC` defaults to `REJECT`; game platform/Apple/Microsoft/speed-test
+responses, and bounded-size violations are recorded explicitly; one failed
+observation removes a previously-qualified node without failure hysteresis. The
+regional exits remain available before that opt-in choice. `🚦 QUIC` defaults to
+`REJECT`; game platform/Apple/Microsoft/speed-test
 defaulting to direct; `🧲 BT/PT 下载` defaulting to direct while exposing automatic,
 manual, and regional proxy exits for Dashboard overrides; or Bahamut defaulting
 to Taiwan. Region exits are optional so subscriptions without a given region can
@@ -130,8 +131,9 @@ The automatic-connectivity qualification is intentionally strict: one successful
 HTTP 204 observation admits a candidate, while one failed observation removes it.
 It has no per-candidate retry or failure hysteresis because `⚡ 自动选择` is a
 high-quality input set for Mihomo Smart, not a list of marginal paths that need
-retries to work. ChatGPT Statsig qualification retains its separate asymmetric
-hysteresis for transient service-control-plane failures.
+retries to work. ChatGPT Statsig qualification is equally strict about observed
+availability: one failed observation removes a candidate without retry or failure
+hysteresis.
 
 When Smart Core is active, `⚡ 自动选择` applies HK `6`, JP `5`, SG `4`, TW `3`,
 US `2`, and Other `1` after g204 qualification and endpoint deduplication. The

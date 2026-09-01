@@ -94,22 +94,9 @@ func TestRebuildRejectsTotalCollapseAndPreservesSnapshot(t *testing.T) {
 	unavailable := fakeProber{observations: map[string]Observation{
 		"US 01": {Available: false, Attempts: 3, Error: "timeout"},
 	}}
-	for attempt := 1; attempt < ConsecutiveFailureThreshold; attempt++ {
-		result, rebuildErr := Rebuild(context.Background(), proxies, unavailable, Options{SnapshotPath: snapshotPath})
-		if rebuildErr != nil {
-			t.Fatalf("transient failure %d: %v", attempt, rebuildErr)
-		}
-		if result.QualifiedCount != 1 || result.RetainedCount != 1 || result.ObservedQualifiedCount != 0 {
-			t.Fatalf("transient failure %d result = %+v, want retained qualification", attempt, result)
-		}
-	}
-	before, err = os.ReadFile(snapshotPath)
-	if err != nil {
-		t.Fatal(err)
-	}
 	_, err = Rebuild(context.Background(), proxies, unavailable, Options{SnapshotPath: snapshotPath})
 	if !errors.Is(err, ErrQualificationCollapse) {
-		t.Fatalf("error = %v, want qualification collapse", err)
+		t.Fatalf("first failure error = %v, want qualification collapse", err)
 	}
 	after, err := os.ReadFile(snapshotPath)
 	if err != nil {
@@ -133,7 +120,7 @@ func TestRebuildDoesNotAdmitNewUnavailableCandidate(t *testing.T) {
 	}
 }
 
-func TestRebuildServiceRejectionBypassesFailureHysteresis(t *testing.T) {
+func TestRebuildServiceRejectionImmediatelyCausesCollapse(t *testing.T) {
 	snapshotPath := filepath.Join(t.TempDir(), "chatgpt.json")
 	proxies := []map[string]any{{"name": "HK 01", "type": "vless", "server": "hk.example.com"}}
 	available := fakeProber{observations: map[string]Observation{
@@ -157,24 +144,29 @@ func TestRebuildServiceRejectionBypassesFailureHysteresis(t *testing.T) {
 	}
 }
 
-func TestRebuildNetworkFailureStillUsesFailureHysteresis(t *testing.T) {
+func TestRebuildNetworkFailureImmediatelyRemovesPreviouslyQualifiedNode(t *testing.T) {
 	snapshotPath := filepath.Join(t.TempDir(), "chatgpt.json")
-	proxies := []map[string]any{{"name": "US 01", "type": "vless", "server": "us.example.com"}}
+	proxies := []map[string]any{
+		{"name": "US 01", "type": "vless", "server": "us.example.com"},
+		{"name": "JP 01", "type": "vless", "server": "jp.example.com"},
+	}
 	available := fakeProber{observations: map[string]Observation{
 		"US 01": {Available: true, Attempts: 1, StatsigStatus: statsigReachable, StatsigHTTPStatus: 200, StatsigCountry: "US"},
+		"JP 01": {Available: true, Attempts: 1, StatsigStatus: statsigReachable, StatsigHTTPStatus: 200, StatsigCountry: "JP"},
 	}}
 	if _, err := Rebuild(context.Background(), proxies, available, Options{SnapshotPath: snapshotPath}); err != nil {
 		t.Fatal(err)
 	}
 	networkFailure := fakeProber{observations: map[string]Observation{
 		"US 01": {Attempts: 3, StatsigStatus: statsigTransportFailure, Error: "connection reset by peer"},
+		"JP 01": {Available: true, Attempts: 1, StatsigStatus: statsigReachable, StatsigHTTPStatus: 200, StatsigCountry: "JP"},
 	}}
 	result, err := Rebuild(context.Background(), proxies, networkFailure, Options{SnapshotPath: snapshotPath})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.QualifiedCount != 1 || result.RetainedCount != 1 {
-		t.Fatalf("result = %+v, want transient network failure retained", result)
+	if !reflect.DeepEqual(result.Qualified, []string{"JP 01"}) || result.RetainedCount != 0 || result.UnavailableCount != 1 {
+		t.Fatalf("result = %+v, want failed US node removed immediately", result)
 	}
 }
 
@@ -189,7 +181,7 @@ func TestRebuildDoesNotPublishWhenProbeInfrastructureFails(t *testing.T) {
 	}
 }
 
-func TestRebuildCandidateUsesPromotedSnapshotAsHysteresisBaseline(t *testing.T) {
+func TestRebuildCandidateUsesPromotedSnapshotAsCollapseBaseline(t *testing.T) {
 	dir := t.TempDir()
 	promoted := filepath.Join(dir, "promoted.json")
 	candidate := filepath.Join(dir, "transaction", "candidate.json")
@@ -207,12 +199,9 @@ func TestRebuildCandidateUsesPromotedSnapshotAsHysteresisBaseline(t *testing.T) 
 	unavailable := fakeProber{observations: map[string]Observation{
 		"US 01": {Attempts: 3, StatsigStatus: statsigTransportFailure, Error: "timeout"},
 	}}
-	result, err := Rebuild(context.Background(), proxies, unavailable, Options{SnapshotPath: candidate, PreviousSnapshotPath: promoted})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if result.QualifiedCount != 1 || result.RetainedCount != 1 {
-		t.Fatalf("candidate result = %+v, want retained promoted qualification", result)
+	_, err = Rebuild(context.Background(), proxies, unavailable, Options{SnapshotPath: candidate, PreviousSnapshotPath: promoted})
+	if !errors.Is(err, ErrQualificationCollapse) {
+		t.Fatalf("candidate error = %v, want qualification collapse on first failure", err)
 	}
 	after, err := os.ReadFile(promoted)
 	if err != nil {
@@ -221,8 +210,8 @@ func TestRebuildCandidateUsesPromotedSnapshotAsHysteresisBaseline(t *testing.T) 
 	if string(after) != string(before) {
 		t.Fatalf("candidate rebuild mutated promoted snapshot")
 	}
-	if _, err := os.Stat(candidate); err != nil {
-		t.Fatalf("candidate snapshot missing: %v", err)
+	if _, err := os.Stat(candidate); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("candidate snapshot exists after collapse: %v", err)
 	}
 }
 

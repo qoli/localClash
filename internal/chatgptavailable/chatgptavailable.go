@@ -19,7 +19,7 @@ const (
 	ProfileID                   = "openai.chatgpt.statsig.v1"
 	LegacyProfileID             = "openai.chatgpt.mobile.v1"
 	SnapshotVersion             = 5
-	ConsecutiveFailureThreshold = 3
+	ConsecutiveFailureThreshold = 1
 )
 
 var ErrQualificationCollapse = errors.New("ChatGPT capability qualification collapsed")
