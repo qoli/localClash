@@ -16,16 +16,12 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 
 ## Unreleased
 
-- OpenWrt takeover 可將標記了 `localclash_bypass=1` 的專用 WireGuard 入口置於
-  TCP、UDP/TUN 與 DNS hijack 規則之前。iStoreOS 測試機可經該隧道使用實體
-  路由器的裸 WAN，而不再把上游透明代理當成 WAN 品質證據。
-
 ## 目前最新版本
 
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
 | localClash Core | [v0.1.75](https://github.com/qoli/localClash/releases/tag/v0.1.75) | 2026-09-01 UTC+8 |
-| localclash-luci | [v0.1.0-67](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-67) | 2026-09-01 UTC+8 |
+| localclash-luci | [v0.1.0-68](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-68) | 2026-09-01 UTC+8 |
 
 ## 2026-09-01
 
@@ -53,6 +49,35 @@ Verification:
 - 四份固定訂閱合併為 530 個節點後，修正後 ARM64 Smart 連續三輪經實體路由器
   WAN 探測：g204 分別合格 86、69、67；ChatGPT 分別合格 19、17、20。三輪均
   退出 0，沒有 isolated-process 或 listener failure。
+- [Release workflow 33470714092](https://github.com/qoli/localClash/actions/runs/33470714092)
+  成功；公開 Release 的 7 個受管資產、三份 SHA256、manifest 版本與兩個
+  Linux 架構資產均已重新下載驗證。
+
+### localclash-luci v0.1.0-68
+
+Changes:
+
+- OpenWrt takeover 可將標記了 `localclash_bypass=1` 的專用 WireGuard 入口置於
+  TCP、UDP/TUN 與 DNS hijack 規則之前。iStoreOS 測試機可經該隧道使用實體
+  路由器的裸 WAN，而不再把上游透明代理當成 WAN 品質證據。
+- x86_64／aarch64 iStore 離線 bundle 固定攜帶 Core `v0.1.75`。
+
+Release:
+
+- [qoli/localclash-luci v0.1.0-68](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-68)
+
+Verification:
+
+- 本地完整候選建置、x86_64 離線安裝、架構／checksum fail-closed、main
+  [CI workflow 33471003273](https://github.com/qoli/localclash-luci/actions/runs/33471003273)
+  與 tag-triggered
+  [Release workflow 33471132617](https://github.com/qoli/localclash-luci/actions/runs/33471132617)
+  全部成功。
+- 公開 Release 的 13 個受管資產與 6 份 sidecar SHA256 全部通過；x86_64／
+  aarch64 `.run` 均通過 `--info`、`--list`、`--check` 與 `--noexec`。
+- 與 source 相同的 takeover helper 已在實體路由器建立 `wg_istore_wan`
+  bypass set，WireGuard 握手與轉發流量已讀回；公開 package 尚未另行安裝到
+  實體路由器。
 
 ### localClash Core v0.1.74
 
