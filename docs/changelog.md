@@ -16,14 +16,12 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 
 ## Unreleased
 
-- LuCI 訂閱頁新增預設關閉的 g204 選項，rpcd 保存及讀回同一設定。
-
 ## 目前最新版本
 
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
 | localClash Core | [v0.1.76](https://github.com/qoli/localClash/releases/tag/v0.1.76) | 2026-09-01 UTC+8 |
-| localclash-luci | [v0.1.0-68](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-68) | 2026-09-01 UTC+8 |
+| localclash-luci | [v0.1.0-69](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-69) | 2026-09-01 UTC+8 |
 
 ## 2026-09-01
 
@@ -46,7 +44,31 @@ Verification:
 
 - `go test ./...`、`go vet ./...`、CLI／MCP capability refresh 回歸測試及
   `git diff --check` 通過。
+- [Release workflow 33475672247](https://github.com/qoli/localClash/actions/runs/33475672247)
+  成功；公開 Release 的 7 個資產與三份 checksum 均已重新下載驗證。
 - 本版本未把本機測試宣稱為實體路由器 WAN／Smart 網絡驗收。
+
+### localclash-luci v0.1.0-69
+
+Changes:
+
+- 訂閱頁新增預設關閉的「使用 g204 篩選自动选择」選項；關閉時自动选择保留
+  完整訂閱節點，而 ChatGPT capability 仍會獨立建立。
+- rpcd 保存並讀回 `g204_filter_enabled`，同步支援前台直接設定與 bootstrap
+  輸入，不會因未提供欄位而預設開啟。
+- x86_64／aarch64 iStore 離線 bundle 固定攜帶 Core `v0.1.76`。
+
+Release:
+
+- [qoli/localclash-luci v0.1.0-69](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-69)
+
+Verification:
+
+- [Main CI 33476009376](https://github.com/qoli/localclash-luci/actions/runs/33476009376)
+  與 [Release workflow 33476157802](https://github.com/qoli/localclash-luci/actions/runs/33476157802)
+  成功。
+- 公開 Release 的 13 個資產與全部 checksum 均已重新下載驗證；兩個 `.run`
+  bundle 均通過 `--info`、`--list`、`--check` 與 `--noexec`。
 
 ### localClash Core v0.1.75
 
