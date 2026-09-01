@@ -16,34 +16,43 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 
 ## Unreleased
 
-- g204 與 ChatGPT 候選首次探測失敗後各允許重試一次；任一次成功即合格，
-  連續兩次失敗才淘汰。兩次請求仍各自受原有 request timeout 約束。
-- 隔離 Smart 能力探測不再只等待第一個 loopback listener。Core 會在開始
-  g204／ChatGPT 請求前確認本輪全部候選 listener 已就緒，並在探測完成後再次
-  檢查核心程序與 listener；ARM 上較慢的 listener 初始化不再被誤記為數百個
-  節點同時 `connection refused` 後的假零結果。
 - OpenWrt takeover 可將標記了 `localclash_bypass=1` 的專用 WireGuard 入口置於
   TCP、UDP/TUN 與 DNS hijack 規則之前。iStoreOS 測試機可經該隧道使用實體
   路由器的裸 WAN，而不再把上游透明代理當成 WAN 品質證據。
-- g204 與 ChatGPT 探測完成但零節點合格時，改為發佈可觀測的空
-  capability snapshot，不再在 capability rebuild 層誤報
-  `command_failed`。不會沿用舊 snapshot、替換 endpoint 或把全部節點
-  當作合格結果。
-- ChatGPT 仍只接受同輪 g204 合格名單；g204 為空時直接發佈空
-  ChatGPT capability，不會回退探測全部訂閱節點。
-- g204 探測成功但結果為空時，`⚡ 自动选择` 回退到引入 g204 前的
-  原始自動群組結構：使用當輪全部訂閱節點。空 g204 snapshot 仍如實
-  保留，ChatGPT 不繼承這個 fallback。探測程序故障、缺失或格式錯誤
-  仍會明確失敗。
 
 ## 目前最新版本
 
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
-| localClash Core | [v0.1.74](https://github.com/qoli/localClash/releases/tag/v0.1.74) | 2026-09-01 UTC+8 |
+| localClash Core | [v0.1.75](https://github.com/qoli/localClash/releases/tag/v0.1.75) | 2026-09-01 UTC+8 |
 | localclash-luci | [v0.1.0-67](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-67) | 2026-09-01 UTC+8 |
 
 ## 2026-09-01
+
+### localClash Core v0.1.75
+
+Changes:
+
+- 隔離 Smart 能力探測會在開始請求前等待本輪全部候選 listener 就緒，並在
+  探測後再次確認核心程序與 listener；ARM 上較慢的初始化不再被誤判為數百個
+  節點同時 `connection refused` 後的假零結果。
+- g204 與 ChatGPT 候選首次失敗後各允許重試一次；任一次成功即合格，連續兩次
+  失敗才淘汰。每次請求仍受原有 timeout 約束。
+- 完成探測但零節點合格時發佈可觀測的空 capability snapshot；
+  `⚡ 自动选择` 使用原始全訂閱節點結構，ChatGPT 保持空集合。程序、listener、
+  缺失或格式錯誤仍明確失敗，不會被 fallback 隱藏。
+
+Release:
+
+- [qoli/localClash v0.1.75](https://github.com/qoli/localClash/releases/tag/v0.1.75)
+
+Verification:
+
+- `go test ./...`、`go vet ./...`、g204／ChatGPT retry tests、listener readiness
+  tests 與相關 race tests 通過。
+- 四份固定訂閱合併為 530 個節點後，修正後 ARM64 Smart 連續三輪經實體路由器
+  WAN 探測：g204 分別合格 86、69、67；ChatGPT 分別合格 19、17、20。三輪均
+  退出 0，沒有 isolated-process 或 listener failure。
 
 ### localClash Core v0.1.74
 
