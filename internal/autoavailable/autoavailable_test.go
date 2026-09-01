@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -27,11 +28,15 @@ func (r fakeResolver) LookupIPAddr(_ context.Context, host string) ([]net.IPAddr
 
 type fakeProber struct {
 	available map[string]bool
+	seen      *[]string
 }
 
 func (p fakeProber) Probe(_ context.Context, _ []map[string]any, candidates []Candidate) ([]Observation, error) {
 	out := make([]Observation, 0, len(candidates))
 	for _, candidate := range candidates {
+		if p.seen != nil {
+			*p.seen = append(*p.seen, candidate.Name)
+		}
 		available := p.available[candidate.Name]
 		observation := Observation{EndpointFingerprint: candidate.EndpointFingerprint, Available: available, Attempts: 1, HTTPStatus: 204, Duration: time.Millisecond}
 		if !available {
@@ -41,6 +46,18 @@ func (p fakeProber) Probe(_ context.Context, _ []map[string]any, candidates []Ca
 		out = append(out, observation)
 	}
 	return out, nil
+}
+
+type errorResolver struct {
+	values map[string][]string
+	errors map[string]error
+}
+
+func (r errorResolver) LookupIPAddr(_ context.Context, host string) ([]net.IPAddr, error) {
+	if err := r.errors[host]; err != nil {
+		return nil, err
+	}
+	return fakeResolver(r.values).LookupIPAddr(context.Background(), host)
 }
 
 func TestBuildCandidatesDeduplicatesResolvedEndpointFirstWins(t *testing.T) {
@@ -95,6 +112,59 @@ func TestRebuildPublishesOnlyEndpointRepresentativesThatPassG204(t *testing.T) {
 	qualified, err := LoadQualified(path)
 	if err != nil || !reflect.DeepEqual(qualified, result.Qualified) {
 		t.Fatalf("qualified = %v err=%v", qualified, err)
+	}
+}
+
+func TestRebuildMarksUnresolvableCandidateUnavailableAndProbesRemainingCandidates(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "auto-available.json")
+	proxies := []map[string]any{
+		{"name": "broken", "server": "missing.example", "port": 443},
+		{"name": "healthy", "server": "healthy.example", "port": 443},
+	}
+	seen := []string{}
+	result, err := Rebuild(context.Background(), proxies, fakeProber{available: map[string]bool{"healthy": true}, seen: &seen}, Options{
+		SnapshotPath: path,
+		Resolver: errorResolver{
+			values: map[string][]string{"healthy.example": {"192.0.2.10"}},
+			errors: map[string]error{"missing.example": errors.New("no such host")},
+		},
+		Now: func() time.Time { return time.Unix(100, 0) },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(seen, []string{"healthy"}) {
+		t.Fatalf("probed candidates = %v, want only resolvable candidate", seen)
+	}
+	if result.Probed != 1 || result.UnavailableCount != 1 || !reflect.DeepEqual(result.Qualified, []string{"healthy"}) {
+		t.Fatalf("result = %+v", result)
+	}
+	snapshot, exists, err := readSnapshot(path)
+	if err != nil || !exists {
+		t.Fatalf("read snapshot: exists=%v err=%v", exists, err)
+	}
+	var broken NodeState
+	for _, state := range snapshot.Nodes {
+		if state.Name == "broken" {
+			broken = state
+		}
+	}
+	if broken.Available || broken.Attempts != 0 || !strings.Contains(broken.Error, "no such host") {
+		t.Fatalf("broken node state = %+v", broken)
+	}
+}
+
+func TestRebuildFailsExplicitlyWhenEveryCandidateIsUnresolvable(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "auto-available.json")
+	_, err := Rebuild(context.Background(), []map[string]any{{"name": "broken", "server": "missing.example", "port": 443}}, fakeProber{}, Options{
+		SnapshotPath: path,
+		Resolver:     errorResolver{errors: map[string]error{"missing.example": errors.New("no such host")}},
+	})
+	if !errors.Is(err, ErrNoQualifiedCandidates) {
+		t.Fatalf("error = %v, want ErrNoQualifiedCandidates", err)
+	}
+	if _, statErr := os.Stat(path); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("failed qualification published snapshot: %v", statErr)
 	}
 }
 

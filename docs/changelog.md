@@ -16,6 +16,28 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 
 ## Unreleased
 
+- 修正 v0.1.70 升級至含 g204 能力策略時的一鍵更新材料錯序：LuCI 現在透過
+  Core 的單一材料交易，同步提交預設策略、訂閱、能力快照、選擇結果、生成配置
+  與 `mihomo -t` attestation；任一步失敗都會恢復交易前狀態，不再留下新策略搭配
+  舊快照的半完成意圖。
+- g204 第一跳 DNS 解析失敗改為該候選的明確不可用觀測，保留原始 DNS 錯誤與
+  `attempts=0`，其餘候選繼續接受嚴格 HTTP 204 測量。重複名稱、未知
+  `dialer-proxy`、鏈路循環、缺少 server 與非法 port 仍是整批硬失敗；全部候選
+  不可用時亦不發布快照，沒有新增全量節點 fallback。
+- iStoreOS QEMU 從公開 v0.1.0-62 / Core v0.1.70 基線執行非簡化的完整
+  一鍵更新：實際下載、checksum、LuCI package 安裝與 helper reexec、Core
+  與 Mihomo 更新、Dashboard、兩份真實訂閱、預設策略及全部能力探測均有
+  啟用。42 個節點中 20 個可解析去重第一跳通過 g204，2 個 NXDOMAIN
+  候選被明確標記不可用；配置 `mihomo -t`、熱載入、MCP 健康與
+  OpenWrt 接管讀回全部通過。
+- 同一測試機另行執行獨立訂閱更新，兩份來源分別載入 20 / 22 個
+  節點，g204 與 ChatGPT 能力均完整重測，後續配置重建、`mihomo -t`、
+  runtime restart 及接管連續性均通過。真實故障注入亦證明 11 個材料
+  路徑在能力重建失敗後完整回滾，運行時與接管保持生效。
+- LuCI 實際 UI 驗收主動停止接管但保留 Mihomo 運行；概覽頁在真實
+  `runtime=true` / `takeover=false` 狀態顯示「應用接管」。點擊後按鈕進入
+  執行狀態，最終 UI 與後端均讀回接管已生效，Mihomo 全程保持運行。
+
 ## 目前最新版本
 
 | 渠道 | 最新版本 | 發佈時間 |

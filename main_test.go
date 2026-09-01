@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/gob"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strconv"
 	"strings"
@@ -20,9 +22,13 @@ import (
 	"localclash/internal/appinit"
 	"localclash/internal/autoavailable"
 	"localclash/internal/chatgptavailable"
+	"localclash/internal/configpatch"
 	"localclash/internal/coredownload"
 	"localclash/internal/customsites"
+	"localclash/internal/localconfig"
 	"localclash/internal/mihomoapi"
+	"localclash/internal/mihomotest"
+	"localclash/internal/policytemplate"
 	"localclash/internal/rules"
 	"localclash/internal/runtimeprofile"
 	"localclash/internal/subscriptions"
@@ -786,6 +792,201 @@ func TestRunProductConfigApplyTemplateWritesV2RuntimeWithoutUserProfile(t *testi
 	}
 	if runtimeFile.Version != 2 || runtimeFile.Mode != runtimeprofile.ModeRouter || runtimeFile.Core != runtimeprofile.CoreMeta {
 		t.Fatalf("runtime file = %+v, want v2 router/meta", runtimeFile)
+	}
+}
+
+func TestApplyTemplateTransactionRestoresPriorIntentAndRegistryWhenCapabilityRefreshFails(t *testing.T) {
+	dir := t.TempDir()
+	runtimeRoot := filepath.Join(dir, ".runtime")
+	state := appinit.RuntimeState{Paths: appinit.RuntimePaths{
+		WorkspaceRoot:       dir,
+		RuntimeRoot:         runtimeRoot,
+		RulesCacheDir:       filepath.Join(runtimeRoot, "rules", "packs"),
+		GeneratedConfig:     filepath.Join(runtimeRoot, "mihomo", "config.yaml"),
+		SubscriptionConfig:  filepath.Join(dir, "localclash-subscriptions.json"),
+		SubscriptionPath:    filepath.Join(dir, "subscription.gob"),
+		SubscriptionRuntime: filepath.Join(runtimeRoot, "subscriptions"),
+		MihomoRuntimeDir:    filepath.Join(runtimeRoot, "mihomo"),
+		CorePath:            filepath.Join(dir, "bin", "lc-mihomo-meta"),
+		PacksSelectionPath:  filepath.Join(dir, "localclash-packs.gob"),
+		RuntimeProfilePath:  filepath.Join(dir, "localclash-runtime.json"),
+	}}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`proxies:
+  - name: healthy
+    type: ss
+    server: healthy.example
+    port: 443
+    cipher: aes-128-gcm
+    password: secret
+`))
+	}))
+	t.Cleanup(server.Close)
+	replace := true
+	if _, err := subscriptions.Configure(subscriptions.ConfigureOptions{
+		ConfigPath: state.Paths.SubscriptionConfig,
+		Sources:    []subscriptions.Source{{URL: server.URL + "/sub", DisplayName: "01"}},
+		Replace:    &replace,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	writeMainTestFile(t, filepath.Join(dir, "policy-templates", "localclash-default.json"), `{
+  "id": "localclash-default",
+  "name": "Test Default",
+  "description": "Test default template.",
+  "config": {
+    "version": 4,
+    "policy_template": "localclash-default",
+    "proxy_groups": {
+      "Auto": {"mode": "auto", "capability": "network.connectivity.g204.v1"}
+    },
+    "policy_groups": {
+      "DNSProxy": {"mode": "manual", "exits": ["Auto"]}
+    },
+    "packs": []
+  }
+}`)
+	oldIntent := `{"version":4,"policy_template":"old","proxy_groups":{},"packs":[]}`
+	oldPatch := `{"sentinel":"old-registry"}`
+	intentPath := filepath.Join(dir, "localclash-intent.json")
+	patchPath := filepath.Join(dir, configpatch.RegistryDirName, "old.json")
+	writeMainTestFile(t, intentPath, oldIntent)
+	writeMainTestFile(t, patchPath, oldPatch)
+	oldIntentBytes, err := os.ReadFile(intentPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldPatchBytes, err := os.ReadFile(patchPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	previousAuto := rebuildProductAutoAvailable
+	t.Cleanup(func() { rebuildProductAutoAvailable = previousAuto })
+	rebuildProductAutoAvailable = func(context.Context, []map[string]any, string, string, string, string) (autoavailable.Result, error) {
+		return autoavailable.Result{}, errors.New("g204 probe blocked")
+	}
+	_, _, err = applyTemplateInput(context.Background(), configInput{
+		Version:                1,
+		Template:               policytemplate.TemplateLocalClashDefault,
+		RuntimeProfile:         runtimeprofile.ModeRouter,
+		Core:                   runtimeprofile.CoreMeta,
+		AllowOverwriteModified: true,
+		ResetPatches:           true,
+		RefreshSubscription:    true,
+	}, state)
+	if err == nil || !strings.Contains(err.Error(), "prior state was restored") || !strings.Contains(err.Error(), "g204 probe blocked") {
+		t.Fatalf("error = %v", err)
+	}
+	if data, readErr := os.ReadFile(intentPath); readErr != nil || string(data) != string(oldIntentBytes) {
+		t.Fatalf("intent after rollback = %q err=%v", data, readErr)
+	}
+	if data, readErr := os.ReadFile(patchPath); readErr != nil || string(data) != string(oldPatchBytes) {
+		t.Fatalf("registry after rollback = %q err=%v", data, readErr)
+	}
+	if _, statErr := os.Stat(filepath.Join(dir, configpatch.RegistryDirName, "00-localclash-default.json")); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("new policy patch survived rollback: %v", statErr)
+	}
+}
+
+func TestApplyTemplateTransactionMigratesOldIntentAndCommitsCapabilityMaterial(t *testing.T) {
+	dir := t.TempDir()
+	runtimeRoot := filepath.Join(dir, ".runtime")
+	state := appinit.RuntimeState{Paths: appinit.RuntimePaths{
+		WorkspaceRoot:       dir,
+		RuntimeRoot:         runtimeRoot,
+		RulesCacheDir:       filepath.Join(runtimeRoot, "rules", "packs"),
+		GeneratedConfig:     filepath.Join(runtimeRoot, "mihomo", "config.yaml"),
+		SubscriptionConfig:  filepath.Join(dir, "localclash-subscriptions.json"),
+		SubscriptionPath:    filepath.Join(dir, "subscription.gob"),
+		SubscriptionRuntime: filepath.Join(runtimeRoot, "subscriptions"),
+		MihomoRuntimeDir:    filepath.Join(runtimeRoot, "mihomo"),
+		CorePath:            filepath.Join(dir, "bin", runtime.GOOS+"-"+runtime.GOARCH, "lc-mihomo-meta"),
+		PacksSelectionPath:  filepath.Join(dir, "localclash-packs.gob"),
+		RuntimeProfilePath:  filepath.Join(dir, "localclash-runtime.json"),
+	}}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`proxies:
+  - name: healthy
+    type: ss
+    server: 192.0.2.10
+    port: 443
+    cipher: aes-128-gcm
+    password: secret
+`))
+	}))
+	t.Cleanup(server.Close)
+	replace := true
+	if _, err := subscriptions.Configure(subscriptions.ConfigureOptions{
+		ConfigPath: state.Paths.SubscriptionConfig,
+		Sources:    []subscriptions.Source{{URL: server.URL + "/sub", DisplayName: "01"}},
+		Replace:    &replace,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	writeMainTestFile(t, filepath.Join(dir, "policy-templates", "localclash-default.json"), `{
+  "id": "localclash-default",
+  "name": "Test Default",
+  "description": "Test default template.",
+  "config": {
+    "version": 4,
+    "policy_template": "localclash-default",
+    "proxy_groups": {
+      "Auto": {"mode": "auto", "capability": "network.connectivity.g204.v1"}
+    },
+    "policy_groups": {
+      "DNSProxy": {"mode": "manual", "exits": ["Auto"]}
+    },
+    "packs": []
+  }
+}`)
+	writeMainTestFile(t, filepath.Join(dir, "localclash-intent.json"), `{"version":4,"policy_template":"old","proxy_groups":{},"packs":[]}`)
+	writeMainTestPackIndex(t, state.Paths.RulesCacheDir)
+	writeMainTestFile(t, state.Paths.CorePath, "#!/bin/sh\nexit 0\n")
+	if err := os.Chmod(state.Paths.CorePath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	previousAuto := rebuildProductAutoAvailable
+	t.Cleanup(func() { rebuildProductAutoAvailable = previousAuto })
+	rebuildProductAutoAvailable = func(_ context.Context, _ []map[string]any, _, _, candidate, _ string) (autoavailable.Result, error) {
+		writeMainTestFile(t, candidate, fmt.Sprintf(`{"version":1,"profile":%q,"updated_at":"now","qualified":["healthy"],"nodes":{}}`, autoavailable.ProfileID))
+		return autoavailable.Result{Profile: autoavailable.ProfileID, SnapshotPath: candidate, Candidates: 1, Probed: 1, Qualified: []string{"healthy"}, QualifiedCount: 1}, nil
+	}
+	result, warnings, err := applyTemplateInput(context.Background(), configInput{
+		Version:                1,
+		Template:               policytemplate.TemplateLocalClashDefault,
+		RuntimeProfile:         runtimeprofile.ModeRouter,
+		Core:                   runtimeprofile.CoreMeta,
+		AllowOverwriteModified: true,
+		ResetPatches:           true,
+		RefreshSubscription:    true,
+	}, state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(warnings) != 0 {
+		t.Fatalf("warnings = %v", warnings)
+	}
+	transaction, ok := result["transaction"].(map[string]any)
+	if !ok || transaction["committed"] != true {
+		t.Fatalf("transaction = %#v", result["transaction"])
+	}
+	config, err := localconfig.Load(filepath.Join(dir, "localclash-intent.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.PolicyTemplate != policytemplate.TemplateLocalClashDefault || config.ProxyGroups["Auto"].Capability != autoavailable.ProfileID {
+		t.Fatalf("committed intent = %+v", config)
+	}
+	if qualified, err := autoavailable.LoadQualified(filepath.Join(runtimeRoot, "capabilities", "auto-available.json")); err != nil || !reflect.DeepEqual(qualified, []string{"healthy"}) {
+		t.Fatalf("qualified = %v err=%v", qualified, err)
+	}
+	if _, err := os.Stat(state.Paths.GeneratedConfig); err != nil {
+		t.Fatalf("generated config missing: %v", err)
+	}
+	if _, err := os.Stat(mihomotest.DefaultAttestationPath(state.Paths.MihomoRuntimeDir)); err != nil {
+		t.Fatalf("attestation missing: %v", err)
 	}
 }
 

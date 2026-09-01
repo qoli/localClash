@@ -33,6 +33,7 @@ type Candidate struct {
 	Name                string
 	EndpointFingerprint string
 	Aliases             []string
+	PreflightError      string
 }
 
 type Observation struct {
@@ -118,12 +119,28 @@ func Rebuild(ctx context.Context, proxies []map[string]any, prober Prober, opts 
 	if err != nil {
 		return Result{}, err
 	}
-	observations, err := prober.Probe(ctx, proxies, candidates)
-	if err != nil {
-		return Result{}, fmt.Errorf("probe automatic connectivity: %w", err)
+	probeCandidates := make([]Candidate, 0, len(candidates))
+	observations := make([]Observation, 0, len(candidates))
+	for _, candidate := range candidates {
+		if candidate.PreflightError == "" {
+			probeCandidates = append(probeCandidates, candidate)
+			continue
+		}
+		observations = append(observations, Observation{
+			EndpointFingerprint: candidate.EndpointFingerprint,
+			Available:           false,
+			Error:               candidate.PreflightError,
+		})
 	}
-	if len(observations) != len(candidates) {
-		return Result{}, fmt.Errorf("automatic connectivity probe returned %d observations for %d candidates", len(observations), len(candidates))
+	if len(probeCandidates) > 0 {
+		probed, err := prober.Probe(ctx, proxies, probeCandidates)
+		if err != nil {
+			return Result{}, fmt.Errorf("probe automatic connectivity: %w", err)
+		}
+		if len(probed) != len(probeCandidates) {
+			return Result{}, fmt.Errorf("automatic connectivity probe returned %d observations for %d candidates", len(probed), len(probeCandidates))
+		}
+		observations = append(observations, probed...)
 	}
 	observed := make(map[string]Observation, len(observations))
 	known := make(map[string]bool, len(candidates))
@@ -190,7 +207,7 @@ func Rebuild(ctx context.Context, proxies []map[string]any, prober Prober, opts 
 		return Result{}, err
 	}
 	return Result{
-		Profile: ProfileID, SnapshotPath: opts.SnapshotPath, Candidates: len(proxies), Probed: len(candidates),
+		Profile: ProfileID, SnapshotPath: opts.SnapshotPath, Candidates: len(proxies), Probed: len(probeCandidates),
 		DeduplicatedCount: buildStats.Deduplicated, HelperExcludedCount: buildStats.HelperExcluded,
 		Qualified: qualified, QualifiedCount: len(qualified),
 		ObservedQualifiedCount: observedQualified, RetainedCount: retained, UnavailableCount: len(candidates) - len(qualified),
@@ -226,7 +243,14 @@ func buildCandidates(ctx context.Context, proxies []map[string]any, resolver Res
 		}
 		endpoint, err := effectiveEndpoint(ctx, name, byName, resolver, resolvedHosts)
 		if err != nil {
-			return nil, stats, err
+			var resolutionErr *endpointResolutionError
+			if !errors.As(err, &resolutionErr) {
+				return nil, stats, err
+			}
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return nil, stats, ctxErr
+			}
+			endpoint = resolutionErr.Identity
 		}
 		sum := sha256.Sum256([]byte(endpoint))
 		fingerprint := hex.EncodeToString(sum[:])
@@ -236,9 +260,26 @@ func buildCandidates(ctx context.Context, proxies []map[string]any, resolver Res
 			continue
 		}
 		representatives[fingerprint] = len(candidates)
-		candidates = append(candidates, Candidate{Name: name, EndpointFingerprint: fingerprint})
+		candidate := Candidate{Name: name, EndpointFingerprint: fingerprint}
+		if err != nil {
+			candidate.PreflightError = err.Error()
+		}
+		candidates = append(candidates, candidate)
 	}
 	return candidates, stats, nil
+}
+
+type endpointResolutionError struct {
+	Identity string
+	Cause    error
+}
+
+func (e *endpointResolutionError) Error() string {
+	return e.Cause.Error()
+}
+
+func (e *endpointResolutionError) Unwrap() error {
+	return e.Cause
 }
 
 func effectiveEndpoint(ctx context.Context, name string, byName map[string]map[string]any, resolver Resolver, resolvedHosts map[string][]string) (string, error) {
@@ -270,11 +311,12 @@ func effectiveEndpoint(ctx context.Context, name string, byName map[string]map[s
 			addresses = append(addresses, ip.String())
 		} else {
 			cacheKey := strings.ToLower(server)
+			identity := "unresolved:" + cacheKey + ":" + strconv.Itoa(port)
 			addresses = append(addresses, resolvedHosts[cacheKey]...)
 			if len(addresses) == 0 {
 				resolved, err := resolver.LookupIPAddr(ctx, server)
 				if err != nil {
-					return "", fmt.Errorf("resolve automatic connectivity candidate %q first hop %q: %w", name, server, err)
+					return "", &endpointResolutionError{Identity: identity, Cause: fmt.Errorf("resolve automatic connectivity candidate %q first hop %q: %w", name, server, err)}
 				}
 				seenAddresses := map[string]bool{}
 				for _, address := range resolved {
@@ -292,7 +334,7 @@ func effectiveEndpoint(ctx context.Context, name string, byName map[string]map[s
 				}
 			}
 			if len(addresses) == 0 {
-				return "", fmt.Errorf("automatic connectivity candidate %q first hop %q resolved no IP addresses", name, server)
+				return "", &endpointResolutionError{Identity: identity, Cause: fmt.Errorf("automatic connectivity candidate %q first hop %q resolved no IP addresses", name, server)}
 			}
 		}
 		sort.Strings(addresses)

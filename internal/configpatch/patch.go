@@ -259,6 +259,7 @@ type ImportTemplateOptions struct {
 	CorePath            string
 	WorkDir             string
 	ValidationCache     string
+	SkipArtifactBuild   bool
 	Now                 time.Time
 }
 
@@ -582,7 +583,7 @@ func ImportPolicyTemplate(ctx context.Context, opts ImportTemplateOptions) (Impo
 	for _, record := range registry.Records {
 		result.Patches = append(result.Patches, summaryForRecord(record))
 	}
-	if canRenderOptionalArtifacts(opts) {
+	if !opts.SkipArtifactBuild && canRenderOptionalArtifacts(opts) {
 		build, err := buildArtifacts(ctx, compiled.Config, buildOptionsFromImport(opts))
 		result.Build = build
 		if err != nil {
@@ -590,7 +591,7 @@ func ImportPolicyTemplate(ctx context.Context, opts ImportTemplateOptions) (Impo
 		} else {
 			result.Warnings = append(result.Warnings, build.Warnings...)
 		}
-	} else {
+	} else if !opts.SkipArtifactBuild {
 		result.NextActions = append(result.NextActions, "call subscriptions_refresh and config_render after subscription/runtime inputs are available")
 	}
 	return result, nil

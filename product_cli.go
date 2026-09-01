@@ -30,6 +30,7 @@ import (
 	"localclash/internal/customsitesapply"
 	"localclash/internal/dashboard"
 	"localclash/internal/localconfig"
+	"localclash/internal/materialtxn"
 	"localclash/internal/mihomoapi"
 	"localclash/internal/mihomotest"
 	"localclash/internal/policytemplate"
@@ -1319,6 +1320,7 @@ type configInput struct {
 	AllowOverwriteModified       bool   `json:"allow_overwrite_modified"`
 	ResetPatches                 bool   `json:"reset_patches"`
 	RefreshPolicyTemplatePatches bool   `json:"refresh_policy_template_patches"`
+	RefreshSubscription          bool   `json:"refresh_subscription"`
 }
 
 func parseSubscriptionInput(args []string) (subscriptionInput, error) {
@@ -1548,6 +1550,13 @@ func configStatus(state appinit.RuntimeState) (map[string]any, []string) {
 }
 
 func applyTemplateInput(ctx context.Context, input configInput, state appinit.RuntimeState) (map[string]any, []string, error) {
+	if input.RefreshSubscription {
+		return applyTemplateTransaction(ctx, input, state)
+	}
+	return applyTemplateMutation(ctx, input, state, false)
+}
+
+func applyTemplateMutation(ctx context.Context, input configInput, state appinit.RuntimeState, skipArtifactBuild bool) (map[string]any, []string, error) {
 	configPath := productWorkspacePath(state, "localclash-intent.json")
 	if !input.AllowOverwriteModified {
 		current, err := localconfig.Load(configPath)
@@ -1586,6 +1595,7 @@ func applyTemplateInput(ctx context.Context, input configInput, state appinit.Ru
 		CorePath:            normalizeCorePathForState(state, profile.CorePath),
 		WorkDir:             state.Paths.MihomoRuntimeDir,
 		RefreshTemplateOnly: input.RefreshPolicyTemplatePatches,
+		SkipArtifactBuild:   skipArtifactBuild,
 	})
 	if err != nil {
 		return nil, nil, err
@@ -1593,6 +1603,95 @@ func applyTemplateInput(ctx context.Context, input configInput, state appinit.Ru
 	warnings := refreshCoreVersionCacheWarnings(ctx, state, profile.CorePath)
 	warnings = append(warnings, patchResult.Warnings...)
 	return map[string]any{"template": patchResult.Template, "patch_registry": patchResult, "runtime_profile": profile}, warnings, nil
+}
+
+func applyTemplateTransaction(ctx context.Context, input configInput, state appinit.RuntimeState) (map[string]any, []string, error) {
+	configPath := productWorkspacePath(state, "localclash-intent.json")
+	registryDir := productWorkspacePath(state, configpatch.RegistryDirName)
+	capabilityRoot := productCapabilityRoot(state)
+	attestationPath := mihomotest.DefaultAttestationPath(state.Paths.MihomoRuntimeDir)
+	cachePath := mihomotest.DefaultCachePath(state.Paths.MihomoRuntimeDir)
+	paths := []string{
+		registryDir,
+		configPath,
+		state.Paths.RuntimeProfilePath,
+		state.Paths.PacksSelectionPath,
+		state.Paths.GeneratedConfig,
+		state.Paths.SubscriptionPath,
+		state.Paths.SubscriptionRuntime,
+		capabilityRoot,
+		attestationPath,
+		cachePath,
+		appinit.CoreVersionCachePath(state.Paths.RuntimeRoot),
+	}
+	var templateStatus map[string]any
+	warnings := []string{}
+	var refreshResult subscriptions.RefreshResult
+	var capabilities []capability.Result
+	var renderStatus map[string]any
+	var validation mihomotest.TestResult
+	err := materialtxn.Run(paths, func() error {
+		var err error
+		templateStatus, warnings, err = applyTemplateMutation(ctx, input, state, true)
+		if err != nil {
+			return fmt.Errorf("apply policy template: %w", err)
+		}
+		refreshResult, err = subscriptions.Refresh(ctx, subscriptions.RefreshOptions{
+			ConfigPath: state.Paths.SubscriptionConfig,
+			RuntimeDir: state.Paths.SubscriptionRuntime,
+			MergedPath: state.Paths.SubscriptionPath,
+			Force:      true,
+			UserAgent:  subscriptions.DefaultUserAgent,
+			OnStage:    productSubscriptionStageLogger(os.Stderr),
+		})
+		if err != nil {
+			return fmt.Errorf("refresh subscriptions for policy template: %w", err)
+		}
+		capabilities, err = refreshProductCapabilities(ctx, state, refreshResult.MergedDoc, os.Stderr)
+		if err != nil {
+			return fmt.Errorf("refresh policy capabilities: %w", err)
+		}
+		var renderWarnings []string
+		renderStatus, renderWarnings, err = renderProductConfig(state)
+		warnings = append(warnings, refreshResult.Warnings...)
+		warnings = append(warnings, renderWarnings...)
+		if err != nil {
+			return fmt.Errorf("render policy candidate: %w", err)
+		}
+		profile, err := runtimeprofile.StatusFor(state.Paths.RuntimeProfilePath)
+		if err != nil {
+			return fmt.Errorf("read policy runtime profile: %w", err)
+		}
+		validation, err = mihomotest.Test(ctx, mihomotest.TestOptions{
+			ValidationOptions: mihomotest.ValidationOptions{
+				CorePath:   normalizeCorePathForState(state, profile.CorePath),
+				ConfigPath: state.Paths.GeneratedConfig,
+				WorkDir:    state.Paths.MihomoRuntimeDir,
+				CachePath:  cachePath,
+				Force:      true,
+			},
+			Record:             true,
+			AttestationPath:    attestationPath,
+			PromotedConfigPath: state.Paths.GeneratedConfig,
+		})
+		if err != nil {
+			return fmt.Errorf("validate policy candidate: %w", err)
+		}
+		if !validation.Passed {
+			return errors.New("validate policy candidate: Mihomo config test did not pass")
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	return map[string]any{
+		"template":     templateStatus,
+		"subscription": productSubscriptionRefreshStatus{RefreshResult: refreshResult, Capabilities: capabilities},
+		"render":       renderStatus,
+		"validation":   validation,
+		"transaction":  map[string]any{"committed": true, "rollback_paths": len(paths)},
+	}, warnings, nil
 }
 
 func subscriptionStatusOptions(state appinit.RuntimeState) subscriptions.StatusOptions {

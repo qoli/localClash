@@ -4,6 +4,70 @@ This document records router-facing usability and performance incidents that
 must be investigated with evidence. Do not treat post-removal or wrong-window
 samples as proof for an incident.
 
+## 2026-09-01 One-Click Policy Migration Used Stale Capability State
+
+Status: fixed in source; full iStoreOS acceptance passed; pending release.
+
+Observed symptom:
+
+- A v0.1.70 to v0.1.71 one-click update refreshed subscriptions against the old
+  intent, then installed the new default policy containing
+  `network.connectivity.g204.v1`.
+- Rendering failed because `auto-available.json` had not been requested by the
+  old intent. The failed run nevertheless left the new intent installed.
+- A retry discovered g204, but one subscription candidate had an NXDOMAIN first
+  hop. Candidate construction treated that single DNS failure as a fatal error
+  for the complete capability refresh.
+
+Resolution:
+
+- Core now owns one rollback-protected template material transaction covering
+  template patches, compiled intent, subscription artifacts, capability
+  snapshots, selection, generated config, runtime profile, validation cache,
+  and attestation.
+- LuCI one-click update and configured default bootstrap request that transaction
+  instead of sequencing subscription refresh and template import independently.
+- A DNS-unresolvable g204 first hop is stored as an explicit candidate-level
+  unavailable observation. Structural graph errors and an all-unavailable result
+  remain hard failures; no fallback candidate set is generated.
+
+Acceptance evidence:
+
+- A clean disposable iStoreOS VM started from the public v0.1.0-62 LuCI package
+  and v0.1.70 Core. Default-policy synchronization stayed enabled; no saved
+  subscription, capability, or generated-config artifact from the earlier
+  incident replay was reused as the acceptance baseline.
+- The actual one-click RPC downloaded and verified the LuCI package, installed
+  it, re-executed the replaced helper, updated Core, installed the public
+  dnsqualify v0.1.0-63 asset, updated both Mihomo flavors and Dashboard, refreshed
+  both real subscriptions, synchronized the complete default policy, rebuilt all
+  configured capabilities, ran `mihomo -t`, hot-reloaded the runtime, and restored
+  takeover. It completed with exit code 0.
+- The two real sources supplied 20 and 22 nodes. The g204 profile received 42
+  candidates, probed 20 resolved and deduplicated first hops, qualified all 20,
+  and recorded 2 DNS-unresolvable candidates as unavailable. The ChatGPT profile
+  probed all 42 candidates. The material transaction reported `committed: true`.
+- A separate subscription-refresh RPC repeated both real downloads and all
+  capability probes. The resulting 42-proxy / 63-rule config passed an isolated
+  `mihomo -t`; the subsequent LuCI runtime restart preserved
+  `runtime_running: true`, `takeover_effective: true`, router profile, controller
+  health, and the promoted config SHA256
+  `05c6a55f7cf30043440cb5264609e7dc3f0d1fd855bc309c9dbaead7acbdba01`.
+- A post-success fault injection removed the real candidate-probe Mihomo binary
+  before repeating the full template, subscription, capability, render, and
+  validation transaction. The command failed with `prior state was restored`;
+  the aggregate digest across all 11 protected material paths was
+  `1be0b0da73efd59ae1ca2c0a896d27c124186279574ea4504b862f1d5b1b83e5`
+  both before and after the failure. The active runtime, controller, ownership
+  marker, and takeover remained effective.
+- LuCI was then exercised through the existing Arc session. The test stopped
+  takeover while leaving Mihomo running, observed the Overview state
+  `runtime=true` / `takeover ineffective`, and confirmed that the conditional
+  `应用接管` action appeared in the network-takeover table. Clicking that
+  Overview action showed its in-progress state and restored the final UI and
+  backend observations to runtime running and takeover effective. LuCI resources
+  and UBus requests returned HTTP 200 with no browser console errors.
+
 ## 2026-09-01 Runtime Watchdog Does Not Reconcile Router Takeover
 
 Status: known issue; recovery ownership is unresolved.

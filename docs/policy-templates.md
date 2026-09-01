@@ -100,6 +100,14 @@ existing non-empty qualified set suddenly collapses to zero, the snapshot and
 generated config are not replaced, so a transient carrier outage cannot silently
 rewrite the policy graph.
 
+DNS resolution is part of automatic-connectivity candidate eligibility rather
+than probe infrastructure. A hostname that returns no address is recorded as an
+explicit unavailable candidate with zero HTTP attempts and its resolver error;
+other candidates continue through the strict g204 probe. Structural subscription
+errors such as duplicate names, missing or cyclic `dialer-proxy` references,
+missing servers, and invalid ports still fail the entire qualification. If no
+candidate qualifies, no snapshot is published.
+
 The product CLI `subscription refresh --json` and MCP `subscriptions_refresh`
 both rebuild every configured capability snapshot. The snapshots record the
 ordered qualified node names as derived state so a following `config render
@@ -111,6 +119,12 @@ set; required capability groups still fail when no node qualifies.
 MCP subscription refresh renders a candidate config, runs isolated `mihomo -t`,
 and only then promotes the candidate snapshot and config. Applying the promoted
 config to an active runtime remains the explicit confirm-required hot-reload step.
+The product `config apply-template` input can set `refresh_subscription: true`
+to place template import, subscription refresh, all configured capability
+snapshots, resolved selection, rendered config, and recorded `mihomo -t`
+attestation in one rollback-protected material transaction. This is the LuCI
+one-click-update and configured first-use path; callers do not need to coordinate
+those intermediate states themselves.
 
 The automatic-connectivity qualification is intentionally strict: one successful
 HTTP 204 observation admits a candidate, while one failed observation removes it.
