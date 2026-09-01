@@ -52,6 +52,23 @@ func TestBuildLocalClashDefaultTemplate(t *testing.T) {
 	}
 }
 
+func TestRealMinimalTemplateDescribesOptionalG204WithoutChangingSmartPriority(t *testing.T) {
+	config, _, err := Build(filepath.Join("..", "..", DefaultDir), TemplateMinimal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	auto := config.ProxyGroups["⚡ 自动选择"]
+	if auto.Reason != "面向 Dashboard 的免维护自动出口；默认使用完整可选订阅节点，可在订阅设置中启用逐节点 generate_204 资格筛选。" {
+		t.Fatalf("minimal automatic reason = %q", auto.Reason)
+	}
+	if auto.Boundary != "all_selectable_subscription_nodes_with_optional_g204_filter" {
+		t.Fatalf("minimal automatic boundary = %q", auto.Boundary)
+	}
+	if len(auto.SmartPriority) != 6 || auto.SmartPriority[0].Label != "HK" || auto.SmartPriority[0].Factor != 6 || auto.SmartPriority[5].Label != "Other" || auto.SmartPriority[5].Factor != 1 {
+		t.Fatalf("minimal automatic Smart priority changed: %+v", auto.SmartPriority)
+	}
+}
+
 func TestBuildPatchSetTemplateMergesPatchesInManifestOrder(t *testing.T) {
 	dir := t.TempDir()
 	writePolicyTemplateTestFile(t, filepath.Join(dir, "localclash-default.json"), `id: localclash-default
@@ -204,7 +221,13 @@ func TestRealLocalClashDefaultTemplateIsLayered(t *testing.T) {
 		{Label: "Other", Pattern: `.*`, Factor: 1},
 	}
 	if auto.Mode != "auto" || auto.Capability != "network.connectivity.g204.v1" || auto.Match != nil || !reflect.DeepEqual(auto.SmartPriority, wantAutoPriority) {
-		t.Fatalf("default template auto selector = %+v, want g204-qualified endpoint-deduplicated Smart selector", auto)
+		t.Fatalf("default template auto selector = %+v, want optional-g204 Smart selector", auto)
+	}
+	if auto.Reason != "面向 Dashboard 的免维护自动出口；默认使用完整可选订阅节点，可在订阅设置中启用逐节点 generate_204 资格筛选。" {
+		t.Fatalf("default template automatic reason = %q", auto.Reason)
+	}
+	if auto.Boundary != "all_selectable_subscription_nodes_with_optional_g204_filter" {
+		t.Fatalf("default template automatic boundary = %q", auto.Boundary)
 	}
 	if !config.ProxyGroups["🇭🇰 香港节点"].Optional {
 		t.Fatalf("香港节点 group = %+v, want optional region selector", config.ProxyGroups["🇭🇰 香港节点"])

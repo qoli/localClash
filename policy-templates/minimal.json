@@ -28,8 +28,8 @@
           {"label": "US", "pattern": "(🇺🇸|美国|美國|(^|[^A-Za-z])US([^A-Za-z]|$)|United.?States|America)", "factor": 2},
           {"label": "Other", "pattern": ".*", "factor": 1}
         ],
-        "reason": "面向 Dashboard 的免维护自动出口；订阅刷新时按实际入口排重并通过 generate_204 资格验证。",
-        "boundary": "g204_qualified_unique_physical_endpoints"
+        "reason": "面向 Dashboard 的免维护自动出口；默认使用完整可选订阅节点，可在订阅设置中启用逐节点 generate_204 资格筛选。",
+        "boundary": "all_selectable_subscription_nodes_with_optional_g204_filter"
       }
     },
     "policy_groups": {
