@@ -13,6 +13,15 @@ import (
 	"localclash/internal/runtimesupervision"
 )
 
+func TestRuntimeHealthDefaultsAllowSmartColdStart(t *testing.T) {
+	if got := normalizeStartOptions(StartOptions{}).RuntimeHealthTimeout; got != 2*time.Minute {
+		t.Fatalf("start runtime health timeout = %s, want 2m", got)
+	}
+	if got := normalizeSupervisionCheckOptions(SupervisionCheckOptions{}).HealthTimeout; got != 2*time.Minute {
+		t.Fatalf("supervision runtime health timeout = %s, want 2m", got)
+	}
+}
+
 func TestStartMissingConfigReturnsError(t *testing.T) {
 	dir := t.TempDir()
 	core := filepath.Join(dir, "lc-mihomo-meta")

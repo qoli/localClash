@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	defaultRuntimeHealthTimeout = 20 * time.Second
+	defaultRuntimeHealthTimeout = 2 * time.Minute
 	defaultRuntimeProbeTimeout  = time.Second
 	defaultStableHealthWindow   = 10 * time.Minute
 	maxSupervisionAttempts      = 3
