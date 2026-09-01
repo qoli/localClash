@@ -88,7 +88,7 @@ func NewMihomoProber(options MihomoOptions) (*MihomoProber, error) {
 		options.Concurrency = 16
 	}
 	if options.Attempts <= 0 {
-		options.Attempts = 1
+		options.Attempts = 2
 	}
 	if options.RequestTimeout <= 0 {
 		options.RequestTimeout = 5 * time.Second
@@ -165,6 +165,9 @@ func (p *MihomoProber) Probe(ctx context.Context, candidates []Candidate) ([]Obs
 	}
 	close(jobs)
 	wg.Wait()
+	if err := session.Err(); err != nil {
+		return nil, err
+	}
 	return observations, nil
 }
 
@@ -195,9 +198,6 @@ func (p *MihomoProber) probeCandidate(ctx context.Context, candidate Candidate, 
 			break
 		}
 		observation.Error = result.err.Error()
-		if observation.ServiceRejected {
-			break
-		}
 		if attempt < p.options.Attempts {
 			select {
 			case <-time.After(p.options.RetryDelay):

@@ -16,6 +16,26 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 
 ## Unreleased
 
+- g204 與 ChatGPT 候選首次探測失敗後各允許重試一次；任一次成功即合格，
+  連續兩次失敗才淘汰。兩次請求仍各自受原有 request timeout 約束。
+- 隔離 Smart 能力探測不再只等待第一個 loopback listener。Core 會在開始
+  g204／ChatGPT 請求前確認本輪全部候選 listener 已就緒，並在探測完成後再次
+  檢查核心程序與 listener；ARM 上較慢的 listener 初始化不再被誤記為數百個
+  節點同時 `connection refused` 後的假零結果。
+- OpenWrt takeover 可將標記了 `localclash_bypass=1` 的專用 WireGuard 入口置於
+  TCP、UDP/TUN 與 DNS hijack 規則之前。iStoreOS 測試機可經該隧道使用實體
+  路由器的裸 WAN，而不再把上游透明代理當成 WAN 品質證據。
+- g204 與 ChatGPT 探測完成但零節點合格時，改為發佈可觀測的空
+  capability snapshot，不再在 capability rebuild 層誤報
+  `command_failed`。不會沿用舊 snapshot、替換 endpoint 或把全部節點
+  當作合格結果。
+- ChatGPT 仍只接受同輪 g204 合格名單；g204 為空時直接發佈空
+  ChatGPT capability，不會回退探測全部訂閱節點。
+- g204 探測成功但結果為空時，`⚡ 自动选择` 回退到引入 g204 前的
+  原始自動群組結構：使用當輪全部訂閱節點。空 g204 snapshot 仍如實
+  保留，ChatGPT 不繼承這個 fallback。探測程序故障、缺失或格式錯誤
+  仍會明確失敗。
+
 ## 目前最新版本
 
 | 渠道 | 最新版本 | 發佈時間 |

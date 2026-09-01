@@ -23,8 +23,6 @@ const (
 	ConsecutiveFailureThreshold = 1
 )
 
-var ErrQualificationCollapse = errors.New("ChatGPT capability qualification collapsed")
-
 type Candidate struct {
 	Name        string
 	Fingerprint string
@@ -110,7 +108,7 @@ func Rebuild(ctx context.Context, proxies []map[string]any, prober Prober, opts 
 	if previousPath == "" {
 		previousPath = opts.SnapshotPath
 	}
-	previous, previousExists, err := readSnapshot(previousPath)
+	previous, _, err := readSnapshot(previousPath)
 	if err != nil {
 		return Result{}, err
 	}
@@ -143,16 +141,12 @@ func Rebuild(ctx context.Context, proxies []map[string]any, prober Prober, opts 
 	qualifiedSet := map[string]bool{}
 	observedQualifiedSet := map[string]bool{}
 	retainedSet := map[string]bool{}
-	retainedPreviouslyQualified := 0
 	for _, candidate := range candidates {
 		observation, ok := observed[candidate.Fingerprint]
 		if !ok {
 			return Result{}, fmt.Errorf("probe ChatGPT capability omitted fingerprint %q", candidate.Fingerprint)
 		}
 		previousState := previous.Nodes[candidate.Fingerprint]
-		if previousExists && previousState.Available {
-			retainedPreviouslyQualified++
-		}
 		state := NodeState{
 			Name:              candidate.Name,
 			Available:         observation.Available,
@@ -202,9 +196,6 @@ func Rebuild(ctx context.Context, proxies []map[string]any, prober Prober, opts 
 			qualified = append(qualified, name)
 		}
 	}
-	if len(qualified) == 0 && retainedPreviouslyQualified > 0 {
-		return Result{}, fmt.Errorf("%w: %d retained previously-qualified candidates all failed; snapshot was not replaced", ErrQualificationCollapse, retainedPreviouslyQualified)
-	}
 	snapshot.Qualified = append([]string{}, qualified...)
 	if err := writeSnapshot(opts.SnapshotPath, snapshot); err != nil {
 		return Result{}, err
@@ -225,9 +216,30 @@ func Rebuild(ctx context.Context, proxies []map[string]any, prober Prober, opts 
 }
 
 func RebuildSelected(ctx context.Context, proxies []map[string]any, eligible []string, prober Prober, opts Options) (Result, error) {
+	started := time.Now()
 	selected, err := selectEligibleProxies(proxies, eligible)
 	if err != nil {
 		return Result{}, err
+	}
+	if len(selected) == 0 {
+		if strings.TrimSpace(opts.SnapshotPath) == "" {
+			return Result{}, errors.New("ChatGPT capability snapshot path is required")
+		}
+		if opts.Now == nil {
+			opts.Now = time.Now
+		}
+		snapshot := Snapshot{
+			Version: SnapshotVersion, Profile: ProfileID,
+			UpdatedAt: opts.Now().UTC().Format(time.RFC3339Nano),
+			Qualified: []string{}, Nodes: map[string]NodeState{},
+		}
+		if err := writeSnapshot(opts.SnapshotPath, snapshot); err != nil {
+			return Result{}, err
+		}
+		return Result{
+			Profile: ProfileID, SnapshotPath: opts.SnapshotPath,
+			Qualified: []string{}, DurationMS: time.Since(started).Milliseconds(),
+		}, nil
 	}
 	return Rebuild(ctx, selected, prober, opts)
 }

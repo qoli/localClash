@@ -96,6 +96,19 @@ func TestRebuildSelectedOnlyProbesG204QualifiedNodes(t *testing.T) {
 	}
 }
 
+func TestRebuildSelectedPublishesEmptyResultWithoutProbingWhenG204IsEmpty(t *testing.T) {
+	snapshotPath := filepath.Join(t.TempDir(), "chatgpt.json")
+	prober := fakeProber{err: errors.New("must not probe")}
+	result, err := RebuildSelected(context.Background(), []map[string]any{{"name": "US 01", "type": "ss"}}, []string{}, prober, Options{SnapshotPath: snapshotPath})
+	if err != nil || result.QualifiedCount != 0 || result.Probed != 0 || result.Candidates != 0 {
+		t.Fatalf("result = %+v error = %v, want explicit empty capability without probe", result, err)
+	}
+	qualified, err := LoadQualified(snapshotPath)
+	if err != nil || len(qualified) != 0 {
+		t.Fatalf("qualified = %v error = %v, want published empty capability", qualified, err)
+	}
+}
+
 func TestRebuildSelectedRejectsMissingG204Candidate(t *testing.T) {
 	_, err := RebuildSelected(context.Background(), []map[string]any{{"name": "US 01"}}, []string{"JP 01"}, fakeProber{}, Options{SnapshotPath: filepath.Join(t.TempDir(), "chatgpt.json")})
 	if err == nil || !strings.Contains(err.Error(), "JP 01") {
@@ -103,7 +116,7 @@ func TestRebuildSelectedRejectsMissingG204Candidate(t *testing.T) {
 	}
 }
 
-func TestRebuildRejectsTotalCollapseAndPreservesSnapshot(t *testing.T) {
+func TestRebuildPublishesExplicitEmptyResultAfterTotalLoss(t *testing.T) {
 	dir := t.TempDir()
 	snapshotPath := filepath.Join(dir, "chatgpt.json")
 	proxies := []map[string]any{{"name": "US 01", "type": "ss", "server": "us.example.com", "password": "secret"}}
@@ -113,23 +126,16 @@ func TestRebuildRejectsTotalCollapseAndPreservesSnapshot(t *testing.T) {
 	if _, err := Rebuild(context.Background(), proxies, available, Options{SnapshotPath: snapshotPath}); err != nil {
 		t.Fatal(err)
 	}
-	before, err := os.ReadFile(snapshotPath)
-	if err != nil {
-		t.Fatal(err)
-	}
 	unavailable := fakeProber{observations: map[string]Observation{
 		"US 01": {Available: false, Attempts: 3, Error: "timeout"},
 	}}
-	_, err = Rebuild(context.Background(), proxies, unavailable, Options{SnapshotPath: snapshotPath})
-	if !errors.Is(err, ErrQualificationCollapse) {
-		t.Fatalf("first failure error = %v, want qualification collapse", err)
+	result, err := Rebuild(context.Background(), proxies, unavailable, Options{SnapshotPath: snapshotPath})
+	if err != nil || result.QualifiedCount != 0 || result.ObservedQualifiedCount != 0 || result.UnavailableCount != 1 {
+		t.Fatalf("result = %+v error = %v, want explicit empty capability", result, err)
 	}
-	after, err := os.ReadFile(snapshotPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(after) != string(before) {
-		t.Fatalf("collapse replaced snapshot\nbefore: %s\nafter: %s", before, after)
+	qualified, err := LoadQualified(snapshotPath)
+	if err != nil || len(qualified) != 0 {
+		t.Fatalf("qualified = %v error = %v, want published empty capability", qualified, err)
 	}
 }
 
@@ -146,7 +152,7 @@ func TestRebuildDoesNotAdmitNewUnavailableCandidate(t *testing.T) {
 	}
 }
 
-func TestRebuildServiceRejectionImmediatelyCausesCollapse(t *testing.T) {
+func TestRebuildServiceRejectionPublishesExplicitEmptyResult(t *testing.T) {
 	snapshotPath := filepath.Join(t.TempDir(), "chatgpt.json")
 	proxies := []map[string]any{{"name": "HK 01", "type": "vless", "server": "hk.example.com"}}
 	available := fakeProber{observations: map[string]Observation{
@@ -164,9 +170,9 @@ func TestRebuildServiceRejectionImmediatelyCausesCollapse(t *testing.T) {
 			StatsigHTTPStatus: 403, Error: "Statsig initialize rejected the probe",
 		},
 	}}
-	_, err := Rebuild(context.Background(), proxies, rejected, Options{SnapshotPath: snapshotPath})
-	if !errors.Is(err, ErrQualificationCollapse) {
-		t.Fatalf("error = %v, want immediate collapse for explicit service rejection", err)
+	result, err := Rebuild(context.Background(), proxies, rejected, Options{SnapshotPath: snapshotPath})
+	if err != nil || result.QualifiedCount != 0 || result.UnavailableCount != 1 {
+		t.Fatalf("result = %+v error = %v, want explicit empty capability after service rejection", result, err)
 	}
 }
 
@@ -207,7 +213,7 @@ func TestRebuildDoesNotPublishWhenProbeInfrastructureFails(t *testing.T) {
 	}
 }
 
-func TestRebuildCandidateUsesPromotedSnapshotAsCollapseBaseline(t *testing.T) {
+func TestRebuildCandidatePublishesEmptyWithoutMutatingPromotedSnapshot(t *testing.T) {
 	dir := t.TempDir()
 	promoted := filepath.Join(dir, "promoted.json")
 	candidate := filepath.Join(dir, "transaction", "candidate.json")
@@ -225,9 +231,9 @@ func TestRebuildCandidateUsesPromotedSnapshotAsCollapseBaseline(t *testing.T) {
 	unavailable := fakeProber{observations: map[string]Observation{
 		"US 01": {Attempts: 3, StatsigStatus: statsigTransportFailure, Error: "timeout"},
 	}}
-	_, err = Rebuild(context.Background(), proxies, unavailable, Options{SnapshotPath: candidate, PreviousSnapshotPath: promoted})
-	if !errors.Is(err, ErrQualificationCollapse) {
-		t.Fatalf("candidate error = %v, want qualification collapse on first failure", err)
+	result, err := Rebuild(context.Background(), proxies, unavailable, Options{SnapshotPath: candidate, PreviousSnapshotPath: promoted})
+	if err != nil || result.QualifiedCount != 0 || result.UnavailableCount != 1 {
+		t.Fatalf("result = %+v error = %v, want explicit empty candidate capability", result, err)
 	}
 	after, err := os.ReadFile(promoted)
 	if err != nil {
@@ -236,8 +242,9 @@ func TestRebuildCandidateUsesPromotedSnapshotAsCollapseBaseline(t *testing.T) {
 	if string(after) != string(before) {
 		t.Fatalf("candidate rebuild mutated promoted snapshot")
 	}
-	if _, err := os.Stat(candidate); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("candidate snapshot exists after collapse: %v", err)
+	qualified, err := LoadQualified(candidate)
+	if err != nil || len(qualified) != 0 {
+		t.Fatalf("candidate qualified = %v error = %v, want explicit empty candidate", qualified, err)
 	}
 }
 

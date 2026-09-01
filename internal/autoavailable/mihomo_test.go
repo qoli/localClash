@@ -33,17 +33,45 @@ func TestProbeGenerate204RequiresExactEmpty204(t *testing.T) {
 	}
 }
 
-func TestProbeCandidateSingleFailureDoesNotRetry(t *testing.T) {
+func TestNewMihomoProberDefaultsToOneRetry(t *testing.T) {
+	prober, err := NewMihomoProber(MihomoOptions{CorePath: "mihomo", RuntimeParent: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prober.options.Concurrency != 16 || prober.options.Attempts != 2 || prober.options.RequestTimeout != 5*time.Second || prober.options.RetryDelay != 500*time.Millisecond {
+		t.Fatalf("probe defaults = %+v, want 16 workers, two attempts, 5s timeout, and 500ms retry delay", prober.options)
+	}
+}
+
+func TestProbeCandidateRetriesOneFailure(t *testing.T) {
 	calls := 0
 	prober := &MihomoProber{
-		options: MihomoOptions{RequestTimeout: time.Second},
+		options: MihomoOptions{Attempts: 2, RetryDelay: time.Nanosecond, RequestTimeout: time.Second},
+		probe: func(context.Context, *http.Client, string, time.Duration) g204Result {
+			calls++
+			if calls == 1 {
+				return g204Result{httpStatus: 500, err: context.DeadlineExceeded}
+			}
+			return g204Result{httpStatus: http.StatusNoContent}
+		},
+	}
+	observation := prober.probeCandidate(context.Background(), Candidate{EndpointFingerprint: "endpoint"}, &http.Client{})
+	if !observation.Available || observation.Attempts != 2 || observation.HTTPStatus != http.StatusNoContent || calls != 2 || strings.TrimSpace(observation.Error) != "" {
+		t.Fatalf("observation = %+v calls=%d, want second-attempt success", observation, calls)
+	}
+}
+
+func TestProbeCandidateRejectsAfterTwoFailures(t *testing.T) {
+	calls := 0
+	prober := &MihomoProber{
+		options: MihomoOptions{Attempts: 2, RetryDelay: time.Nanosecond, RequestTimeout: time.Second},
 		probe: func(context.Context, *http.Client, string, time.Duration) g204Result {
 			calls++
 			return g204Result{httpStatus: 500, err: context.DeadlineExceeded}
 		},
 	}
 	observation := prober.probeCandidate(context.Background(), Candidate{EndpointFingerprint: "endpoint"}, &http.Client{})
-	if observation.Available || observation.Attempts != 1 || observation.HTTPStatus != 500 || calls != 1 || strings.TrimSpace(observation.Error) == "" {
-		t.Fatalf("observation = %+v calls=%d", observation, calls)
+	if observation.Available || observation.Attempts != 2 || observation.HTTPStatus != 500 || calls != 2 || strings.TrimSpace(observation.Error) == "" {
+		t.Fatalf("observation = %+v calls=%d, want rejection after two failures", observation, calls)
 	}
 }

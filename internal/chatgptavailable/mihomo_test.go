@@ -68,8 +68,8 @@ func TestNewMihomoProberDefaultsScaleLargeSubscriptions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if prober.options.Concurrency != 16 || prober.options.RequestTimeout != 5*time.Second || prober.options.Attempts != 1 || prober.options.Endpoint != statsigInitializeURL || prober.options.ClientKey == "" {
-		t.Fatalf("probe defaults = %+v, want concurrency 16, timeout 5s, one attempt, and Statsig defaults", prober.options)
+	if prober.options.Concurrency != 16 || prober.options.RequestTimeout != 5*time.Second || prober.options.Attempts != 2 || prober.options.Endpoint != statsigInitializeURL || prober.options.ClientKey == "" {
+		t.Fatalf("probe defaults = %+v, want concurrency 16, timeout 5s, two attempts, and Statsig defaults", prober.options)
 	}
 }
 
@@ -91,17 +91,17 @@ func TestProbeCandidateRetriesOnlyFailureAndAccumulatesTransferBytes(t *testing.
 	}
 }
 
-func TestProbeCandidateDoesNotRetryExplicitServiceRejection(t *testing.T) {
+func TestProbeCandidateRetriesExplicitServiceRejectionOnce(t *testing.T) {
 	calls := 0
 	prober := &MihomoProber{
-		options: MihomoOptions{Attempts: 3, RetryDelay: time.Nanosecond, RequestTimeout: time.Second},
+		options: MihomoOptions{Attempts: 2, RetryDelay: time.Nanosecond, RequestTimeout: time.Second},
 		probe: func(context.Context, *http.Client, string, string, time.Duration) statsigProbeResult {
 			calls++
 			return statsigProbeResult{decision: statsigRejected, httpStatus: 401, explicitReject: true, err: errors.New("rejected")}
 		},
 	}
 	observation := prober.probeCandidate(context.Background(), Candidate{Fingerprint: "node"}, &http.Client{})
-	if observation.Available || !observation.ServiceRejected || observation.Attempts != 1 || calls != 1 {
-		t.Fatalf("observation = %+v calls=%d, want one explicit-rejection attempt", observation, calls)
+	if observation.Available || !observation.ServiceRejected || observation.Attempts != 2 || calls != 2 {
+		t.Fatalf("observation = %+v calls=%d, want rejection after two attempts", observation, calls)
 	}
 }

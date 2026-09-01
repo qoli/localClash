@@ -24,11 +24,6 @@ const (
 	ConsecutiveFailureThreshold = 1
 )
 
-var (
-	ErrQualificationCollapse = errors.New("automatic connectivity qualification collapsed")
-	ErrNoQualifiedCandidates = errors.New("automatic connectivity qualification produced no candidates")
-)
-
 type Candidate struct {
 	Name                string
 	EndpointFingerprint string
@@ -115,7 +110,7 @@ func Rebuild(ctx context.Context, proxies []map[string]any, prober Prober, opts 
 	if previousPath == "" {
 		previousPath = opts.SnapshotPath
 	}
-	previous, previousExists, err := readSnapshot(previousPath)
+	previous, _, err := readSnapshot(previousPath)
 	if err != nil {
 		return Result{}, err
 	}
@@ -162,16 +157,12 @@ func Rebuild(ctx context.Context, proxies []map[string]any, prober Prober, opts 
 	qualified := make([]string, 0, len(candidates))
 	observedQualified := 0
 	retained := 0
-	previouslyQualified := 0
 	for _, candidate := range candidates {
 		observation, ok := observed[candidate.EndpointFingerprint]
 		if !ok {
 			return Result{}, fmt.Errorf("automatic connectivity probe omitted endpoint fingerprint %q", candidate.EndpointFingerprint)
 		}
 		previousState := previous.Nodes[candidate.EndpointFingerprint]
-		if previousExists && previousState.Available {
-			previouslyQualified++
-		}
 		state := NodeState{
 			Name: candidate.Name, Aliases: append([]string{}, candidate.Aliases...), Available: observation.Available,
 			ObservedAvailable: observation.Available, Attempts: observation.Attempts, HTTPStatus: observation.HTTPStatus,
@@ -195,12 +186,6 @@ func Rebuild(ctx context.Context, proxies []map[string]any, prober Prober, opts 
 		if state.Available {
 			qualified = append(qualified, candidate.Name)
 		}
-	}
-	if len(qualified) == 0 {
-		if previouslyQualified > 0 {
-			return Result{}, fmt.Errorf("%w: %d previously-qualified endpoints failed", ErrQualificationCollapse, previouslyQualified)
-		}
-		return Result{}, ErrNoQualifiedCandidates
 	}
 	snapshot.Qualified = append([]string{}, qualified...)
 	if err := writeSnapshot(opts.SnapshotPath, snapshot); err != nil {
@@ -380,9 +365,6 @@ func readSnapshot(path string) (Snapshot, bool, error) {
 	}
 	if snapshot.Nodes == nil || snapshot.Qualified == nil {
 		return Snapshot{}, false, errors.New("automatic connectivity snapshot nodes and qualified nodes are required")
-	}
-	if len(snapshot.Qualified) == 0 {
-		return Snapshot{}, false, errors.New("automatic connectivity snapshot requires at least one qualified node")
 	}
 	seen := map[string]bool{}
 	for _, name := range snapshot.Qualified {

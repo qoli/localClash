@@ -19,7 +19,9 @@ type MihomoOptions struct {
 	CorePath       string
 	RuntimeParent  string
 	Concurrency    int
+	Attempts       int
 	RequestTimeout time.Duration
+	RetryDelay     time.Duration
 	Endpoint       string
 }
 
@@ -50,8 +52,14 @@ func NewMihomoProber(options MihomoOptions) (*MihomoProber, error) {
 	if options.Concurrency <= 0 {
 		options.Concurrency = 16
 	}
+	if options.Attempts <= 0 {
+		options.Attempts = 2
+	}
 	if options.RequestTimeout <= 0 {
 		options.RequestTimeout = 5 * time.Second
+	}
+	if options.RetryDelay <= 0 {
+		options.RetryDelay = 500 * time.Millisecond
 	}
 	if strings.TrimSpace(options.Endpoint) == "" {
 		options.Endpoint = Generate204URL
@@ -105,18 +113,33 @@ func (p *MihomoProber) Probe(ctx context.Context, proxies []map[string]any, cand
 	}
 	close(jobs)
 	wg.Wait()
+	if err := session.Err(); err != nil {
+		return nil, err
+	}
 	return observations, nil
 }
 
 func (p *MihomoProber) probeCandidate(ctx context.Context, candidate Candidate, client *http.Client) Observation {
 	started := time.Now()
-	observation := Observation{EndpointFingerprint: candidate.EndpointFingerprint, Attempts: 1}
-	result := p.probe(ctx, client, p.options.Endpoint, p.options.RequestTimeout)
-	observation.HTTPStatus = result.httpStatus
-	if result.err == nil {
-		observation.Available = true
-	} else {
+	observation := Observation{EndpointFingerprint: candidate.EndpointFingerprint}
+	for attempt := 1; attempt <= p.options.Attempts; attempt++ {
+		observation.Attempts = attempt
+		result := p.probe(ctx, client, p.options.Endpoint, p.options.RequestTimeout)
+		observation.HTTPStatus = result.httpStatus
+		if result.err == nil {
+			observation.Available = true
+			observation.Error = ""
+			break
+		}
 		observation.Error = result.err.Error()
+		if attempt < p.options.Attempts {
+			select {
+			case <-time.After(p.options.RetryDelay):
+			case <-ctx.Done():
+				observation.Error = ctx.Err().Error()
+				attempt = p.options.Attempts
+			}
+		}
 	}
 	observation.Duration = time.Since(started)
 	return observation

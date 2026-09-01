@@ -81,7 +81,7 @@ func Start(ctx context.Context, proxies []map[string]any, candidateNames []strin
 	if err := writeConfig(configPath, proxies, candidateNames, ports, options.ListenerPrefix); err != nil {
 		return nil, err
 	}
-	process, err := startCore(ctx, options.CorePath, runtimeDir, configPath, ports[0])
+	process, err := startCore(ctx, options.CorePath, runtimeDir, configPath, ports)
 	if err != nil {
 		return nil, err
 	}
@@ -116,6 +116,40 @@ func (s *Session) HTTPClient(index int, timeout time.Duration) (*http.Client, er
 			return http.ErrUseLastResponse
 		},
 	}, nil
+}
+
+func (s *Session) Err() error {
+	if s == nil || s.process == nil {
+		return nil
+	}
+	if err := s.process.exitError(); err != nil {
+		return err
+	}
+	unavailable := 0
+	firstAddress := ""
+	var firstErr error
+	for _, port := range s.ports {
+		address := "127.0.0.1:" + strconv.Itoa(port)
+		connection, err := net.DialTimeout("tcp", address, 200*time.Millisecond)
+		if err == nil {
+			_ = connection.Close()
+			continue
+		}
+		unavailable++
+		if firstErr == nil {
+			firstAddress = address
+			firstErr = err
+		}
+	}
+	if unavailable == 0 {
+		return nil
+	}
+	select {
+	case <-s.process.done:
+		return s.process.exitError()
+	case <-time.After(250 * time.Millisecond):
+		return fmt.Errorf("isolated Mihomo lost %d of %d proxy probe listeners; first unavailable listener %s: %w: %s", unavailable, len(s.ports), firstAddress, firstErr, s.process.output.String())
+	}
 }
 
 func (s *Session) Close() {
@@ -185,13 +219,14 @@ func writeConfig(path string, proxies []map[string]any, candidateNames []string,
 
 type probeProcess struct {
 	cmd        *exec.Cmd
-	waitCh     chan error
+	done       chan struct{}
+	waitErr    error
 	output     *limitedBuffer
 	runtimeDir string
 	once       sync.Once
 }
 
-func startCore(ctx context.Context, corePath, runtimeDir, configPath string, readinessPort int) (*probeProcess, error) {
+func startCore(ctx context.Context, corePath, runtimeDir, configPath string, readinessPorts []int) (*probeProcess, error) {
 	processCtx, cancel := context.WithCancel(ctx)
 	cmd := exec.CommandContext(processCtx, corePath, "-d", runtimeDir, "-f", configPath)
 	output := &limitedBuffer{limit: 8192}
@@ -201,34 +236,55 @@ func startCore(ctx context.Context, corePath, runtimeDir, configPath string, rea
 		cancel()
 		return nil, fmt.Errorf("start isolated Mihomo proxy probe: %w", err)
 	}
-	process := &probeProcess{cmd: cmd, waitCh: make(chan error, 1), output: output}
+	process := &probeProcess{cmd: cmd, done: make(chan struct{}), output: output}
 	go func() {
-		process.waitCh <- cmd.Wait()
+		process.waitErr = cmd.Wait()
+		close(process.done)
 		cancel()
 	}()
 
-	deadline := time.NewTimer(12 * time.Second)
+	deadline := time.NewTimer(30 * time.Second)
 	defer deadline.Stop()
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
-	address := "127.0.0.1:" + strconv.Itoa(readinessPort)
 	for {
-		connection, err := net.DialTimeout("tcp", address, 200*time.Millisecond)
-		if err == nil {
-			_ = connection.Close()
+		ready := readyListenerCount(readinessPorts)
+		if ready == len(readinessPorts) {
 			return process, nil
 		}
 		select {
-		case waitErr := <-process.waitCh:
-			return nil, fmt.Errorf("isolated Mihomo exited before proxy probe was ready: %v: %s", waitErr, output.String())
+		case <-process.done:
+			return nil, fmt.Errorf("isolated Mihomo exited before proxy probe was ready: %v: %s", process.waitErr, output.String())
 		case <-ticker.C:
 		case <-deadline.C:
 			process.stop()
-			return nil, fmt.Errorf("isolated Mihomo did not become ready for proxy probe: %s", output.String())
+			return nil, fmt.Errorf("isolated Mihomo made %d of %d proxy probe listeners ready before timeout: %s", ready, len(readinessPorts), output.String())
 		case <-ctx.Done():
 			process.stop()
 			return nil, ctx.Err()
 		}
+	}
+}
+
+func readyListenerCount(ports []int) int {
+	ready := 0
+	for _, port := range ports {
+		connection, err := net.DialTimeout("tcp", "127.0.0.1:"+strconv.Itoa(port), 50*time.Millisecond)
+		if err != nil {
+			continue
+		}
+		_ = connection.Close()
+		ready++
+	}
+	return ready
+}
+
+func (p *probeProcess) exitError() error {
+	select {
+	case <-p.done:
+		return fmt.Errorf("isolated Mihomo exited during proxy probe: %v: %s", p.waitErr, p.output.String())
+	default:
+		return nil
 	}
 }
 
@@ -237,12 +293,17 @@ func (p *probeProcess) stop() {
 		if p.cmd.Process == nil {
 			return
 		}
+		select {
+		case <-p.done:
+			return
+		default:
+		}
 		_ = p.cmd.Process.Signal(os.Interrupt)
 		select {
-		case <-p.waitCh:
+		case <-p.done:
 		case <-time.After(2 * time.Second):
 			_ = p.cmd.Process.Kill()
-			<-p.waitCh
+			<-p.done
 		}
 	})
 }
@@ -257,12 +318,9 @@ func (b *limitedBuffer) Write(data []byte) (int, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	original := len(data)
-	remaining := b.limit - len(b.data)
-	if remaining > 0 {
-		if len(data) > remaining {
-			data = data[:remaining]
-		}
-		b.data = append(b.data, data...)
+	b.data = append(b.data, data...)
+	if len(b.data) > b.limit {
+		b.data = bytes.Clone(b.data[len(b.data)-b.limit:])
 	}
 	return original, nil
 }

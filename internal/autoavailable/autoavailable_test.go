@@ -154,38 +154,38 @@ func TestRebuildMarksUnresolvableCandidateUnavailableAndProbesRemainingCandidate
 	}
 }
 
-func TestRebuildFailsExplicitlyWhenEveryCandidateIsUnresolvable(t *testing.T) {
+func TestRebuildPublishesEmptyResultWhenEveryCandidateIsUnresolvable(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "auto-available.json")
-	_, err := Rebuild(context.Background(), []map[string]any{{"name": "broken", "server": "missing.example", "port": 443}}, fakeProber{}, Options{
+	result, err := Rebuild(context.Background(), []map[string]any{{"name": "broken", "server": "missing.example", "port": 443}}, fakeProber{}, Options{
 		SnapshotPath: path,
 		Resolver:     errorResolver{errors: map[string]error{"missing.example": errors.New("no such host")}},
 	})
-	if !errors.Is(err, ErrNoQualifiedCandidates) {
-		t.Fatalf("error = %v, want ErrNoQualifiedCandidates", err)
+	if err != nil || result.QualifiedCount != 0 || result.UnavailableCount != 1 {
+		t.Fatalf("result = %+v error = %v, want explicit empty capability", result, err)
 	}
-	if _, statErr := os.Stat(path); !errors.Is(statErr, os.ErrNotExist) {
-		t.Fatalf("failed qualification published snapshot: %v", statErr)
+	if qualified, loadErr := LoadQualified(path); loadErr != nil || len(qualified) != 0 {
+		t.Fatalf("qualified = %v error = %v, want published empty capability", qualified, loadErr)
 	}
 }
 
-func TestRebuildFailsExplicitlyWhenNoCandidatePasses(t *testing.T) {
+func TestRebuildPublishesEmptyResultWhenNoCandidatePasses(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "auto-available.json")
-	_, err := Rebuild(context.Background(), []map[string]any{{"name": "US01", "server": "192.0.2.10", "port": 443}}, fakeProber{}, Options{SnapshotPath: path})
-	if !errors.Is(err, ErrNoQualifiedCandidates) {
-		t.Fatalf("error = %v, want ErrNoQualifiedCandidates", err)
+	result, err := Rebuild(context.Background(), []map[string]any{{"name": "US01", "server": "192.0.2.10", "port": 443}}, fakeProber{}, Options{SnapshotPath: path})
+	if err != nil || result.QualifiedCount != 0 || result.UnavailableCount != 1 {
+		t.Fatalf("result = %+v error = %v, want explicit empty capability", result, err)
 	}
-	if _, loadErr := LoadQualified(path); loadErr == nil {
-		t.Fatal("failed qualification unexpectedly published a snapshot")
+	if qualified, loadErr := LoadQualified(path); loadErr != nil || len(qualified) != 0 {
+		t.Fatalf("qualified = %v error = %v, want published empty capability", qualified, loadErr)
 	}
 }
 
-func TestLoadQualifiedRejectsExplicitEmptySnapshot(t *testing.T) {
+func TestLoadQualifiedAcceptsExplicitEmptySnapshot(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "auto-available.json")
 	if err := os.WriteFile(path, []byte(`{"version":1,"profile":"network.connectivity.g204.v1","updated_at":"now","qualified":[],"nodes":{}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := LoadQualified(path); err == nil {
-		t.Fatal("empty automatic connectivity snapshot was accepted")
+	if qualified, err := LoadQualified(path); err != nil || len(qualified) != 0 {
+		t.Fatalf("qualified = %v error = %v, want explicit empty capability", qualified, err)
 	}
 }
 
@@ -195,7 +195,8 @@ func TestRebuildRemovesPreviouslyAvailableEndpointAfterOneFailure(t *testing.T) 
 	if _, err := Rebuild(context.Background(), proxies, fakeProber{available: map[string]bool{"US01": true}}, Options{SnapshotPath: path}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Rebuild(context.Background(), proxies, fakeProber{}, Options{SnapshotPath: path}); !errors.Is(err, ErrQualificationCollapse) {
-		t.Fatalf("first failure error = %v, want collapse", err)
+	result, err := Rebuild(context.Background(), proxies, fakeProber{}, Options{SnapshotPath: path})
+	if err != nil || result.QualifiedCount != 0 || result.ObservedQualifiedCount != 0 || result.UnavailableCount != 1 {
+		t.Fatalf("result = %+v error = %v, want explicit empty capability after first failure", result, err)
 	}
 }

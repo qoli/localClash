@@ -4,6 +4,78 @@ This document records router-facing usability and performance incidents that
 must be investigated with evidence. Do not treat post-removal or wrong-window
 samples as proof for an incident.
 
+## 2026-09-01 Smart Probe Listener Readiness Produced False G204 Zero
+
+Status: fixed in source; repeated ARM64 WAN-level acceptance passed; pending release.
+
+Observed symptom:
+
+- Three real sources downloaded and merged successfully to 456 proxies, then the
+  g204 stage failed after 46.224 seconds with
+  `automatic connectivity qualification collapsed: 20 previously-qualified endpoints failed`.
+- The old collapse path discarded the candidate snapshot, so the task retained
+  neither individual endpoint errors nor the observed empty result and reported
+  the entire subscription setup as `command_failed`.
+- On the same physical ARM64 router and same Smart core, isolated retries shortly
+  afterward qualified nonzero g204 sets. The zero therefore required separating
+  candidate observations from the isolated Smart process and its listeners.
+- The disposable iStoreOS VM's upstream is the 6.1 host's transparent proxy, not
+  a bare WAN path. Its naturally qualified counts cannot represent the physical
+  router's WAN ingress quality; VM evidence is limited to deterministic control
+  flow, generated structure, and Smart config validation.
+- With four fixed subscription bodies and 530 merged proxies, a failing ARM run
+  completed g204 in about 10 seconds with zero qualified nodes. Its snapshot held
+  152 loopback `connection refused`, 125 `connection reset by peer`, 100
+  `unexpected EOF`, and 14 `EOF` observations. Memory, swap, OOM kills and file
+  descriptor limits did not explain that correlated local failure.
+- The isolated Smart startup gate waited only for the first candidate listener.
+  Workers then contacted all 389 or 390 listeners while the slower ARM core was
+  still creating the later listeners. The faster x86_64 environment hid this
+  startup race.
+
+Root-cause resolution:
+
+- Isolated probe startup now waits for every candidate listener before launching
+  HTTP workers. A 30-second readiness failure reports the exact ready/expected
+  listener count instead of publishing node failures.
+- The probe session retains the tail of Smart output, reports a post-readiness
+  process exit, and verifies all listeners again after workers finish. A process
+  or listener infrastructure failure therefore fails the refresh and cannot
+  enter the empty-result fallback path.
+
+Empty-measurement handling:
+
+- Completed g204 and ChatGPT measurements now publish explicit empty snapshots.
+  Structural candidate errors and probe infrastructure errors remain failures.
+- ChatGPT receives only the same-refresh g204 list; an empty list produces an
+  empty ChatGPT snapshot without probing all subscription nodes.
+- CLI subscription refresh can commit subscription artifacts plus the two empty
+  capability facts. When g204 is empty, `⚡ 自动选择` uses its original
+  all-subscription-nodes automatic structure.
+- MCP atomically promotes the empty snapshot set and renders the fallback
+  automatic group. ChatGPT stays empty; no stale or alternate qualification
+  result is presented as g204-qualified.
+
+Acceptance evidence:
+
+- A dedicated WireGuard interface connects iStoreOS QEMU to the physical router.
+  Its default route uses the tunnel while an explicit endpoint route remains on
+  QEMU NAT. The router forwards that interface only to WAN and places it in the
+  localClash takeover bypass set. Before the run, the VM public IPv4 digest was
+  read back equal to the router WAN digest; WireGuard handshake and transfer
+  counters increased during the probes.
+- The same fixed four subscription bodies produced 530 proxies in both
+  environments. The WireGuard/x86_64 control qualified 234 g204 and 86 ChatGPT
+  endpoints. This control proves the VM used the intended WAN entry; it is not
+  ARM behavior proof.
+- The readiness-fixed ARM64 candidate ran three consecutive refreshes through
+  the physical router WAN. G204 qualified 86, 69 and 67 endpoints; ChatGPT
+  qualified 19, 17 and 20. All three runs exited 0, each g204 pass took about
+  112 seconds, and none reported an isolated-process or listener failure.
+- The router's production subscription store, generated config and active Core
+  binary were not replaced for this acceptance. Fixed inputs and candidate
+  binaries ran only from isolated temporary directories.
+
 ## 2026-09-01 Large Subscription Capability Refresh Hit Fixed Step Timeout
 
 Status: fixed in source; pending router deployment and acceptance.
@@ -24,8 +96,9 @@ Resolution:
 - ChatGPT qualification consumes only the current g204-qualified unique endpoint
   names while retaining the complete proxy definitions needed by dialer chains.
   `ChatGPT-available` is therefore a strict subset of the same-refresh g204 result.
-- ChatGPT observes each candidate once. A failed Statsig observation removes the
-  candidate immediately without retry or failure hysteresis.
+- ChatGPT allows one retry after an initial failed Statsig observation. Either
+  attempt may qualify the candidate; two failures remove it without cross-refresh
+  failure hysteresis.
 - Product CLI and MCP subscription refresh no longer add a node-count-independent
   parent deadline. Individual subscription downloads and capability HTTP requests
   remain bounded, and caller cancellation still propagates through the operation.

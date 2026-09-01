@@ -92,6 +92,37 @@ func TestResolveRequiredCapabilityRejectsEmptyQualification(t *testing.T) {
 	}
 }
 
+func TestResolveEmptyG204CapabilityFallsBackToOriginalAutomaticStructure(t *testing.T) {
+	resolved, err := Resolve(ResolveOptions{
+		Config: Config{ProxyGroups: map[string]ProxyGroup{
+			"⚡ 自动选择": {Mode: "auto", Capability: automaticConnectivityCapability},
+		}},
+		SubscriptionNodes: []SubscriptionNode{{Name: "US 01"}, {Name: "JP 01"}},
+		CapabilityNodes:   map[string][]string{automaticConnectivityCapability: {}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := resolved.Selection.ProxyGroups["⚡ 自动选择"].Nodes; !reflect.DeepEqual(got, []string{"US 01", "JP 01"}) {
+		t.Fatalf("fallback nodes = %v, want all subscription nodes in original order", got)
+	}
+	if len(resolved.ProxyGroups) != 1 || !resolved.ProxyGroups[0].CapabilityFallbackApplied {
+		t.Fatalf("proxy group result = %+v, want observable capability fallback", resolved.ProxyGroups)
+	}
+}
+
+func TestResolveMissingG204CapabilityDoesNotFallback(t *testing.T) {
+	_, err := Resolve(ResolveOptions{
+		Config: Config{ProxyGroups: map[string]ProxyGroup{
+			"⚡ 自动选择": {Mode: "auto", Capability: automaticConnectivityCapability},
+		}},
+		SubscriptionNodes: []SubscriptionNode{{Name: "US 01"}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "run subscriptions_refresh") {
+		t.Fatalf("error = %v, want missing capability to remain explicit", err)
+	}
+}
+
 func TestResolveCapabilityUsesPersistedSelectionOutsideRefresh(t *testing.T) {
 	config := Config{
 		ProxyGroups: map[string]ProxyGroup{

@@ -1319,10 +1319,17 @@ sources:
 	}
 }
 
-func TestSubscriptionsRefreshCapabilityCollapseLeavesGeneratedConfigUnchanged(t *testing.T) {
+func TestSubscriptionsRefreshFallsBackToOriginalAutomaticGroupWhenG204IsEmpty(t *testing.T) {
 	dir := t.TempDir()
 	intent := filepath.Join(dir, "localclash-intent.json")
 	generated := filepath.Join(dir, "config.yaml")
+	subscription := filepath.Join(dir, "subscription.gob")
+	capabilityRoot := filepath.Join(dir, "capabilities")
+	rulesCache := filepath.Join(dir, "rules")
+	writeMCPPackIndex(t, rulesCache, rules.PackCache{
+		Version: 1, Source: "blackmatrix7", Adapter: "blackmatrix7", Renderable: true,
+		Packs: []rules.Pack{mcpBlackmatrixPack("Unused", "Auto")},
+	})
 	writeMCPFile(t, intent, `{
   "version": 5,
   "proxy_groups": {
@@ -1339,34 +1346,59 @@ func TestSubscriptionsRefreshCapabilityCollapseLeavesGeneratedConfigUnchanged(t 
   }
 }`)
 	writeMCPFile(t, generated, "sentinel: previous-generated-config\n")
+	writeMCPFile(t, subscription, "proxies:\n  - name: US 01\n    type: ss\n    server: us.example.com\n    port: 443\n    cipher: aes-128-gcm\n    password: secret\n")
+	writeMCPFile(t, filepath.Join(capabilityRoot, "auto-available.json"), fmt.Sprintf(`{"version":1,"profile":%q,"updated_at":"old","qualified":["US 01"],"nodes":{}}`, autoavailable.ProfileID))
+	writeMCPFile(t, filepath.Join(capabilityRoot, "chatgpt-available.json"), fmt.Sprintf(`{"version":5,"profile":%q,"updated_at":"old","qualified":["US 01"],"nodes":{}}`, chatgptavailable.ProfileID))
 
 	server := NewServer()
-	server.rebuildAutoAvailable = func(context.Context, []map[string]any, string, string, string, string) (autoavailable.Result, error) {
-		return autoavailable.Result{Profile: autoavailable.ProfileID, Qualified: []string{"US 01"}, QualifiedCount: 1}, nil
+	stubMihomoCandidateTest(t, server)
+	server.rebuildAutoAvailable = func(_ context.Context, _ []map[string]any, _, _, candidate, previous string) (autoavailable.Result, error) {
+		if previous != filepath.Join(capabilityRoot, "auto-available.json") {
+			t.Fatalf("automatic previous snapshot = %q", previous)
+		}
+		writeMCPFile(t, candidate, fmt.Sprintf(`{"version":1,"profile":%q,"updated_at":"new","qualified":[],"nodes":{}}`, autoavailable.ProfileID))
+		return autoavailable.Result{Profile: autoavailable.ProfileID, SnapshotPath: candidate, Candidates: 1, Probed: 1, Qualified: []string{}, UnavailableCount: 1}, nil
 	}
-	server.rebuildChatGPT = func(context.Context, []map[string]any, []string, string, string, string, string) (chatgptavailable.Result, error) {
-		return chatgptavailable.Result{}, fmt.Errorf("%w: carrier outage candidate", chatgptavailable.ErrQualificationCollapse)
+	server.rebuildChatGPT = func(_ context.Context, _ []map[string]any, eligible []string, _, _, candidate, previous string) (chatgptavailable.Result, error) {
+		if len(eligible) != 0 || previous != filepath.Join(capabilityRoot, "chatgpt-available.json") {
+			t.Fatalf("ChatGPT eligible = %v previous = %q", eligible, previous)
+		}
+		writeMCPFile(t, candidate, fmt.Sprintf(`{"version":5,"profile":%q,"updated_at":"new","qualified":[],"nodes":{}}`, chatgptavailable.ProfileID))
+		return chatgptavailable.Result{Profile: chatgptavailable.ProfileID, SnapshotPath: candidate, Qualified: []string{}}, nil
 	}
 	impact := server.evaluateLocalClashAfterRefresh(
 		context.Background(),
 		intent,
 		filepath.Join(dir, "selection.gob"),
-		filepath.Join(dir, "subscription.gob"),
+		subscription,
 		filepath.Join(dir, "subscriptions.json"),
 		filepath.Join(dir, "subscriptions"),
-		filepath.Join(dir, "rules"),
+		rulesCache,
 		filepath.Join(dir, "runtime.json"),
 		generated,
 		filepath.Join(dir, "mihomo"),
-		filepath.Join(dir, "capabilities"),
+		capabilityRoot,
 		[]localconfig.SubscriptionNode{{Name: "US 01"}},
 		map[string]any{"proxies": []any{map[string]any{"name": "US 01", "type": "ss"}}},
 	)
-	if impact.State != "capability_probe_failed" || impact.AppliedAuto || !impact.RequiresAgentReplan {
-		t.Fatalf("impact = %+v, want explicit capability failure without apply", impact)
+	if impact.State != "auto_applied" || !impact.AppliedAuto || impact.RequiresAgentReplan || !impact.CapabilityPromoted {
+		t.Fatalf("impact = %+v, want original automatic fallback to apply", impact)
 	}
-	if got := readMCPFile(t, generated); got != "sentinel: previous-generated-config\n" {
-		t.Fatalf("generated config changed after collapse: %q", got)
+	selectionResult, err := rules.LoadSelection(filepath.Join(dir, "selection.gob"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := selectionResult.ProxyGroups["Auto"].Nodes; !reflect.DeepEqual(got, []string{"US 01"}) {
+		t.Fatalf("automatic fallback proxies = %+v, want all subscription nodes", got)
+	}
+	if got := readMCPFile(t, generated); got == "sentinel: previous-generated-config\n" {
+		t.Fatalf("generated config was not promoted after automatic fallback")
+	}
+	if got, err := autoavailable.LoadQualified(filepath.Join(capabilityRoot, "auto-available.json")); err != nil || len(got) != 0 {
+		t.Fatalf("automatic capability = %v error = %v, want promoted empty result", got, err)
+	}
+	if got, err := chatgptavailable.LoadQualified(filepath.Join(capabilityRoot, "chatgpt-available.json")); err != nil || len(got) != 0 {
+		t.Fatalf("ChatGPT capability = %v error = %v, want promoted empty result", got, err)
 	}
 }
 

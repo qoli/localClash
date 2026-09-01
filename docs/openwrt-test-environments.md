@@ -320,6 +320,43 @@ Use this environment for iStore `.run` installation, iStoreOS-specific package
 dependencies, LuCI/procd behavior, firmware reboot, and takeover restoration.
 It is still x86_64 and must not be used as proof of ARM64 Smart-core behavior.
 
+### WireGuard WAN-equivalent entry
+
+QEMU user-mode NAT normally exits through the 6.1 host, whose transparent proxy
+changes the network seen by capability probes. Do not use that natural upstream
+as evidence for the physical router's bare-WAN quality.
+
+For WAN-level integration testing, the current persistent test overlay has a
+dedicated WireGuard link:
+
+```text
+router interface: wg_istore_wan, 10.66.67.1/30, UDP 51821
+iStore interface: wg_istore_wan, 10.66.67.2/30
+iStore default:   dev wg_istore_wan, metric 5
+endpoint route:   router endpoint through eth0/QEMU NAT
+router forwarding: wg_istore_wan -> wan
+```
+
+The router network section carries `localclash_bypass=1`. The matching takeover
+helper builds an nftables interface set and returns traffic from that interface
+before localClash TCP redirect, UDP/TUN marking and DNS hijack. This prevents the
+test tunnel from re-entering the transparent proxy it is intended to bypass.
+WireGuard private keys remain device-local and must not be copied into this
+repository or diagnostic output.
+
+Before accepting a WAN-level run, verify all of the following:
+
+- the endpoint route still uses the original QEMU WAN rather than the tunnel
+- the VM default route uses `wg_istore_wan`
+- a recent handshake exists and transfer counters grow during the test
+- the router takeover bypass set contains `wg_istore_wan`
+- the VM public IPv4 digest equals the router WAN public IPv4 digest
+
+This topology proves an equivalent WAN entry for x86_64 product-flow tests. It
+still does not prove ARM64 Smart behavior. For that boundary, use the same fixed
+subscription inputs with an isolated ARM64 candidate on the physical router and
+do not replace the router's production subscription store or active Core.
+
 For live-router Smart validation, use an isolated temporary runtime directory
 and copy only validation inputs such as `Model.bin`, geodata/mmdb files, and
 rule providers. Do not point `mihomo -t` at the live `.runtime/mihomo` directory

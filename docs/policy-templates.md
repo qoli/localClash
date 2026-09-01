@@ -88,19 +88,24 @@ weight download.
 
 Capability groups are derived configuration, not Mihomo health-check aliases.
 localClash starts an isolated temporary Mihomo and assigns one loopback mixed
-listener to every capability candidate. The automatic-connectivity capability
+listener to every capability candidate. It waits for every listener before
+starting HTTP workers and checks the process plus all listeners again after the
+workers complete; a startup race or listener collapse is an infrastructure
+failure, not an empty capability observation. The automatic-connectivity capability
 sends a strict generate-204 request; the ChatGPT capability sends the Statsig
 initialize request only for the current g204-qualified unique endpoints. Endpoint
-checks use 16-worker bounded concurrency, and each capability makes exactly one
-request per candidate with no retry. Large subscriptions finish according to
+checks use 16-worker bounded concurrency. A failed g204 or ChatGPT request is
+retried once; either attempt may qualify the candidate, while two failures remove
+it. Large subscriptions finish according to
 their finite batch count and per-request timeout rather than an unrelated fixed
 whole-batch deadline. The probes do not mutate or depend on the active core's
 `alive` state. The resulting secret-safe snapshot
 is stored below `.runtime/capabilities/`; raw proxy credentials are never written
-there. Probe infrastructure errors fail the localClash refresh impact explicitly. If an
-existing non-empty qualified set suddenly collapses to zero, the snapshot and
-generated config are not replaced, so a transient carrier outage cannot silently
-rewrite the policy graph.
+there. Probe infrastructure errors still fail the localClash refresh impact
+explicitly. A completed measurement with zero qualified nodes is different: it
+publishes an explicit empty capability snapshot instead of being misclassified
+as probe failure. No previous snapshot, alternate endpoint, or all-node set is
+substituted for the observed result.
 
 DNS resolution is part of automatic-connectivity candidate eligibility rather
 than probe infrastructure. A hostname that returns no address is recorded as an
@@ -108,7 +113,8 @@ explicit unavailable candidate with zero HTTP attempts and its resolver error;
 other candidates continue through the strict g204 probe. Structural subscription
 errors such as duplicate names, missing or cyclic `dialer-proxy` references,
 missing servers, and invalid ports still fail the entire qualification. If no
-candidate qualifies, no snapshot is published.
+candidate qualifies, the snapshot records the per-candidate failures and an
+explicit empty `qualified` list.
 
 The product CLI `subscription refresh --json` and MCP `subscriptions_refresh`
 both rebuild every configured capability snapshot. The snapshots record the
@@ -117,10 +123,15 @@ ordered qualified node names as derived state so a following `config render
 patch registry recompiles `localclash-intent.json`. A missing, legacy, malformed,
 or unsupported capability snapshot fails explicitly and requires another
 subscription refresh. An optional capability may resolve to an explicit empty
-set; required capability groups still fail when no node qualifies.
+set. A required empty capability still fails during config resolution except
+for `network.connectivity.g204.v1`, whose explicit empty result restores the
+original all-subscription-nodes `⚡ 自动选择` structure.
 MCP subscription refresh renders a candidate config, runs isolated `mihomo -t`,
 and only then promotes the candidate snapshot and config. Applying the promoted
 config to an active runtime remains the explicit confirm-required hot-reload step.
+When g204 is explicitly empty, MCP atomically promotes the same-refresh empty
+capability snapshots together with the validated fallback config. ChatGPT stays
+empty and the runtime still requires an explicit hot reload.
 The product `config apply-template` input can set `refresh_subscription: true`
 to place template import, subscription refresh, all configured capability
 snapshots, resolved selection, rendered config, and recorded `mihomo -t`
@@ -128,19 +139,24 @@ attestation in one rollback-protected material transaction. This is the LuCI
 one-click-update and configured first-use path; callers do not need to coordinate
 those intermediate states themselves.
 
-The automatic-connectivity qualification is intentionally strict: one successful
-HTTP 204 observation admits a candidate, while one failed observation removes it.
-It has no per-candidate retry or failure hysteresis because `⚡ 自动选择` is a
-high-quality input set for Mihomo Smart, not a list of marginal paths that need
-retries to work. ChatGPT Statsig qualification is equally strict about observed
-availability: one failed observation removes a candidate without retry or failure
-hysteresis. Consequently, `ChatGPT-available` is always a subset of the current
-g204-qualified set.
+The automatic-connectivity qualification requires one strict HTTP 204 response.
+An initial failure receives one bounded retry; two failures remove the candidate.
+ChatGPT Statsig qualification uses the same two-attempt failure threshold.
+There is no cross-refresh failure hysteresis or stale-result retention.
+Consequently, `ChatGPT-available` is always a subset of the current g204-qualified
+set.
 
 When Smart Core is active, `⚡ 自动选择` applies HK `6`, JP `5`, SG `4`, TW `3`,
 US `2`, and Other `1` after g204 qualification and endpoint deduplication. The
 weights are soft Smart preferences, not a fallback chain. Meta Core receives the
 same qualified candidate set as a normal `url-test` group.
+
+If a completed g204 probe qualifies no nodes, `⚡ 自动选择` falls back to its
+pre-g204 structure: the current subscription's complete node list in source
+order, with the same automatic group type and Smart priorities. The empty g204
+snapshot remains the observed capability fact. This fallback does not apply to
+ChatGPT qualification and does not conceal probe-process, missing-snapshot, or
+malformed-snapshot errors.
 
 When Smart Core is active, `ChatGPT-available` applies ordered proxy-name labels
 and weights: US `5`, JP `4`, SG `3`, TW `2`, and Other `1`. This is a soft

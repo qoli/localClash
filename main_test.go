@@ -21,6 +21,7 @@ import (
 
 	"localclash/internal/appinit"
 	"localclash/internal/autoavailable"
+	"localclash/internal/capability"
 	"localclash/internal/chatgptavailable"
 	"localclash/internal/configpatch"
 	"localclash/internal/coredownload"
@@ -647,6 +648,89 @@ custom_rules:
 	}
 	if text := string(generated); !strings.Contains(text, "name: ChatGPT-available") || !strings.Contains(text, "US 01") {
 		t.Fatalf("one-click render did not consume refreshed capability:\n%s", text)
+	}
+}
+
+func TestRunProductSubscriptionRefreshFallsBackToOriginalAutomaticGroupWhenG204IsEmpty(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	t.Setenv("LOCALCLASH_WORKDIR", dir)
+
+	subscriptionServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("proxies:\n  - name: US 01\n    type: ss\n    server: us.example.com\n    port: 443\n    cipher: aes-128-gcm\n    password: secret\n"))
+	}))
+	t.Cleanup(subscriptionServer.Close)
+	replace := true
+	if _, err := subscriptions.Configure(subscriptions.ConfigureOptions{
+		ConfigPath: filepath.Join(dir, "localclash-subscriptions.json"),
+		Sources:    []subscriptions.Source{{URL: subscriptionServer.URL + "/sub", DisplayName: "01"}},
+		Replace:    &replace,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	writeMainTestFile(t, filepath.Join(dir, "localclash-intent.json"), `version: 4
+proxy_groups:
+  Auto:
+    mode: auto
+    capability: network.connectivity.g204.v1
+  ChatGPT-available:
+    mode: auto
+    capability: openai.chatgpt.statsig.v1
+    optional: true
+`)
+	writeMainTestPackIndex(t, filepath.Join(dir, ".runtime", "rules", "packs"))
+
+	previousAuto := rebuildProductAutoAvailable
+	previousChat := rebuildProductChatGPT
+	t.Cleanup(func() {
+		rebuildProductAutoAvailable = previousAuto
+		rebuildProductChatGPT = previousChat
+	})
+	rebuildProductAutoAvailable = func(_ context.Context, _ []map[string]any, _, _, candidate, _ string) (autoavailable.Result, error) {
+		writeMainTestFile(t, candidate, fmt.Sprintf(`{"version":1,"profile":%q,"updated_at":"now","qualified":[],"nodes":{}}`, autoavailable.ProfileID))
+		return autoavailable.Result{Profile: autoavailable.ProfileID, SnapshotPath: candidate, Candidates: 1, Probed: 1, Qualified: []string{}, UnavailableCount: 1}, nil
+	}
+	rebuildProductChatGPT = func(_ context.Context, _ []map[string]any, eligible []string, _, _, candidate, _ string) (chatgptavailable.Result, error) {
+		if len(eligible) != 0 {
+			t.Fatalf("ChatGPT eligible = %v, want empty same-refresh g204 set", eligible)
+		}
+		writeMainTestFile(t, candidate, fmt.Sprintf(`{"version":5,"profile":%q,"updated_at":"now","qualified":[],"nodes":{}}`, chatgptavailable.ProfileID))
+		return chatgptavailable.Result{Profile: chatgptavailable.ProfileID, SnapshotPath: candidate, Qualified: []string{}}, nil
+	}
+
+	refreshOutput := captureStdout(t, func() error { return run([]string{"subscription", "refresh", "--json"}) })
+	var refreshResult struct {
+		OK     bool `json:"ok"`
+		Status struct {
+			Capabilities []capability.Result `json:"capabilities"`
+		} `json:"status"`
+	}
+	if err := json.Unmarshal([]byte(refreshOutput), &refreshResult); err != nil {
+		t.Fatalf("subscription refresh JSON = %q, error = %v", refreshOutput, err)
+	}
+	if !refreshResult.OK || len(refreshResult.Status.Capabilities) != 2 || refreshResult.Status.Capabilities[0].QualifiedCount != 0 || refreshResult.Status.Capabilities[1].QualifiedCount != 0 {
+		t.Fatalf("subscription refresh result = %+v, want successful explicit empty capability facts", refreshResult)
+	}
+	if qualified, err := autoavailable.LoadQualified(filepath.Join(dir, ".runtime", "capabilities", "auto-available.json")); err != nil || len(qualified) != 0 {
+		t.Fatalf("automatic capability = %v error = %v", qualified, err)
+	}
+	if qualified, err := chatgptavailable.LoadQualified(filepath.Join(dir, ".runtime", "capabilities", "chatgpt-available.json")); err != nil || len(qualified) != 0 {
+		t.Fatalf("ChatGPT capability = %v error = %v", qualified, err)
+	}
+	if _, renderErr := captureStdoutAllowError(t, func() error { return run([]string{"config", "render", "--json"}) }); renderErr != nil {
+		t.Fatalf("render with original automatic fallback: %v", renderErr)
+	}
+	_, err := os.Stat(filepath.Join(dir, ".runtime", "mihomo", "config.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	selection, err := rules.LoadSelection(filepath.Join(dir, "localclash-packs.gob"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	automatic := selection.ProxyGroups["Auto"]
+	if !reflect.DeepEqual(automatic.Nodes, []string{"US 01"}) {
+		t.Fatalf("automatic fallback group = %+v, want all subscription nodes", automatic)
 	}
 }
 
