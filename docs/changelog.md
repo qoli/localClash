@@ -16,19 +16,36 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 
 ## Unreleased
 
-- `ChatGPT-available` 現在只探測同一輪 g204 已通過的唯一端點，不再對完整
-  訂閱重複處理已知無效節點；每個 Statsig 候選只觀測一次，失敗立即淘汰。
-- 訂閱刷新不再使用與節點數無關的固定整批 deadline。每個下載與能力 HTTP
-  請求仍有自己的有限 timeout，CLI、MCP 與 LuCI 背景任務保留明確取消路徑。
+- LuCI 訂閱刷新與預設策略材料交易不再使用固定 240 秒整步 timeout；Core
+  子操作仍各自有界，背景任務保留 heartbeat 與使用者中止路徑。
 
 ## 目前最新版本
 
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
-| localClash Core | [v0.1.72](https://github.com/qoli/localClash/releases/tag/v0.1.72) | 2026-09-01 UTC+8 |
+| localClash Core | [v0.1.73](https://github.com/qoli/localClash/releases/tag/v0.1.73) | 2026-09-01 UTC+8 |
 | localclash-luci | [v0.1.0-64](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-64) | 2026-09-01 UTC+8 |
 
 ## 2026-09-01
+
+### localClash Core v0.1.73
+
+Changes:
+
+- `ChatGPT-available` 改為只探測同一輪 g204 已通過的唯一端點，不再對完整
+  訂閱重複處理已知無效節點；每個 Statsig 候選只觀測一次，失敗立即淘汰。
+- ChatGPT 能力明確要求同一次刷新包含 g204，並保留完整代理定義供
+  `dialer-proxy` 鏈使用；啟動事件會記錄輸入能力與候選數。
+- CLI 與 MCP 訂閱刷新移除與節點數無關的固定整批 deadline。訂閱下載、
+  Mihomo 啟動與每個能力 HTTP 請求仍各自有界，caller cancellation 繼續傳遞。
+
+Verification:
+
+- `go test ./...`、`go vet ./...`、g204→ChatGPT 候選收斂測試、單次失敗淘汰
+  測試與 `git diff --check` 全部通過。
+- 真實故障日誌中的 533 個合併節點先由 g204 探測 394 個唯一候選並選出
+  233 個；新流程會把這 233 個結果直接作為 ChatGPT 輸入，而不是再次處理
+  全部 533 個節點。實體路由器部署後重跑仍是獨立驗收邊界。
 
 ### localClash Core v0.1.72
 
