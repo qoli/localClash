@@ -477,6 +477,9 @@ func TestRunProductConfigRenderUsesQualifiedCapabilitySnapshot(t *testing.T) {
 `)
 	writeMainTestFile(t, "localclash-intent.json", `version: 4
 proxy_groups:
+  Auto:
+    mode: auto
+    capability: network.connectivity.g204.v1
   ChatGPT-available:
     mode: auto
     capability: openai.chatgpt.statsig.v1
@@ -491,6 +494,13 @@ custom_rules:
 	writeMainTestFile(t, filepath.Join(".runtime", "capabilities", "chatgpt-available.json"), `{
   "version": 5,
   "profile": "openai.chatgpt.statsig.v1",
+  "updated_at": "2026-08-15T00:00:00Z",
+  "qualified": ["US 01"],
+	  "nodes": {}
+	}`)
+	writeMainTestFile(t, filepath.Join(".runtime", "capabilities", "auto-available.json"), `{
+  "version": 1,
+  "profile": "network.connectivity.g204.v1",
   "updated_at": "2026-08-15T00:00:00Z",
   "qualified": ["US 01"],
   "nodes": {}
@@ -544,6 +554,9 @@ func TestRunProductSubscriptionRefreshBuildsCapabilityForFollowingRender(t *test
 	}
 	writeMainTestFile(t, filepath.Join(dir, "localclash-intent.json"), `version: 4
 proxy_groups:
+  Auto:
+    mode: auto
+    capability: network.connectivity.g204.v1
   ChatGPT-available:
     mode: auto
     capability: openai.chatgpt.statsig.v1
@@ -557,13 +570,24 @@ custom_rules:
 `)
 	writeMainTestPackIndex(t, filepath.Join(dir, ".runtime", "rules", "packs"))
 
+	previousAuto := rebuildProductAutoAvailable
 	previousRebuild := rebuildProductChatGPT
-	t.Cleanup(func() { rebuildProductChatGPT = previousRebuild })
+	t.Cleanup(func() {
+		rebuildProductAutoAvailable = previousAuto
+		rebuildProductChatGPT = previousRebuild
+	})
+	rebuildProductAutoAvailable = func(_ context.Context, _ []map[string]any, _, _, snapshotPath, _ string) (autoavailable.Result, error) {
+		writeMainTestFile(t, snapshotPath, fmt.Sprintf(`{"version":1,"profile":%q,"updated_at":"now","qualified":["US 01"],"nodes":{}}`, autoavailable.ProfileID))
+		return autoavailable.Result{Profile: autoavailable.ProfileID, Qualified: []string{"US 01"}, QualifiedCount: 1}, nil
+	}
 	rebuildCalled := false
-	rebuildProductChatGPT = func(_ context.Context, proxies []map[string]any, _, runtimeParent, snapshotPath, previousSnapshotPath string) (chatgptavailable.Result, error) {
+	rebuildProductChatGPT = func(_ context.Context, proxies []map[string]any, eligible []string, _, runtimeParent, snapshotPath, previousSnapshotPath string) (chatgptavailable.Result, error) {
 		rebuildCalled = true
 		if len(proxies) != 1 || proxies[0]["name"] != "US 01" {
 			t.Fatalf("capability proxies = %+v, want refreshed merged proxy", proxies)
+		}
+		if !reflect.DeepEqual(eligible, []string{"US 01"}) {
+			t.Fatalf("ChatGPT eligible nodes = %+v, want g204-qualified US 01", eligible)
 		}
 		if runtimeParent != filepath.Join(dir, ".runtime", "capabilities") || filepath.Dir(snapshotPath) == runtimeParent || previousSnapshotPath != filepath.Join(runtimeParent, "chatgpt-available.json") {
 			t.Fatalf("capability paths = runtime %q candidate %q previous %q", runtimeParent, snapshotPath, previousSnapshotPath)
@@ -601,7 +625,7 @@ custom_rules:
 	if err := json.Unmarshal([]byte(refreshOutput), &refreshResult); err != nil {
 		t.Fatalf("subscription refresh JSON = %q, error = %v", refreshOutput, err)
 	}
-	if !refreshResult.OK || len(refreshResult.Status.Capabilities) != 1 || refreshResult.Status.Capabilities[0].QualifiedCount != 1 {
+	if !refreshResult.OK || len(refreshResult.Status.Capabilities) != 2 || refreshResult.Status.Capabilities[0].QualifiedCount != 1 || refreshResult.Status.Capabilities[1].QualifiedCount != 1 {
 		t.Fatalf("subscription refresh result = %+v, want qualified capability evidence", refreshResult)
 	}
 
@@ -658,7 +682,10 @@ proxy_groups:
 		writeMainTestFile(t, candidate, fmt.Sprintf(`{"version":1,"profile":%q,"updated_at":"new","qualified":["new-auto"],"nodes":{}}`, autoavailable.ProfileID))
 		return autoavailable.Result{Profile: autoavailable.ProfileID, SnapshotPath: candidate, Qualified: []string{"new-auto"}, QualifiedCount: 1}, nil
 	}
-	rebuildProductChatGPT = func(context.Context, []map[string]any, string, string, string, string) (chatgptavailable.Result, error) {
+	rebuildProductChatGPT = func(_ context.Context, _ []map[string]any, eligible []string, _, _, _, _ string) (chatgptavailable.Result, error) {
+		if !reflect.DeepEqual(eligible, []string{"new-auto"}) {
+			t.Fatalf("ChatGPT eligible nodes = %+v, want current g204 result", eligible)
+		}
 		return chatgptavailable.Result{}, fmt.Errorf("Statsig unavailable")
 	}
 
@@ -673,6 +700,13 @@ proxy_groups:
 	}
 	if got, loadErr := chatgptavailable.LoadQualified(filepath.Join(capabilityRoot, "chatgpt-available.json")); loadErr != nil || len(got) != 1 || got[0] != "old-chat" {
 		t.Fatalf("ChatGPT snapshot changed: %v err=%v", got, loadErr)
+	}
+}
+
+func TestValidateSupportedCapabilityProfilesRequiresG204ForChatGPT(t *testing.T) {
+	err := validateSupportedCapabilityProfiles([]string{chatgptavailable.ProfileID})
+	if err == nil || !strings.Contains(err.Error(), autoavailable.ProfileID) {
+		t.Fatalf("error = %v, want explicit g204 prerequisite", err)
 	}
 }
 

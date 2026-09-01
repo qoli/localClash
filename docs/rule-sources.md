@@ -55,7 +55,9 @@ Each candidate is observed once with no retry or failure hysteresis: one success
 admits it and one failure removes it from the high-quality automatic set.
 `openai.chatgpt.statsig.v1` derives its nodes by
 requiring a successful Brotli-compressed Statsig initialization at
-`https://ab.chatgpt.com/v1/initialize` through an isolated temporary Mihomo.
+`https://ab.chatgpt.com/v1/initialize` through an isolated temporary Mihomo. Its
+candidate set is the current `network.connectivity.g204.v1` qualified list, not
+the complete subscription, so it requires g204 qualification in the same refresh.
 HTTP 200, valid JSON, and a non-empty `derived_fields.country` are required.
 Rejection, connection reset, timeout, malformed response, or a bounded-size
 violation removes the candidate after one failed observation without retry or

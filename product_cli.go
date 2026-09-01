@@ -102,7 +102,7 @@ type codedProductError struct {
 }
 
 var downloadCore = coredownload.Download
-var rebuildProductChatGPT = chatgptavailable.RebuildCandidateWithMihomo
+var rebuildProductChatGPT = chatgptavailable.RebuildSelectedCandidateWithMihomo
 var rebuildProductAutoAvailable = autoavailable.RebuildCandidateWithMihomo
 
 func (err codedProductError) Error() string {
@@ -244,8 +244,7 @@ func runProductSubscription(args []string, state appinit.RuntimeState) error {
 		if err := parseJSONOnly("subscription refresh", args[1:]); err != nil {
 			return err
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-		defer cancel()
+		ctx := context.Background()
 		result, err := subscriptions.Refresh(ctx, subscriptions.RefreshOptions{
 			ConfigPath: state.Paths.SubscriptionConfig,
 			RuntimeDir: state.Paths.SubscriptionRuntime,
@@ -304,9 +303,15 @@ func refreshProductCapabilities(ctx context.Context, state appinit.RuntimeState,
 	defer os.RemoveAll(transactionDir)
 	results := make([]capability.Result, 0, len(profiles))
 	promotions := make([]capabilitystore.Item, 0, len(profiles))
+	var g204Qualified []string
 	for _, profile := range profiles {
 		started := time.Now()
-		writeProductCapabilityStage(logOutput, "started", started, nil, map[string]any{"profile": profile, "proxy_count": len(proxies)})
+		startedFields := map[string]any{"profile": profile, "proxy_count": len(proxies)}
+		if profile == chatgptavailable.ProfileID {
+			startedFields["input_candidates"] = len(g204Qualified)
+			startedFields["input_profile"] = autoavailable.ProfileID
+		}
+		writeProductCapabilityStage(logOutput, "started", started, nil, startedFields)
 		var result capability.Result
 		filename := productCapabilitySnapshotFilename(profile)
 		promotedPath := filepath.Join(capabilityRoot, filename)
@@ -315,7 +320,7 @@ func refreshProductCapabilities(ctx context.Context, state appinit.RuntimeState,
 		case autoavailable.ProfileID:
 			result, err = rebuildProductAutoAvailable(ctx, proxies, normalizeCorePathForState(state, state.Paths.CorePath), capabilityRoot, candidatePath, promotedPath)
 		case chatgptavailable.ProfileID:
-			result, err = rebuildProductChatGPT(ctx, proxies, normalizeCorePathForState(state, state.Paths.CorePath), capabilityRoot, candidatePath, promotedPath)
+			result, err = rebuildProductChatGPT(ctx, proxies, g204Qualified, normalizeCorePathForState(state, state.Paths.CorePath), capabilityRoot, candidatePath, promotedPath)
 		}
 		fields := map[string]any{"profile": profile, "proxy_count": len(proxies)}
 		if err == nil {
@@ -331,6 +336,9 @@ func refreshProductCapabilities(ctx context.Context, state appinit.RuntimeState,
 		writeProductCapabilityStage(logOutput, "done", started, err, fields)
 		if err != nil {
 			return nil, fmt.Errorf("refresh capability %q: %w", profile, err)
+		}
+		if profile == autoavailable.ProfileID {
+			g204Qualified = append([]string{}, result.Qualified...)
 		}
 		validationProfile := profile
 		promotions = append(promotions, capabilitystore.Item{
@@ -379,7 +387,9 @@ func configuredProductCapabilityProfiles(config localconfig.Config) []string {
 }
 
 func validateSupportedCapabilityProfiles(profiles []string) error {
+	configured := make(map[string]bool, len(profiles))
 	for _, profile := range profiles {
+		configured[profile] = true
 		switch profile {
 		case autoavailable.ProfileID, chatgptavailable.ProfileID:
 		case chatgptavailable.LegacyProfileID:
@@ -387,6 +397,9 @@ func validateSupportedCapabilityProfiles(profiles []string) error {
 		default:
 			return fmt.Errorf("unsupported proxy-group capability: %s", profile)
 		}
+	}
+	if configured[chatgptavailable.ProfileID] && !configured[autoavailable.ProfileID] {
+		return fmt.Errorf("ChatGPT capability %q requires current %q qualification in the same refresh", chatgptavailable.ProfileID, autoavailable.ProfileID)
 	}
 	return nil
 }

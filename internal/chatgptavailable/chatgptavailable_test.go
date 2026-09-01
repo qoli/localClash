@@ -77,6 +77,32 @@ func TestRebuildPublishesOnlyQualifiedNodes(t *testing.T) {
 	}
 }
 
+func TestRebuildSelectedOnlyProbesG204QualifiedNodes(t *testing.T) {
+	snapshotPath := filepath.Join(t.TempDir(), "chatgpt.json")
+	proxies := []map[string]any{
+		{"name": "HK 01", "type": "ss", "server": "hk.example.com"},
+		{"name": "US 01", "type": "ss", "server": "us.example.com"},
+		{"name": "JP 01", "type": "ss", "server": "jp.example.com"},
+	}
+	result, err := RebuildSelected(context.Background(), proxies, []string{"US 01", "JP 01"}, fakeProber{observations: map[string]Observation{
+		"US 01": {Available: true, Attempts: 1, StatsigStatus: statsigReachable},
+		"JP 01": {Available: false, Attempts: 1, StatsigStatus: statsigTransportFailure, Error: "timeout"},
+	}}, Options{SnapshotPath: snapshotPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Candidates != 2 || result.Probed != 2 || !reflect.DeepEqual(result.Qualified, []string{"US 01"}) {
+		t.Fatalf("result = %+v, want only g204-qualified candidates probed", result)
+	}
+}
+
+func TestRebuildSelectedRejectsMissingG204Candidate(t *testing.T) {
+	_, err := RebuildSelected(context.Background(), []map[string]any{{"name": "US 01"}}, []string{"JP 01"}, fakeProber{}, Options{SnapshotPath: filepath.Join(t.TempDir(), "chatgpt.json")})
+	if err == nil || !strings.Contains(err.Error(), "JP 01") {
+		t.Fatalf("error = %v, want missing eligible candidate", err)
+	}
+}
+
 func TestRebuildRejectsTotalCollapseAndPreservesSnapshot(t *testing.T) {
 	dir := t.TempDir()
 	snapshotPath := filepath.Join(dir, "chatgpt.json")

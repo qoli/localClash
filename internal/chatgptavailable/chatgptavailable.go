@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -221,6 +222,45 @@ func Rebuild(ctx context.Context, proxies []map[string]any, prober Prober, opts 
 		UnavailableCount:       len(proxies) - len(qualified),
 		DurationMS:             time.Since(started).Milliseconds(),
 	}, nil
+}
+
+func RebuildSelected(ctx context.Context, proxies []map[string]any, eligible []string, prober Prober, opts Options) (Result, error) {
+	selected, err := selectEligibleProxies(proxies, eligible)
+	if err != nil {
+		return Result{}, err
+	}
+	return Rebuild(ctx, selected, prober, opts)
+}
+
+func selectEligibleProxies(proxies []map[string]any, eligible []string) ([]map[string]any, error) {
+	wanted := make(map[string]bool, len(eligible))
+	for index, name := range eligible {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			return nil, fmt.Errorf("ChatGPT capability eligible candidate %d has no name", index)
+		}
+		if wanted[name] {
+			return nil, fmt.Errorf("ChatGPT capability contains duplicate eligible candidate %q", name)
+		}
+		wanted[name] = true
+	}
+	selected := make([]map[string]any, 0, len(wanted))
+	for _, proxy := range proxies {
+		name := strings.TrimSpace(stringValue(proxy["name"]))
+		if wanted[name] {
+			selected = append(selected, proxy)
+			delete(wanted, name)
+		}
+	}
+	if len(wanted) > 0 {
+		missing := make([]string, 0, len(wanted))
+		for name := range wanted {
+			missing = append(missing, name)
+		}
+		sort.Strings(missing)
+		return nil, fmt.Errorf("ChatGPT capability eligible candidates are missing from subscription: %s", strings.Join(missing, ", "))
+	}
+	return selected, nil
 }
 
 func buildCandidates(proxies []map[string]any) ([]Candidate, map[string][]string, error) {

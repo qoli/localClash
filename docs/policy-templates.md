@@ -90,11 +90,12 @@ Capability groups are derived configuration, not Mihomo health-check aliases.
 localClash starts an isolated temporary Mihomo and assigns one loopback mixed
 listener to every capability candidate. The automatic-connectivity capability
 sends a strict generate-204 request; the ChatGPT capability sends the Statsig
-initialize request. Endpoint checks use 16-worker bounded concurrency, and the
-automatic-connectivity capability makes exactly one request per candidate with
-no retry, so subscriptions with hundreds of nodes can finish within the refresh
-window. It
-does not mutate or depend on the active core's `alive` state. The resulting secret-safe snapshot
+initialize request only for the current g204-qualified unique endpoints. Endpoint
+checks use 16-worker bounded concurrency, and each capability makes exactly one
+request per candidate with no retry. Large subscriptions finish according to
+their finite batch count and per-request timeout rather than an unrelated fixed
+whole-batch deadline. The probes do not mutate or depend on the active core's
+`alive` state. The resulting secret-safe snapshot
 is stored below `.runtime/capabilities/`; raw proxy credentials are never written
 there. Probe infrastructure errors fail the localClash refresh impact explicitly. If an
 existing non-empty qualified set suddenly collapses to zero, the snapshot and
@@ -133,7 +134,8 @@ It has no per-candidate retry or failure hysteresis because `⚡ 自动选择` i
 high-quality input set for Mihomo Smart, not a list of marginal paths that need
 retries to work. ChatGPT Statsig qualification is equally strict about observed
 availability: one failed observation removes a candidate without retry or failure
-hysteresis.
+hysteresis. Consequently, `ChatGPT-available` is always a subset of the current
+g204-qualified set.
 
 When Smart Core is active, `⚡ 自动选择` applies HK `6`, JP `5`, SG `4`, TW `3`,
 US `2`, and Other `1` after g204 qualification and endpoint deduplication. The

@@ -4,6 +4,44 @@ This document records router-facing usability and performance incidents that
 must be investigated with evidence. Do not treat post-removal or wrong-window
 samples as proof for an incident.
 
+## 2026-09-01 Large Subscription Capability Refresh Hit Fixed Step Timeout
+
+Status: fixed in source; pending router deployment and acceptance.
+
+Observed symptom:
+
+- Four subscriptions produced 533 merged proxies. The g204 capability excluded
+  18 referenced helpers, deduplicated 119 endpoints, and probed 394 candidates in
+  99.777 seconds, qualifying 233.
+- ChatGPT qualification then restarted from all 533 proxies. The LuCI helper
+  terminated the complete subscription-refresh step at its fixed 240-second
+  wall-clock limit before the second capability completed.
+- The Core product CLI also imposed a fixed five-minute parent deadline even
+  though the finite work scales with candidate count and 16-worker batches.
+
+Resolution:
+
+- ChatGPT qualification consumes only the current g204-qualified unique endpoint
+  names while retaining the complete proxy definitions needed by dialer chains.
+  `ChatGPT-available` is therefore a strict subset of the same-refresh g204 result.
+- ChatGPT observes each candidate once. A failed Statsig observation removes the
+  candidate immediately without retry or failure hysteresis.
+- Product CLI and MCP subscription refresh no longer add a node-count-independent
+  parent deadline. Individual subscription downloads and capability HTTP requests
+  remain bounded, and caller cancellation still propagates through the operation.
+- LuCI waits for Core-owned subscription and policy-material transactions to
+  complete while retaining heartbeat output and explicit task cancellation. Its
+  fixed step timeout remains in force for other helper-owned operations.
+
+Required acceptance:
+
+- Deploy matching Core and LuCI builds to the router, repeat the same four-source
+  refresh, and prove ChatGPT starts with exactly the 233 g204-qualified candidates
+  from that run rather than all 533 merged proxies.
+- Read back a terminal successful task result, promoted capability snapshots,
+  generated-config validation, loaded proxy-group membership, runtime health, and
+  effective router takeover.
+
 ## 2026-09-01 One-Click Policy Migration Used Stale Capability State
 
 Status: fixed in source; full iStoreOS acceptance passed; pending release.

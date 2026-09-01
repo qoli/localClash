@@ -1245,20 +1245,23 @@ sources:
 		writeMCPFile(t, snapshotPath, fmt.Sprintf(`{"version":1,"profile":%q,"updated_at":"2026-08-15T00:00:00Z","qualified":["JP 01"],"nodes":{}}`, autoavailable.ProfileID))
 		return autoavailable.Result{Profile: autoavailable.ProfileID, SnapshotPath: snapshotPath, Candidates: 2, Probed: 2, Qualified: []string{"JP 01"}, QualifiedCount: 1, UnavailableCount: 1}, nil
 	}
-	server.rebuildChatGPT = func(_ context.Context, proxies []map[string]any, _, runtimeParent, snapshotPath, previousSnapshotPath string) (chatgptavailable.Result, error) {
+	server.rebuildChatGPT = func(_ context.Context, proxies []map[string]any, eligible []string, _, runtimeParent, snapshotPath, previousSnapshotPath string) (chatgptavailable.Result, error) {
 		if len(proxies) != 2 || proxies[0]["name"] != "US 01" || proxies[1]["name"] != "JP 01" {
 			t.Fatalf("probe proxies = %+v", proxies)
+		}
+		if !reflect.DeepEqual(eligible, []string{"JP 01"}) {
+			t.Fatalf("ChatGPT eligible nodes = %+v, want current g204 result", eligible)
 		}
 		if runtimeParent != capabilityRoot || filepath.Dir(snapshotPath) == capabilityRoot || previousSnapshotPath != filepath.Join(capabilityRoot, "chatgpt-available.json") {
 			t.Fatalf("capability paths = runtime %q candidate %q previous %q", runtimeParent, snapshotPath, previousSnapshotPath)
 		}
-		writeMCPFile(t, snapshotPath, fmt.Sprintf(`{"version":5,"profile":%q,"updated_at":"2026-08-15T00:00:00Z","qualified":["US 01"],"nodes":{}}`, chatgptavailable.ProfileID))
+		writeMCPFile(t, snapshotPath, fmt.Sprintf(`{"version":5,"profile":%q,"updated_at":"2026-08-15T00:00:00Z","qualified":["JP 01"],"nodes":{}}`, chatgptavailable.ProfileID))
 		return chatgptavailable.Result{
 			Profile:          chatgptavailable.ProfileID,
 			SnapshotPath:     snapshotPath,
 			Candidates:       2,
 			Probed:           2,
-			Qualified:        []string{"US 01"},
+			Qualified:        []string{"JP 01"},
 			QualifiedCount:   1,
 			UnavailableCount: 1,
 		}, nil
@@ -1298,12 +1301,12 @@ sources:
 		t.Fatalf("capabilities = %+v", capabilities)
 	}
 	resolvedIntent := readMCPFile(t, intent)
-	if !strings.Contains(resolvedIntent, `"capability": "openai.chatgpt.statsig.v1"`) || !strings.Contains(resolvedIntent, `"US 01"`) {
+	if !strings.Contains(resolvedIntent, `"capability": "openai.chatgpt.statsig.v1"`) || !strings.Contains(resolvedIntent, `"JP 01"`) {
 		t.Fatalf("resolved intent missing capability selection: %s", resolvedIntent)
 	}
 	config := readMCPYAML(t, generated)
 	group := findMCPProxyGroup(t, config, "ChatGPT-available")
-	if got := group["proxies"]; !reflect.DeepEqual(got, []any{"US 01"}) {
+	if got := group["proxies"]; !reflect.DeepEqual(got, []any{"JP 01"}) {
 		t.Fatalf("ChatGPT-available proxies = %+v", got)
 	}
 	chatGPT := findMCPProxyGroup(t, config, "ChatGPT")
@@ -1323,6 +1326,10 @@ func TestSubscriptionsRefreshCapabilityCollapseLeavesGeneratedConfigUnchanged(t 
 	writeMCPFile(t, intent, `{
   "version": 5,
   "proxy_groups": {
+    "Auto": {
+      "mode": "smart",
+      "capability": "network.connectivity.g204.v1"
+    },
     "ChatGPT-available": {
       "mode": "smart",
       "capability": "openai.chatgpt.statsig.v1",
@@ -1334,7 +1341,10 @@ func TestSubscriptionsRefreshCapabilityCollapseLeavesGeneratedConfigUnchanged(t 
 	writeMCPFile(t, generated, "sentinel: previous-generated-config\n")
 
 	server := NewServer()
-	server.rebuildChatGPT = func(context.Context, []map[string]any, string, string, string, string) (chatgptavailable.Result, error) {
+	server.rebuildAutoAvailable = func(context.Context, []map[string]any, string, string, string, string) (autoavailable.Result, error) {
+		return autoavailable.Result{Profile: autoavailable.ProfileID, Qualified: []string{"US 01"}, QualifiedCount: 1}, nil
+	}
+	server.rebuildChatGPT = func(context.Context, []map[string]any, []string, string, string, string, string) (chatgptavailable.Result, error) {
 		return chatgptavailable.Result{}, fmt.Errorf("%w: carrier outage candidate", chatgptavailable.ErrQualificationCollapse)
 	}
 	impact := server.evaluateLocalClashAfterRefresh(
@@ -1357,6 +1367,13 @@ func TestSubscriptionsRefreshCapabilityCollapseLeavesGeneratedConfigUnchanged(t 
 	}
 	if got := readMCPFile(t, generated); got != "sentinel: previous-generated-config\n" {
 		t.Fatalf("generated config changed after collapse: %q", got)
+	}
+}
+
+func TestValidateCapabilityProfilesRequiresG204ForChatGPT(t *testing.T) {
+	err := validateCapabilityProfiles([]string{chatgptavailable.ProfileID})
+	if err == nil || !strings.Contains(err.Error(), autoavailable.ProfileID) {
+		t.Fatalf("error = %v, want explicit g204 prerequisite", err)
 	}
 }
 

@@ -316,15 +316,15 @@ MCP subscription bootstrap tools:
   first-hop endpoints; every representative must return HTTP 204 from
   `https://cp.cloudflare.com/generate_204`. If it declares
   `capability: openai.chatgpt.statsig.v1`, refresh also rebuilds that service
-  exit through the same isolated-probe module. Every ChatGPT-qualified node must
+  exit through the same isolated-probe module, using only the current g204-qualified
+  unique endpoints as candidates. Every ChatGPT-qualified node must
   complete `POST https://ab.chatgpt.com/v1/initialize`, return HTTP
   200 with Brotli encoding, and expose a non-empty `derived_fields.country`.
   localClash streams the response through bounded Brotli and JSON readers rather
-  than retaining the multi-megabyte Statsig document. Probes use 16 workers;
-  only unsuccessful nodes are retried. A TLS reset, timeout, rejection, malformed
-  response, missing country, or response-limit breach is recorded explicitly and
-  uses the persisted consecutive-failure threshold where applicable. The check
-  is independent from the active core's cached `alive` state.
+  than retaining the multi-megabyte Statsig document. Probes use 16 workers and
+  observe every candidate once. A TLS reset, timeout, rejection, malformed response,
+  missing country, or response-limit breach removes that candidate immediately.
+  The check is independent from the active core's cached `alive` state.
 
   MCP refresh renders `config.yaml.candidate`, validates it with `mihomo -t`, and
   promotes both the capability snapshot and generated config only after the test

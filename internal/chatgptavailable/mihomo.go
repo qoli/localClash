@@ -35,6 +35,7 @@ const (
 type MihomoOptions struct {
 	CorePath       string
 	RuntimeParent  string
+	Definitions    []map[string]any
 	Concurrency    int
 	Attempts       int
 	RequestTimeout time.Duration
@@ -53,14 +54,19 @@ func RebuildWithMihomo(ctx context.Context, proxies []map[string]any, corePath, 
 }
 
 func RebuildCandidateWithMihomo(ctx context.Context, proxies []map[string]any, corePath, runtimeParent, snapshotPath, previousSnapshotPath string) (Result, error) {
+	return RebuildSelectedCandidateWithMihomo(ctx, proxies, proxyNames(proxies), corePath, runtimeParent, snapshotPath, previousSnapshotPath)
+}
+
+func RebuildSelectedCandidateWithMihomo(ctx context.Context, proxies []map[string]any, eligible []string, corePath, runtimeParent, snapshotPath, previousSnapshotPath string) (Result, error) {
 	prober, err := NewMihomoProber(MihomoOptions{
 		CorePath:      corePath,
 		RuntimeParent: runtimeParent,
+		Definitions:   proxies,
 	})
 	if err != nil {
 		return Result{}, err
 	}
-	return Rebuild(ctx, proxies, prober, Options{SnapshotPath: snapshotPath, PreviousSnapshotPath: previousSnapshotPath})
+	return RebuildSelected(ctx, proxies, eligible, prober, Options{SnapshotPath: snapshotPath, PreviousSnapshotPath: previousSnapshotPath})
 }
 
 func NewMihomoProber(options MihomoOptions) (*MihomoProber, error) {
@@ -82,7 +88,7 @@ func NewMihomoProber(options MihomoOptions) (*MihomoProber, error) {
 		options.Concurrency = 16
 	}
 	if options.Attempts <= 0 {
-		options.Attempts = 3
+		options.Attempts = 1
 	}
 	if options.RequestTimeout <= 0 {
 		options.RequestTimeout = 5 * time.Second
@@ -104,14 +110,19 @@ func (p *MihomoProber) Probe(ctx context.Context, candidates []Candidate) ([]Obs
 		return nil, errors.New("ChatGPT capability probe candidates are required")
 	}
 	names := make([]string, len(candidates))
-	definitions := make([]map[string]any, 0, len(candidates))
+	definitions := p.options.Definitions
+	if len(definitions) == 0 {
+		definitions = make([]map[string]any, 0, len(candidates))
+	}
 	for index, candidate := range candidates {
 		names[index] = candidate.Name
-		candidateDefinitions := candidate.Definitions
-		if len(candidateDefinitions) == 0 {
-			candidateDefinitions = []map[string]any{candidate.Proxy}
+		if len(p.options.Definitions) == 0 {
+			candidateDefinitions := candidate.Definitions
+			if len(candidateDefinitions) == 0 {
+				candidateDefinitions = []map[string]any{candidate.Proxy}
+			}
+			definitions = append(definitions, candidateDefinitions...)
 		}
-		definitions = append(definitions, candidateDefinitions...)
 	}
 	session, err := proxyprobe.Start(ctx, definitions, names, proxyprobe.Options{
 		CorePath: p.options.CorePath, RuntimeParent: p.options.RuntimeParent,
@@ -155,6 +166,14 @@ func (p *MihomoProber) Probe(ctx context.Context, candidates []Candidate) ([]Obs
 	close(jobs)
 	wg.Wait()
 	return observations, nil
+}
+
+func proxyNames(proxies []map[string]any) []string {
+	names := make([]string, 0, len(proxies))
+	for _, proxy := range proxies {
+		names = append(names, strings.TrimSpace(stringValue(proxy["name"])))
+	}
+	return names
 }
 
 func (p *MihomoProber) probeCandidate(ctx context.Context, candidate Candidate, client *http.Client) Observation {

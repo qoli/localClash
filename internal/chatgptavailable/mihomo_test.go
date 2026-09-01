@@ -68,8 +68,8 @@ func TestNewMihomoProberDefaultsScaleLargeSubscriptions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if prober.options.Concurrency != 16 || prober.options.RequestTimeout != 5*time.Second || prober.options.Attempts != 3 || prober.options.Endpoint != statsigInitializeURL || prober.options.ClientKey == "" {
-		t.Fatalf("probe defaults = %+v, want concurrency 16, timeout 5s, attempts 3, and Statsig defaults", prober.options)
+	if prober.options.Concurrency != 16 || prober.options.RequestTimeout != 5*time.Second || prober.options.Attempts != 1 || prober.options.Endpoint != statsigInitializeURL || prober.options.ClientKey == "" {
+		t.Fatalf("probe defaults = %+v, want concurrency 16, timeout 5s, one attempt, and Statsig defaults", prober.options)
 	}
 }
 

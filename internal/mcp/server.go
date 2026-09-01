@@ -58,7 +58,7 @@ type Server struct {
 	watchdogNoticeMu      sync.Mutex
 	watchdogNotices       map[string]time.Time
 	rebuildAutoAvailable  func(context.Context, []map[string]any, string, string, string, string) (autoavailable.Result, error)
-	rebuildChatGPT        func(context.Context, []map[string]any, string, string, string, string) (chatgptavailable.Result, error)
+	rebuildChatGPT        func(context.Context, []map[string]any, []string, string, string, string, string) (chatgptavailable.Result, error)
 	testMihomoConfig      func(context.Context, mihomotest.TestOptions) (mihomotest.TestResult, error)
 	promoteMihomoConfig   func(string, string, string) (mihomotest.PromoteResult, error)
 }
@@ -91,7 +91,7 @@ func newServer(state *appinit.RuntimeState) *Server {
 		taskCancel:           cancel,
 		watchdogNotices:      map[string]time.Time{},
 		rebuildAutoAvailable: autoavailable.RebuildCandidateWithMihomo,
-		rebuildChatGPT:       chatgptavailable.RebuildCandidateWithMihomo,
+		rebuildChatGPT:       chatgptavailable.RebuildSelectedCandidateWithMihomo,
 		testMihomoConfig:     mihomotest.Test,
 		promoteMihomoConfig:  mihomotest.PromoteConfig,
 	}
@@ -2328,8 +2328,6 @@ func (s *Server) callSubscriptionsRefresh(ctx context.Context, args json.RawMess
 		OnStage:             localConfigTaskLogger(ctx, "load_subscription_nodes_before"),
 	})
 	finishTaskStage(finish, nil, map[string]any{"node_count": len(beforeNodes)})
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
-	defer cancel()
 	result, err := subscriptions.Refresh(ctx, subscriptions.RefreshOptions{
 		ConfigPath: in.Config,
 		IDs:        in.IDs,
@@ -2508,19 +2506,23 @@ func (s *Server) evaluateLocalClashAfterRefresh(ctx context.Context, configPath,
 			impact.NextActions = []string{"inspect the capability qualification task stage", "retry subscriptions_refresh after the probe path is healthy"}
 			return impact
 		}
+		var g204Qualified []string
 		for _, profile := range profiles {
 			filename := capabilitySnapshotFilename(profile)
 			promoted := filepath.Join(capabilityRoot, filename)
 			candidate := filepath.Join(capabilityTransactionDir, filename)
-			finish = startTaskStage(ctx, "evaluate_localclash_impact.qualify_capability", map[string]any{
-				"profile": profile, "proxy_count": len(subscriptionNodes), "candidate": candidate,
-			})
+			stageFields := map[string]any{"profile": profile, "proxy_count": len(subscriptionNodes), "candidate": candidate}
+			if profile == chatgptavailable.ProfileID {
+				stageFields["input_candidates"] = len(g204Qualified)
+				stageFields["input_profile"] = autoavailable.ProfileID
+			}
+			finish = startTaskStage(ctx, "evaluate_localclash_impact.qualify_capability", stageFields)
 			var result capability.Result
 			switch profile {
 			case autoavailable.ProfileID:
 				result, err = s.rebuildAutoAvailable(ctx, proxies, corePath, capabilityRoot, candidate, promoted)
 			case chatgptavailable.ProfileID:
-				result, err = s.rebuildChatGPT(ctx, proxies, corePath, capabilityRoot, candidate, promoted)
+				result, err = s.rebuildChatGPT(ctx, proxies, g204Qualified, corePath, capabilityRoot, candidate, promoted)
 			}
 			if err != nil {
 				finishTaskStage(finish, err, nil)
@@ -2529,6 +2531,9 @@ func (s *Server) evaluateLocalClashAfterRefresh(ctx context.Context, configPath,
 				impact.Error = err.Error()
 				impact.NextActions = []string{"inspect the capability qualification task stage", "retry subscriptions_refresh after the probe path is healthy"}
 				return impact
+			}
+			if profile == autoavailable.ProfileID {
+				g204Qualified = append([]string{}, result.Qualified...)
 			}
 			impact.Capabilities = append(impact.Capabilities, result)
 			capabilityNodes[profile] = append([]string{}, result.Qualified...)
@@ -2714,7 +2719,9 @@ func configuredCapabilityProfiles(config localconfig.Config) []string {
 }
 
 func validateCapabilityProfiles(profiles []string) error {
+	configured := make(map[string]bool, len(profiles))
 	for _, profile := range profiles {
+		configured[profile] = true
 		switch profile {
 		case autoavailable.ProfileID, chatgptavailable.ProfileID:
 		case chatgptavailable.LegacyProfileID:
@@ -2722,6 +2729,9 @@ func validateCapabilityProfiles(profiles []string) error {
 		default:
 			return fmt.Errorf("unsupported proxy-group capability: %s", profile)
 		}
+	}
+	if configured[chatgptavailable.ProfileID] && !configured[autoavailable.ProfileID] {
+		return fmt.Errorf("ChatGPT capability %q requires current %q qualification in the same refresh", chatgptavailable.ProfileID, autoavailable.ProfileID)
 	}
 	return nil
 }
