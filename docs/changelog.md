@@ -18,21 +18,61 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 
 Changes:
 
-- 完整移除訂閱刷新中的 g204 前置篩選、`g204_filter_enabled` 設定契約及
-  `network.connectivity.g204.v1` capability；`⚡ 自动选择` 固定使用完整可選
-  訂閱節點並交由 Mihomo 自身健康檢查。
-- `ChatGPT-available` 固定從全部可選訂閱節點獨立建立，不再等待或消費 g204
-  結果。舊 intent 若仍宣告已移除的 capability，會明確失敗並要求同步新版模板。
-- LuCI 訂閱頁同步移除 g204 選項，rpcd 不再保存、讀回或傳遞該欄位。
+- 暫無。
 
 ## 目前最新版本
 
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
-| localClash Core | [v0.1.76](https://github.com/qoli/localClash/releases/tag/v0.1.76) | 2026-09-01 UTC+8 |
-| localclash-luci | [v0.1.0-69](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-69) | 2026-09-01 UTC+8 |
+| localClash Core | [v0.1.77](https://github.com/qoli/localClash/releases/tag/v0.1.77) | 2026-09-01 UTC+8 |
+| localclash-luci | [v0.1.0-70](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-70) | 2026-09-01 UTC+8 |
 
 ## 2026-09-01
+
+### localClash Core v0.1.77
+
+Changes:
+
+- 完整移除訂閱刷新中的 g204 前置篩選、`g204_filter_enabled` 設定契約及
+  `network.connectivity.g204.v1` capability；`⚡ 自动选择` 固定使用完整可選
+  訂閱節點並交由 Mihomo 自身健康檢查。
+- `ChatGPT-available` 固定從全部可選訂閱節點獨立建立，不再等待或消費 g204
+  結果。舊 intent 若仍宣告已移除的 capability，會明確失敗並要求同步新版模板。
+- 將 `⚡ 自动选择` 的 Smart 地域權重由 `6 / 5 / 4 / 3 / 2 / 1` 收窄為
+  `1.25 / 1.20 / 1.15 / 1.10 / 1.05 / 1.00`；保留地域偏好，同時讓模型更容易
+  選擇其他地區中品質明顯更好的線路。
+
+Release:
+
+- [qoli/localClash v0.1.77](https://github.com/qoli/localClash/releases/tag/v0.1.77)
+
+Verification:
+
+- `go test ./...`、`go vet ./...` 與 `git diff --check` 通過。
+- [Release workflow 33525564627](https://github.com/qoli/localClash/actions/runs/33525564627)
+  成功；公開 Release 的 7 個資產與三份 checksum 均已重新下載驗證。
+- 本版本未把本機測試宣稱為實體路由器 WAN／Smart 網絡驗收。
+
+### localclash-luci v0.1.0-70
+
+Changes:
+
+- 訂閱頁移除 g204 篩選選項；rpcd 不再保存、讀回或向 Core 傳遞
+  `g204_filter_enabled`，與 Core `v0.1.77` 的簡化訂閱契約保持一致。
+- x86_64／aarch64 iStore 離線 bundle 固定攜帶 Core `v0.1.77`。
+
+Release:
+
+- [qoli/localclash-luci v0.1.0-70](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-70)
+
+Verification:
+
+- [Main CI 33525984693](https://github.com/qoli/localclash-luci/actions/runs/33525984693)
+  與 [Release workflow 33526401086](https://github.com/qoli/localclash-luci/actions/runs/33526401086)
+  成功。
+- 公開 Release 的 13 個資產與全部 checksum 均已重新下載驗證；兩個 `.run`
+  bundle 均通過 `--info`、`--list`、`--check` 與 `--noexec`。
+- 封裝驗證不等同實體路由器驗收；本版本尚未宣稱 x86_64／aarch64 路由器實裝結果。
 
 ### localClash Core v0.1.76
 
