@@ -21,7 +21,7 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
 | localClash Core | [v0.1.72](https://github.com/qoli/localClash/releases/tag/v0.1.72) | 2026-09-01 UTC+8 |
-| localclash-luci | [v0.1.0-63](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-63) | 2026-09-01 UTC+8 |
+| localclash-luci | [v0.1.0-64](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-64) | 2026-09-01 UTC+8 |
 
 ## 2026-09-01
 
@@ -51,6 +51,47 @@ Verification:
   runtime restart、MCP 與 OpenWrt 接管讀回均通過。
 - 真實移除候選探測 Mihomo 核心的故障注入使交易失敗，11 個受保護路徑
   的聚合摘要在失敗前後一致，現行運行時與接管保持生效。
+- [Release workflow 33455936896](https://github.com/qoli/localClash/actions/runs/33455936896)
+  成功；公開 Release 的 7 個資產、三份 SHA256、amd64／arm64 ELF、base-assets
+  與 manifest `v0.1.72` 均通過驗證。遠端標籤精確指向
+  `4a7eef7ebb3055cbf80281c30a0e1ccfbaf00ecd`。
+
+### localclash-luci v0.1.0-64
+
+Changes:
+
+- 一鍵更新在同步預設策略時，不再先獨立提交訂閱；改由 Core v0.1.72
+  的單一材料交易同步刷新訂閱、g204 / ChatGPT 能力快照、預設策略、
+  生成配置與 `mihomo -t` 驗證結果。
+- 初始安裝或已配置訂閱的 default bootstrap 亦使用同一交易，失敗時不會
+  留下只更新其中一部分的策略與訂閱材料。
+- iStoreOS 離線 bundle 已固定攜帶 Core v0.1.72，不使用 `latest` 或未校驗來源。
+
+Known limitation:
+
+- Core watchdog 自主恢復只驗證 Mihomo 與 Controller，不負責 LuCI 的
+  `takeover_effective`；跨模組恢復責任仍未決定，已登記於
+  [Router Incident Register](router-incident-register.md#2026-09-01-runtime-watchdog-does-not-reconcile-router-takeover)。
+
+Release:
+
+- [qoli/localclash-luci v0.1.0-64](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-64)
+
+Verification:
+
+- 公開 v0.1.0-62 / Core v0.1.70 基線在 iStoreOS QEMU 完整執行 LuCI package
+  更新、helper reexec、Core / Mihomo / Dashboard 更新、兩份真實訂閱、預設
+  策略同步、全部能力探測、`mihomo -t`、熱載入與接管恢復，最終 exit code
+  為 0。獨立訂閱更新與真實故障回滾亦通過。
+- LuCI 實際 UI 主動停止接管但保留 Mihomo 運行；概覽頁在
+  `runtime=true` / `takeover=false` 狀態顯示「應用接管」，點擊後 UI 與後端
+  均讀回接管已生效。
+- [main CI 33456217875](https://github.com/qoli/localclash-luci/actions/runs/33456217875)
+  與 [Release workflow 33456351186](https://github.com/qoli/localclash-luci/actions/runs/33456351186)
+  全部成功。
+- 公開 Release 的 13 個受管資產與 6 份 sidecar SHA256 全部通過；x86_64／
+  aarch64 `.run` 的 `--info`、`--list`、`--check` 與 `--noexec` 均通過。
+  遠端標籤精確指向 `a1a0154c0e8e349752fea3f52bb5592029e4cb52`。
 
 ### localClash Core v0.1.71
 
