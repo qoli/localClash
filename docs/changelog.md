@@ -21,9 +21,31 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
 | localClash Core | [v0.1.73](https://github.com/qoli/localClash/releases/tag/v0.1.73) | 2026-09-01 UTC+8 |
-| localclash-luci | [v0.1.0-65](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-65) | 2026-09-01 UTC+8 |
+| localclash-luci | [v0.1.0-66](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-66) | 2026-09-01 UTC+8 |
 
 ## 2026-09-01
+
+### localclash-luci v0.1.0-66
+
+Changes:
+
+- 一鍵更新按鈕不再依賴 LuCI 或 localClash Core 是否有新版本；只要沒有背景
+  任務正在執行，即使先前更新在 dnsqualify、Mihomo、Dashboard、訂閱或配置
+  階段失敗，使用者仍可重新執行完整更新流程。
+- LuCI 與 Core 的版本檢查繼續顯示更新狀態，但不再錯誤充當一鍵更新的執行
+  條件；運行中的任務仍會明確禁用按鈕，避免並行重入。
+
+Verification:
+
+- 新增 UI 回歸測試，覆蓋 LuCI／Core 已是最新時仍可重試，以及背景任務運行
+  時保持禁用；完整 JavaScript、Python、rpcd helper、takeover、dnsqualify 測試與
+  `go vet` 全部通過。
+- Main CI [33462021594](https://github.com/qoli/localclash-luci/actions/runs/33462021594)
+  與 tag-triggered Release workflow
+  [33462167942](https://github.com/qoli/localclash-luci/actions/runs/33462167942)
+  成功；公開 Release 的 13 個受管資產與全部 SHA-256 已驗證，x86_64／aarch64
+  `.run` 均通過 `--info`、`--list`、`--check` 與 `--noexec`。
+- 實體路由器尚未安裝 v0.1.0-66；本次發布驗證不宣稱設備端 UI 驗收。
 
 ### localClash Core v0.1.73
 
