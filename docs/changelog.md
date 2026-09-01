@@ -16,15 +16,12 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 
 ## Unreleased
 
-- LuCI 訂閱刷新與預設策略材料交易不再使用固定 240 秒整步 timeout；Core
-  子操作仍各自有界，背景任務保留 heartbeat 與使用者中止路徑。
-
 ## 目前最新版本
 
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
 | localClash Core | [v0.1.73](https://github.com/qoli/localClash/releases/tag/v0.1.73) | 2026-09-01 UTC+8 |
-| localclash-luci | [v0.1.0-64](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-64) | 2026-09-01 UTC+8 |
+| localclash-luci | [v0.1.0-65](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-65) | 2026-09-01 UTC+8 |
 
 ## 2026-09-01
 
@@ -32,12 +29,10 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 
 Changes:
 
-- `ChatGPT-available` 改為只探測同一輪 g204 已通過的唯一端點，不再對完整
-  訂閱重複處理已知無效節點；每個 Statsig 候選只觀測一次，失敗立即淘汰。
-- ChatGPT 能力明確要求同一次刷新包含 g204，並保留完整代理定義供
-  `dialer-proxy` 鏈使用；啟動事件會記錄輸入能力與候選數。
-- CLI 與 MCP 訂閱刷新移除與節點數無關的固定整批 deadline。訂閱下載、
-  Mihomo 啟動與每個能力 HTTP 請求仍各自有界，caller cancellation 繼續傳遞。
+- `ChatGPT-available` 僅探測同輪 g204 通過的唯一端點，保留 `dialer-proxy`
+  定義；每個 Statsig 候選只測一次，失敗立即淘汰。
+- CLI／MCP 移除固定整批 deadline；下載、Mihomo 啟動與能力 HTTP 請求仍
+  各自有界並可取消。
 
 Verification:
 
@@ -46,6 +41,24 @@ Verification:
 - 真實故障日誌中的 533 個合併節點先由 g204 探測 394 個唯一候選並選出
   233 個；新流程會把這 233 個結果直接作為 ChatGPT 輸入，而不是再次處理
   全部 533 個節點。實體路由器部署後重跑仍是獨立驗收邊界。
+
+### localclash-luci v0.1.0-65
+
+Changes:
+
+- LuCI 訂閱刷新與策略材料交易移除固定 240 秒上限，持續輸出 heartbeat 並
+  保留使用者中止路徑。
+- iStoreOS x86_64／aarch64 離線 bundle 固定攜帶 Core `v0.1.73`。
+
+Verification:
+
+- Main [CI workflow 33459616938](https://github.com/qoli/localclash-luci/actions/runs/33459616938)
+  與 tag-triggered [Release workflow 33459758835](https://github.com/qoli/localclash-luci/actions/runs/33459758835)
+  全部成功。
+- 公開 Release 的 13 個受管資產與 6 份 sidecar SHA256 全部通過；x86_64／
+  aarch64 `.run` 的 `--info`、`--list`、`--check` 與 `--noexec` 均通過。
+- 實體路由器尚未安裝此版本；四份訂閱、233 個 g204→ChatGPT 候選與最終
+  runtime／接管狀態仍需部署後讀回驗證。
 
 ### localClash Core v0.1.72
 
