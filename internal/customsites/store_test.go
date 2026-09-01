@@ -85,6 +85,9 @@ func TestLastAddedRuleSortsFirstAcrossDocuments(t *testing.T) {
 	if got := resolved.PriorityCustomRules[1].Target; got != DirectPolicyGroup {
 		t.Fatalf("older target = %q, want %q", got, DirectPolicyGroup)
 	}
+	if got := resolved.PriorityCustomRules[1].Rules[0].Type; got != "domain_suffix" {
+		t.Fatalf("plain custom site rule type = %q, want domain_suffix", got)
+	}
 
 	pair, _, err = Delete(pair, newer.ID)
 	if err != nil {

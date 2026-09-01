@@ -135,7 +135,7 @@ localclash custom-sites transact --input request.json --json
 An add request contains `{"version":1,"operation":"add","pattern":"example.com","route":"proxy"}`;
 a delete request contains `{"version":1,"operation":"delete","id":"<entry-id>"}`.
 Inputs containing `*` or `?` compile to `DOMAIN-WILDCARD`; all other accepted
-hosts compile to `DOMAIN`. The durable documents live under `custom-sites/`,
+hosts compile to `DOMAIN-SUFFIX`. The durable documents live under `custom-sites/`,
 outside the policy patch registry, so default-policy synchronization preserves
 them. See [Custom Site Routing](docs/custom-site-routing.md) for the complete
 ordering and transaction contract.

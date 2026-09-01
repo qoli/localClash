@@ -266,7 +266,7 @@ enabled_packs:
 	config := readTestYAML(t, result.OutputPath)
 	renderedRules := testStringSlice(config["rules"])
 	newer := indexOf(renderedRules, "DOMAIN-WILDCARD,abc.*cdn.com,"+customsites.ProxyPolicyGroup)
-	older := indexOf(renderedRules, "DOMAIN,abc.com,"+customsites.DirectPolicyGroup)
+	older := indexOf(renderedRules, "DOMAIN-SUFFIX,abc.com,"+customsites.DirectPolicyGroup)
 	pack := indexOf(renderedRules, "RULE-SET,sukkaw_ai_non_ip,AI")
 	if newer <= 0 || older <= newer || pack <= older {
 		t.Fatalf("custom/pack rule indexes newer=%d older=%d pack=%d rules=%+v", newer, older, pack, renderedRules)

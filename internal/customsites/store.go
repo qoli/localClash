@@ -354,7 +354,7 @@ func ApplyToSelection(selection rules.Selection, pair Pair) (rules.Selection, er
 		if entry.Route == RouteProxy {
 			target = ProxyPolicyGroup
 		}
-		ruleType := "domain"
+		ruleType := "domain_suffix"
 		if entry.Match == MatchWildcard {
 			ruleType = "domain_wildcard"
 		}

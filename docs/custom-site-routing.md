@@ -31,7 +31,7 @@ The list view has two sections named `自訂代理網站` and `自訂直連網�
 Each row can be deleted. The first version adds one rule per save; batch entry
 is out of scope.
 
-Inputs without `*` or `?` are full matches and compile to Mihomo `DOMAIN`.
+Inputs without `*` or `?` are suffix matches and compile to Mihomo `DOMAIN-SUFFIX`.
 Inputs containing `*` or `?` are wildcard matches and compile to
 `DOMAIN-WILDCARD`. Wildcards use Mihomo semantics: `*` matches zero or more
 characters and `?` matches exactly one character. They operate on the complete
@@ -151,8 +151,8 @@ Neither layer edits `.runtime/mihomo/config.yaml` directly.
 
 ## Acceptance
 
-- Full and wildcard inputs compile to `DOMAIN` and `DOMAIN-WILDCARD`.
-- A later wildcard can override an earlier full match and vice versa.
+- Plain and wildcard inputs compile to `DOMAIN-SUFFIX` and `DOMAIN-WILDCARD`.
+- A later wildcard can override an earlier suffix match and vice versa.
 - The same pattern may exist in both lists; deleting the newest reveals the
   older decision.
 - Ordering survives process restart, render, subscription refresh, component
