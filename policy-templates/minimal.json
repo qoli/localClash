@@ -19,7 +19,11 @@
       },
       "⚡ 自动选择": {
         "mode": "auto",
-        "capability": "network.connectivity.g204.v1",
+        "match": {
+          "type": "name_regex",
+          "pattern": ".*",
+          "min": 1
+        },
         "smart_priority": [
           {"label": "HK", "pattern": "(🇭🇰|香港|(^|[^A-Za-z])HK([^A-Za-z]|$)|Hong.?Kong)", "factor": 6},
           {"label": "JP", "pattern": "(🇯🇵|日本|(^|[^A-Za-z])JP([^A-Za-z]|$)|Japan)", "factor": 5},
@@ -28,8 +32,8 @@
           {"label": "US", "pattern": "(🇺🇸|美国|美國|(^|[^A-Za-z])US([^A-Za-z]|$)|United.?States|America)", "factor": 2},
           {"label": "Other", "pattern": ".*", "factor": 1}
         ],
-        "reason": "面向 Dashboard 的免维护自动出口；默认使用完整可选订阅节点，可在订阅设置中启用逐节点 generate_204 资格筛选。",
-        "boundary": "all_selectable_subscription_nodes_with_optional_g204_filter"
+        "reason": "面向 Dashboard 的免维护自动出口，使用完整可选订阅节点。",
+        "boundary": "all_selectable_subscription_nodes"
       }
     },
     "policy_groups": {

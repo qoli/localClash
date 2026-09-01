@@ -310,19 +310,12 @@ MCP subscription bootstrap tools:
   logged HTTP/1.1 64 KiB range chunks. Recovery requires a consistent total,
   exact byte counts, matching 256-byte overlaps, and repeated first/last boundary
   reads; any mismatch fails without writing a partial or stale artifact.
-  Subscription configuration exposes `g204_filter_enabled`, which defaults to
-  `false`. When disabled, `⚡ 自动选择` keeps every selectable subscription proxy
-  in source order. When enabled and the compiled intent declares
-  `capability: network.connectivity.g204.v1`, refresh probes every selectable
-  proxy definition independently through an isolated temporary Mihomo; it does
-  not collapse candidates by hostname, resolved IP, port, protocol, or
-  credentials. Referenced dialer helpers remain excluded from the selectable
-  group, and every candidate must return HTTP 204 from
-  `https://cp.cloudflare.com/generate_204`. If the intent declares
-  `capability: openai.chatgpt.statsig.v1`, refresh always rebuilds that service
-  exit independently. ChatGPT consumes all selectable proxies while the g204
-  option is disabled, or the current g204-qualified set while it is enabled.
-  Every ChatGPT-qualified node must
+  `⚡ 自动选择` keeps every selectable subscription proxy in source order and
+  relies on Mihomo's own automatic-group health checks instead of a separate
+  subscription prefilter. Referenced dialer helpers remain excluded from the
+  selectable group. If the intent declares
+  `capability: openai.chatgpt.statsig.v1`, refresh independently rebuilds that
+  service exit from every selectable proxy. Every ChatGPT-qualified node must
   complete `POST https://ab.chatgpt.com/v1/initialize`, return HTTP
   200 with Brotli encoding, and expose a non-empty `derived_fields.country`.
   localClash streams the response through bounded Brotli and JSON readers rather

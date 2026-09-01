@@ -51,9 +51,8 @@ type Source struct {
 }
 
 type Config struct {
-	Version           int      `json:"version"`
-	G204FilterEnabled bool     `json:"g204_filter_enabled"`
-	Sources           []Source `json:"sources"`
+	Version int      `json:"version"`
+	Sources []Source `json:"sources"`
 }
 
 type StatusOptions struct {
@@ -63,12 +62,11 @@ type StatusOptions struct {
 }
 
 type ConfigureOptions struct {
-	ConfigPath        string
-	Sources           []Source
-	URIs              []string
-	URLs              []string
-	Replace           *bool
-	G204FilterEnabled bool
+	ConfigPath string
+	Sources    []Source
+	URIs       []string
+	URLs       []string
+	Replace    *bool
 }
 
 type RefreshOptions struct {
@@ -90,12 +88,11 @@ type StageEvent struct {
 }
 
 type StatusResult struct {
-	Configured        bool            `json:"configured"`
-	G204FilterEnabled bool            `json:"g204_filter_enabled"`
-	Config            string          `json:"config"`
-	Sources           []SourceStatus  `json:"sources"`
-	Merged            ArtifactSummary `json:"merged"`
-	Message           string          `json:"message,omitempty"`
+	Configured bool            `json:"configured"`
+	Config     string          `json:"config"`
+	Sources    []SourceStatus  `json:"sources"`
+	Merged     ArtifactSummary `json:"merged"`
+	Message    string          `json:"message,omitempty"`
 }
 
 type SourceStatus struct {
@@ -124,11 +121,10 @@ type ArtifactSummary struct {
 }
 
 type ConfigureResult struct {
-	Config            string             `json:"config"`
-	Configured        bool               `json:"configured"`
-	G204FilterEnabled bool               `json:"g204_filter_enabled"`
-	Sources           []ConfiguredSource `json:"sources"`
-	Message           string             `json:"message"`
+	Config     string             `json:"config"`
+	Configured bool               `json:"configured"`
+	Sources    []ConfiguredSource `json:"sources"`
+	Message    string             `json:"message"`
 }
 
 type ConfiguredSource struct {
@@ -141,24 +137,22 @@ type ConfiguredSource struct {
 }
 
 type GetResult struct {
-	Config            string             `json:"config"`
-	Configured        bool               `json:"configured"`
-	G204FilterEnabled bool               `json:"g204_filter_enabled"`
-	Sources           []ConfiguredSource `json:"sources"`
-	URIs              []string           `json:"uris"`
-	URLs              []string           `json:"urls"`
-	Count             int                `json:"count"`
-	Message           string             `json:"message,omitempty"`
+	Config     string             `json:"config"`
+	Configured bool               `json:"configured"`
+	Sources    []ConfiguredSource `json:"sources"`
+	URIs       []string           `json:"uris"`
+	URLs       []string           `json:"urls"`
+	Count      int                `json:"count"`
+	Message    string             `json:"message,omitempty"`
 }
 
 type RefreshResult struct {
-	Refreshed         bool                   `json:"refreshed"`
-	G204FilterEnabled bool                   `json:"g204_filter_enabled"`
-	Sources           []RefreshSourceSummary `json:"sources"`
-	Merged            ArtifactSummary        `json:"merged"`
-	Warnings          []string               `json:"warnings"`
-	Artifacts         []RefreshArtifact      `json:"-"`
-	MergedDoc         map[string]any         `json:"-"`
+	Refreshed bool                   `json:"refreshed"`
+	Sources   []RefreshSourceSummary `json:"sources"`
+	Merged    ArtifactSummary        `json:"merged"`
+	Warnings  []string               `json:"warnings"`
+	Artifacts []RefreshArtifact      `json:"-"`
+	MergedDoc map[string]any         `json:"-"`
 }
 
 type RefreshSourceSummary struct {
@@ -222,7 +216,6 @@ func Status(opts StatusOptions) (StatusResult, error) {
 		return StatusResult{}, err
 	}
 	result.Configured = true
-	result.G204FilterEnabled = config.G204FilterEnabled
 	for _, source := range config.Sources {
 		artifact := artifactPath(opts.RuntimeDir, source.ID)
 		summary := summarizeArtifact(artifact)
@@ -259,7 +252,6 @@ func Get(opts StatusOptions) (GetResult, error) {
 		return GetResult{}, err
 	}
 	result.Configured = true
-	result.G204FilterEnabled = config.G204FilterEnabled
 	for _, source := range config.Sources {
 		uri := sourcePrimaryURI(source)
 		result.Sources = append(result.Sources, ConfiguredSource{
@@ -290,15 +282,14 @@ func Configure(opts ConfigureOptions) (ConfigureResult, error) {
 	if err != nil {
 		return ConfigureResult{}, err
 	}
-	config := Config{Version: 1, G204FilterEnabled: opts.G204FilterEnabled, Sources: sources}
+	config := Config{Version: 1, Sources: sources}
 	if err := writeConfig(opts.ConfigPath, config); err != nil {
 		return ConfigureResult{}, err
 	}
 	result := ConfigureResult{
-		Config:            opts.ConfigPath,
-		Configured:        true,
-		G204FilterEnabled: opts.G204FilterEnabled,
-		Message:           "Subscription sources configured. Run subscriptions_refresh to update local artifacts.",
+		Config:     opts.ConfigPath,
+		Configured: true,
+		Message:    "Subscription sources configured. Run subscriptions_refresh to update local artifacts.",
 	}
 	for _, source := range sources {
 		result.Sources = append(result.Sources, ConfiguredSource{
@@ -403,7 +394,7 @@ func Refresh(ctx context.Context, opts RefreshOptions) (RefreshResult, error) {
 	}
 
 	finish = stage("read_artifacts", nil)
-	result := RefreshResult{Refreshed: true, G204FilterEnabled: config.G204FilterEnabled, Warnings: []string{}}
+	result := RefreshResult{Refreshed: true, Warnings: []string{}}
 	diskReads := 0
 	for _, source := range config.Sources {
 		path := artifactPath(opts.RuntimeDir, source.ID)
@@ -663,17 +654,6 @@ func readConfig(path string) (Config, error) {
 		return Config{}, err
 	}
 	return config, nil
-}
-
-func G204FilterEnabled(path string) (bool, error) {
-	config, err := readConfig(path)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return false, nil
-		}
-		return false, err
-	}
-	return config.G204FilterEnabled, nil
 }
 
 func writeConfig(path string, config Config) error {

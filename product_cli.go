@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"localclash/internal/appinit"
-	"localclash/internal/autoavailable"
 	"localclash/internal/baseassets"
 	"localclash/internal/capability"
 	"localclash/internal/capabilitystore"
@@ -103,7 +102,6 @@ type codedProductError struct {
 
 var downloadCore = coredownload.Download
 var rebuildProductChatGPT = chatgptavailable.RebuildSelectedCandidateWithMihomo
-var rebuildProductAutoAvailable = autoavailable.RebuildCandidateWithMihomo
 
 func (err codedProductError) Error() string {
 	return err.message
@@ -232,10 +230,9 @@ func runProductSubscription(args []string, state appinit.RuntimeState) error {
 		}
 		replace := true
 		result, err := subscriptions.Configure(subscriptions.ConfigureOptions{
-			ConfigPath:        state.Paths.SubscriptionConfig,
-			URIs:              uris,
-			Replace:           &replace,
-			G204FilterEnabled: input.G204FilterEnabled,
+			ConfigPath: state.Paths.SubscriptionConfig,
+			URIs:       uris,
+			Replace:    &replace,
 		})
 		if err != nil {
 			return err
@@ -257,7 +254,7 @@ func runProductSubscription(args []string, state appinit.RuntimeState) error {
 		if err != nil {
 			return err
 		}
-		capabilities, err := refreshProductCapabilities(ctx, state, result.MergedDoc, result.G204FilterEnabled, os.Stderr)
+		capabilities, err := refreshProductCapabilities(ctx, state, result.MergedDoc, os.Stderr)
 		if err != nil {
 			return err
 		}
@@ -273,7 +270,7 @@ type productSubscriptionRefreshStatus struct {
 	Capabilities []capability.Result `json:"capabilities,omitempty"`
 }
 
-func refreshProductCapabilities(ctx context.Context, state appinit.RuntimeState, subscriptionDoc map[string]any, g204FilterEnabled bool, logOutput io.Writer) ([]capability.Result, error) {
+func refreshProductCapabilities(ctx context.Context, state appinit.RuntimeState, subscriptionDoc map[string]any, logOutput io.Writer) ([]capability.Result, error) {
 	configPath := productWorkspacePath(state, "localclash-intent.json")
 	config, err := localconfig.Load(configPath)
 	if err != nil {
@@ -304,24 +301,15 @@ func refreshProductCapabilities(ctx context.Context, state appinit.RuntimeState,
 	defer os.RemoveAll(transactionDir)
 	results := make([]capability.Result, 0, len(profiles))
 	promotions := make([]capabilitystore.Item, 0, len(profiles))
-	var g204Qualified []string
 	chatGPTEligible, err := chatgptavailable.SelectableProxyNames(proxies)
 	if err != nil {
 		return nil, err
 	}
 	for _, profile := range profiles {
-		if profile == autoavailable.ProfileID && !g204FilterEnabled {
-			continue
-		}
 		started := time.Now()
 		startedFields := map[string]any{"profile": profile, "proxy_count": len(proxies)}
 		if profile == chatgptavailable.ProfileID {
-			if g204FilterEnabled {
-				chatGPTEligible = g204Qualified
-				startedFields["input_profile"] = autoavailable.ProfileID
-			} else {
-				startedFields["input_profile"] = "subscription.selectable"
-			}
+			startedFields["input_profile"] = "subscription.selectable"
 			startedFields["input_candidates"] = len(chatGPTEligible)
 		}
 		writeProductCapabilityStage(logOutput, "started", started, nil, startedFields)
@@ -330,8 +318,6 @@ func refreshProductCapabilities(ctx context.Context, state appinit.RuntimeState,
 		promotedPath := filepath.Join(capabilityRoot, filename)
 		candidatePath := filepath.Join(transactionDir, filename)
 		switch profile {
-		case autoavailable.ProfileID:
-			result, err = rebuildProductAutoAvailable(ctx, proxies, normalizeCorePathForState(state, state.Paths.CorePath), capabilityRoot, candidatePath, promotedPath)
 		case chatgptavailable.ProfileID:
 			result, err = rebuildProductChatGPT(ctx, proxies, chatGPTEligible, normalizeCorePathForState(state, state.Paths.CorePath), capabilityRoot, candidatePath, promotedPath)
 		}
@@ -349,9 +335,6 @@ func refreshProductCapabilities(ctx context.Context, state appinit.RuntimeState,
 		writeProductCapabilityStage(logOutput, "done", started, err, fields)
 		if err != nil {
 			return nil, fmt.Errorf("refresh capability %q: %w", profile, err)
-		}
-		if profile == autoavailable.ProfileID {
-			g204Qualified = append([]string{}, result.Qualified...)
 		}
 		validationProfile := profile
 		promotions = append(promotions, capabilitystore.Item{
@@ -404,7 +387,7 @@ func configuredProductCapabilityProfiles(config localconfig.Config) []string {
 func validateSupportedCapabilityProfiles(profiles []string) error {
 	for _, profile := range profiles {
 		switch profile {
-		case autoavailable.ProfileID, chatgptavailable.ProfileID:
+		case chatgptavailable.ProfileID:
 		case chatgptavailable.LegacyProfileID:
 			return fmt.Errorf("legacy ChatGPT capability %q is no longer supported; refresh the localclash-default policy-template patches before subscription refresh", profile)
 		default:
@@ -416,8 +399,6 @@ func validateSupportedCapabilityProfiles(profiles []string) error {
 
 func productCapabilitySnapshotFilename(profile string) string {
 	switch profile {
-	case autoavailable.ProfileID:
-		return "auto-available.json"
 	case chatgptavailable.ProfileID:
 		return "chatgpt-available.json"
 	default:
@@ -427,9 +408,6 @@ func productCapabilitySnapshotFilename(profile string) string {
 
 func validateProductCapabilitySnapshot(profile, path string) error {
 	switch profile {
-	case autoavailable.ProfileID:
-		_, err := autoavailable.LoadQualified(path)
-		return err
 	case chatgptavailable.ProfileID:
 		_, err := chatgptavailable.LoadQualified(path)
 		return err
@@ -1330,10 +1308,9 @@ type resetInput struct {
 }
 
 type subscriptionInput struct {
-	Version           int      `json:"version"`
-	URIs              []string `json:"uris"`
-	URLs              []string `json:"urls"`
-	G204FilterEnabled bool     `json:"g204_filter_enabled"`
+	Version int      `json:"version"`
+	URIs    []string `json:"uris"`
+	URLs    []string `json:"urls"`
 }
 
 type configInput struct {
@@ -1671,7 +1648,7 @@ func applyTemplateTransaction(ctx context.Context, input configInput, state appi
 		if err != nil {
 			return fmt.Errorf("refresh subscriptions for policy template: %w", err)
 		}
-		capabilities, err = refreshProductCapabilities(ctx, state, refreshResult.MergedDoc, refreshResult.G204FilterEnabled, os.Stderr)
+		capabilities, err = refreshProductCapabilities(ctx, state, refreshResult.MergedDoc, os.Stderr)
 		if err != nil {
 			return fmt.Errorf("refresh policy capabilities: %w", err)
 		}
@@ -1819,35 +1796,10 @@ func loadProductCapabilityNodes(config localconfig.Config, state appinit.Runtime
 	}
 	root := productCapabilityRoot(state)
 	nodes := make(map[string][]string, len(profiles))
-	g204FilterEnabled, err := subscriptions.G204FilterEnabled(state.Paths.SubscriptionConfig)
-	if err != nil {
-		return nil, err
-	}
-	var unfilteredAutomaticNodes []string
-	if !g204FilterEnabled {
-		subscriptionNodes, loadErr := localconfig.LoadSubscriptionNodes(localconfig.SubscriptionNodeOptions{
-			SubscriptionPath: state.Paths.SubscriptionPath, SubscriptionConfig: state.Paths.SubscriptionConfig, SubscriptionRuntime: state.Paths.SubscriptionRuntime,
-		})
-		if loadErr != nil {
-			return nil, loadErr
-		}
-		unfilteredAutomaticNodes = make([]string, 0, len(subscriptionNodes))
-		for _, node := range subscriptionNodes {
-			if name := strings.TrimSpace(node.Name); name != "" {
-				unfilteredAutomaticNodes = append(unfilteredAutomaticNodes, name)
-			}
-		}
-	}
 	for _, profile := range profiles {
-		if profile == autoavailable.ProfileID && !g204FilterEnabled {
-			nodes[profile] = append([]string{}, unfilteredAutomaticNodes...)
-			continue
-		}
 		var qualified []string
 		var err error
 		switch profile {
-		case autoavailable.ProfileID:
-			qualified, err = autoavailable.LoadQualified(filepath.Join(root, "auto-available.json"))
 		case chatgptavailable.ProfileID:
 			qualified, err = chatgptavailable.LoadQualified(filepath.Join(root, "chatgpt-available.json"))
 		}

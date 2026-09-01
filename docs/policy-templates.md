@@ -45,11 +45,9 @@ strategy layer. `DNSProxy` exits through `⚡ 自动选择`, so router DNS `#DNS
 references have a concrete target even without loading the default patch set.
 `⚡ 自动选择` uses the complete selectable subscription set by default.
 Referenced `dialer-proxy` helpers are excluded, but nodes are not collapsed by
-hostname, resolved IP, port, protocol, or credentials. Subscription settings can
-enable `g204_filter_enabled`; only then does `subscriptions_refresh` require each
-selectable proxy definition to return an exact HTTP 204 from
-`https://cp.cloudflare.com/generate_204` through an isolated Mihomo before it is
-admitted to this group.
+hostname, resolved IP, port, protocol, or credentials. Mihomo performs the
+automatic group's runtime health checks directly; subscription refresh does not
+apply a separate connectivity prefilter.
 
 `localclash-default` adds regional exits plus business routing groups. Its
 `🌐 全球直连` policy defaults to `DIRECT` while exposing automatic and regional
@@ -93,14 +91,11 @@ localClash starts an isolated temporary Mihomo and assigns one loopback mixed
 listener to every capability candidate. It waits for every listener before
 starting HTTP workers and checks the process plus all listeners again after the
 workers complete; a startup race or listener collapse is an infrastructure
-failure, not an empty capability observation. The automatic-connectivity capability
-sends a strict generate-204 request only when the subscription option is enabled.
-The ChatGPT capability is always rebuilt: it sends the Statsig initialize request
-for every selectable subscription proxy when g204 filtering is disabled, or for
-the current g204-qualified set when it is enabled. Endpoint
-checks use 16-worker bounded concurrency. A failed g204 or ChatGPT request is
-retried once; either attempt may qualify the candidate, while two failures remove
-it. Large subscriptions finish according to
+failure, not an empty capability observation. The ChatGPT capability sends the
+Statsig initialize request for every selectable subscription proxy. Endpoint
+checks use 16-worker bounded concurrency. A failed ChatGPT request is retried
+once; either attempt may qualify the candidate, while two failures remove it.
+Large subscriptions finish according to
 their finite batch count and per-request timeout rather than an unrelated fixed
 whole-batch deadline. The probes do not mutate or depend on the active core's
 `alive` state. The resulting secret-safe snapshot
@@ -121,23 +116,17 @@ qualifies, the snapshot records the per-candidate failures and an explicit empty
 
 The product CLI `subscription refresh --json` and MCP `subscriptions_refresh`
 both rebuild the capabilities selected by the subscription policy. ChatGPT is
-always rebuilt when it is declared by the product template. The g204 snapshot is
-rebuilt only when `g204_filter_enabled` is true; otherwise `⚡ 自动选择` resolves
-directly from the complete selectable subscription set. The snapshots record the
+always rebuilt when it is declared by the product template. `⚡ 自动选择`
+resolves directly from the complete selectable subscription set. Capability snapshots record the
 ordered qualified node names as derived state so a following `config render
 --json` or MCP `config_render` can resolve the same capability even after the
 patch registry recompiles `localclash-intent.json`. A missing, legacy, malformed,
 or unsupported capability snapshot fails explicitly and requires another
 subscription refresh. An optional capability may resolve to an explicit empty
-set. A required empty capability still fails during config resolution except
-for `network.connectivity.g204.v1`, whose explicit empty result restores the
-original all-subscription-nodes `⚡ 自动选择` structure.
+set. A required empty capability fails during config resolution.
 MCP subscription refresh renders a candidate config, runs isolated `mihomo -t`,
 and only then promotes the candidate snapshot and config. Applying the promoted
 config to an active runtime remains the explicit confirm-required hot-reload step.
-When g204 is explicitly empty, MCP atomically promotes the same-refresh empty
-capability snapshots together with the validated fallback config. ChatGPT stays
-empty and the runtime still requires an explicit hot reload.
 The product `config apply-template` input can set `refresh_subscription: true`
 to place template import, subscription refresh, all configured capability
 snapshots, resolved selection, rendered config, and recorded `mihomo -t`
@@ -145,26 +134,14 @@ attestation in one rollback-protected material transaction. This is the LuCI
 one-click-update and configured first-use path; callers do not need to coordinate
 those intermediate states themselves.
 
-The automatic-connectivity qualification requires one strict HTTP 204 response.
-An initial failure receives one bounded retry; two failures remove the candidate.
-ChatGPT Statsig qualification uses the same two-attempt failure threshold.
+ChatGPT Statsig qualification uses a two-attempt failure threshold.
 There is no cross-refresh failure hysteresis or stale-result retention.
-When g204 filtering is enabled, `ChatGPT-available` is a subset of the current
-g204-qualified set. When it is disabled, ChatGPT qualification starts from every
-selectable subscription proxy and remains independent of g204.
+ChatGPT qualification starts from every selectable subscription proxy.
 
 When Smart Core is active, `⚡ 自动选择` applies HK `6`, JP `5`, SG `4`, TW `3`,
-US `2`, and Other `1` to the complete selectable set by default, or after g204
-qualification when the subscription option is enabled. The
+US `2`, and Other `1` to the complete selectable set. The
 weights are soft Smart preferences, not a fallback chain. Meta Core receives the
 same qualified candidate set as a normal `url-test` group.
-
-If enabled g204 filtering completes but qualifies no nodes, `⚡ 自动选择` falls back to its
-pre-g204 structure: the current subscription's complete node list in source
-order, with the same automatic group type and Smart priorities. The empty g204
-snapshot remains the observed capability fact. This fallback does not apply to
-ChatGPT qualification and does not conceal probe-process, missing-snapshot, or
-malformed-snapshot errors.
 
 When Smart Core is active, `ChatGPT-available` applies ordered proxy-name labels
 and weights: US `5`, JP `4`, SG `3`, TW `2`, and Other `1`. This is a soft

@@ -18,8 +18,6 @@ import (
 
 const ConfigSchemaVersion = 4
 
-const automaticConnectivityCapability = "network.connectivity.g204.v1"
-
 type Config struct {
 	Version          int                    `json:"version" yaml:"version"`
 	PolicyTemplate   string                 `json:"policy_template,omitempty" yaml:"policy_template,omitempty"`
@@ -231,17 +229,16 @@ type Resolved struct {
 }
 
 type ProxyGroupResult struct {
-	ID                        string             `json:"id"`
-	Mode                      string             `json:"mode"`
-	Match                     *Match             `json:"match,omitempty"`
-	Capability                string             `json:"capability,omitempty"`
-	CapabilityFallbackApplied bool               `json:"capability_fallback_applied,omitempty"`
-	SelectedNodes             []string           `json:"selected_nodes"`
-	SmartPriority             []smartpolicy.Rule `json:"smart_priority,omitempty"`
-	NodeCount                 int                `json:"node_count"`
-	Optional                  bool               `json:"optional,omitempty"`
-	Reason                    string             `json:"reason,omitempty"`
-	Boundary                  string             `json:"boundary,omitempty"`
+	ID            string             `json:"id"`
+	Mode          string             `json:"mode"`
+	Match         *Match             `json:"match,omitempty"`
+	Capability    string             `json:"capability,omitempty"`
+	SelectedNodes []string           `json:"selected_nodes"`
+	SmartPriority []smartpolicy.Rule `json:"smart_priority,omitempty"`
+	NodeCount     int                `json:"node_count"`
+	Optional      bool               `json:"optional,omitempty"`
+	Reason        string             `json:"reason,omitempty"`
+	Boundary      string             `json:"boundary,omitempty"`
 }
 
 type PolicyGroupResult struct {
@@ -419,7 +416,6 @@ func Resolve(opts ResolveOptions) (Resolved, error) {
 		}
 		var selected []string
 		var err error
-		capabilityFallbackApplied := false
 		finishGroup := stage("resolve_proxy_group", map[string]any{
 			"group_id":     id,
 			"mode":         mode,
@@ -445,10 +441,8 @@ func Resolve(opts ResolveOptions) (Resolved, error) {
 				finish(err, groupStats.fields())
 				return Resolved{}, err
 			}
-			qualified, capabilityExists := opts.CapabilityNodes[automaticConnectivityCapability]
-			capabilityFallbackApplied = strings.TrimSpace(group.Capability) == automaticConnectivityCapability && capabilityExists && len(qualified) == 0 && len(selected) > 0
 			groupStats.add(currentStats)
-			finishGroup(nil, mergeFields(map[string]any{"selected_nodes": len(selected), "capability_fallback_applied": capabilityFallbackApplied}, currentStats.fields()))
+			finishGroup(nil, mergeFields(map[string]any{"selected_nodes": len(selected)}, currentStats.fields()))
 		}
 		if mode == "direct" {
 			finishGroup(nil, map[string]any{"selected_nodes": len(selected)})
@@ -473,17 +467,16 @@ func Resolve(opts ResolveOptions) (Resolved, error) {
 		}
 		selection.ProxyGroups[id] = ruleGroup
 		groupResults = append(groupResults, ProxyGroupResult{
-			ID:                        id,
-			Mode:                      mode,
-			Match:                     group.Match,
-			Capability:                group.Capability,
-			CapabilityFallbackApplied: capabilityFallbackApplied,
-			SelectedNodes:             append([]string{}, selected...),
-			SmartPriority:             smartpolicy.Clone(group.SmartPriority),
-			NodeCount:                 len(selected),
-			Optional:                  group.Optional,
-			Reason:                    group.Reason,
-			Boundary:                  group.Boundary,
+			ID:            id,
+			Mode:          mode,
+			Match:         group.Match,
+			Capability:    group.Capability,
+			SelectedNodes: append([]string{}, selected...),
+			SmartPriority: smartpolicy.Clone(group.SmartPriority),
+			NodeCount:     len(selected),
+			Optional:      group.Optional,
+			Reason:        group.Reason,
+			Boundary:      group.Boundary,
 		})
 	}
 	finish(nil, mergeFields(map[string]any{"resolved_proxy_groups": len(groupResults)}, groupStats.fields()))
@@ -951,9 +944,6 @@ func resolveProxyGroupMeasured(id string, group ProxyGroup, nodes []Subscription
 				return nil, fmt.Errorf("proxy group %q requires unresolved capability %q; run subscriptions_refresh", id, capability)
 			}
 			selected = group.SelectedNodes
-		}
-		if exists && len(selected) == 0 && capability == automaticConnectivityCapability {
-			return resolveMatchMeasured(id, Match{Type: "name_regex", Pattern: ".*", Min: 1}, nodes, false, stats)
 		}
 		if len(selected) == 0 && group.Optional {
 			return []string{}, nil

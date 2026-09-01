@@ -20,7 +20,6 @@ import (
 	"time"
 
 	"localclash/internal/appinit"
-	"localclash/internal/autoavailable"
 	"localclash/internal/capability"
 	"localclash/internal/capabilitystore"
 	"localclash/internal/chatgptavailable"
@@ -57,7 +56,6 @@ type Server struct {
 	configPatchDraftSlot  *configPatchDraftSlot
 	watchdogNoticeMu      sync.Mutex
 	watchdogNotices       map[string]time.Time
-	rebuildAutoAvailable  func(context.Context, []map[string]any, string, string, string, string) (autoavailable.Result, error)
 	rebuildChatGPT        func(context.Context, []map[string]any, []string, string, string, string, string) (chatgptavailable.Result, error)
 	testMihomoConfig      func(context.Context, mihomotest.TestOptions) (mihomotest.TestResult, error)
 	promoteMihomoConfig   func(string, string, string) (mihomotest.PromoteResult, error)
@@ -85,15 +83,14 @@ func NewServerWithState(state appinit.RuntimeState) *Server {
 func newServer(state *appinit.RuntimeState) *Server {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Server{
-		state:                state,
-		startedAt:            time.Now().UTC(),
-		taskCtx:              ctx,
-		taskCancel:           cancel,
-		watchdogNotices:      map[string]time.Time{},
-		rebuildAutoAvailable: autoavailable.RebuildCandidateWithMihomo,
-		rebuildChatGPT:       chatgptavailable.RebuildSelectedCandidateWithMihomo,
-		testMihomoConfig:     mihomotest.Test,
-		promoteMihomoConfig:  mihomotest.PromoteConfig,
+		state:               state,
+		startedAt:           time.Now().UTC(),
+		taskCtx:             ctx,
+		taskCancel:          cancel,
+		watchdogNotices:     map[string]time.Time{},
+		rebuildChatGPT:      chatgptavailable.RebuildSelectedCandidateWithMihomo,
+		testMihomoConfig:    mihomotest.Test,
+		promoteMihomoConfig: mihomotest.PromoteConfig,
 	}
 }
 
@@ -1459,23 +1456,7 @@ func renderCurrentConfig(ctx context.Context, in configToolInput, force bool) (m
 			finishTaskStage(finish, err, nil)
 			return nil, err
 		}
-		g204FilterEnabled, err := subscriptions.G204FilterEnabled(in.SubscriptionConfig)
-		if err != nil {
-			finishTaskStage(finish, err, nil)
-			return nil, err
-		}
-		var unfilteredAutomaticNodes []string
-		if !g204FilterEnabled {
-			nodes, loadErr := localconfig.LoadSubscriptionNodes(localconfig.SubscriptionNodeOptions{
-				SubscriptionPath: in.Subscription, SubscriptionConfig: in.SubscriptionConfig, SubscriptionRuntime: in.SubscriptionRuntime,
-			})
-			if loadErr != nil {
-				finishTaskStage(finish, loadErr, nil)
-				return nil, loadErr
-			}
-			unfilteredAutomaticNodes = subscriptionNodeNames(nodes)
-		}
-		capabilityNodes, err := configuredCapabilityNodesFromSnapshot(config, in.CapabilityRoot, g204FilterEnabled, unfilteredAutomaticNodes)
+		capabilityNodes, err := configuredCapabilityNodesFromSnapshot(config, in.CapabilityRoot)
 		if err != nil {
 			finishTaskStage(finish, err, nil)
 			return nil, err
@@ -2222,9 +2203,8 @@ func (s *Server) callSubscriptionsConfigure(args json.RawMessage) (toolResult, e
 		DisplayName string `json:"display_name"`
 	}
 	var in struct {
-		Sources           []subscriptionConfigureSourceInput `json:"sources"`
-		Replace           *bool                              `json:"replace"`
-		G204FilterEnabled bool                               `json:"g204_filter_enabled"`
+		Sources []subscriptionConfigureSourceInput `json:"sources"`
+		Replace *bool                              `json:"replace"`
 	}
 	decoder := json.NewDecoder(bytes.NewReader(args))
 	decoder.DisallowUnknownFields()
@@ -2251,10 +2231,9 @@ func (s *Server) callSubscriptionsConfigure(args json.RawMessage) (toolResult, e
 		})
 	}
 	result, err := subscriptions.Configure(subscriptions.ConfigureOptions{
-		ConfigPath:        config,
-		Sources:           sources,
-		Replace:           in.Replace,
-		G204FilterEnabled: in.G204FilterEnabled,
+		ConfigPath: config,
+		Sources:    sources,
+		Replace:    in.Replace,
 	})
 	if err != nil {
 		return toolResult{}, err
@@ -2366,7 +2345,7 @@ func (s *Server) callSubscriptionsRefresh(ctx context.Context, args json.RawMess
 		NodeDiff:      buildNodeDiff(beforeNodes, afterNodes),
 	}
 	finish = startTaskStage(ctx, "evaluate_localclash_impact", map[string]any{"config": in.LocalClashConfig})
-	impact := s.evaluateLocalClashAfterRefresh(ctx, in.LocalClashConfig, in.Selection, in.Merged, in.Config, in.RuntimeDir, in.RulesCache, in.RuntimeProfileConfig, in.Output, in.CorePath, in.CapabilityRoot, result.G204FilterEnabled, afterNodes, result.MergedDoc)
+	impact := s.evaluateLocalClashAfterRefresh(ctx, in.LocalClashConfig, in.Selection, in.Merged, in.Config, in.RuntimeDir, in.RulesCache, in.RuntimeProfileConfig, in.Output, in.CorePath, in.CapabilityRoot, afterNodes, result.MergedDoc)
 	finishTaskStage(finish, nil, map[string]any{"exists": impact.Exists, "state": impact.State, "valid": impact.Valid})
 	if impact.Exists {
 		toolResultValue.LocalClash = &impact
@@ -2472,7 +2451,7 @@ func buildNodeDiff(before, after []localconfig.SubscriptionNode) nodeDiff {
 	return diff
 }
 
-func (s *Server) evaluateLocalClashAfterRefresh(ctx context.Context, configPath, selectionPath, subscriptionPath, subscriptionConfig, subscriptionRuntime, rulesCache, presetPath, outputPath, corePath, capabilityRoot string, g204FilterEnabled bool, subscriptionNodes []localconfig.SubscriptionNode, subscriptionDoc map[string]any) localClashRefreshImpact {
+func (s *Server) evaluateLocalClashAfterRefresh(ctx context.Context, configPath, selectionPath, subscriptionPath, subscriptionConfig, subscriptionRuntime, rulesCache, presetPath, outputPath, corePath, capabilityRoot string, subscriptionNodes []localconfig.SubscriptionNode, subscriptionDoc map[string]any) localClashRefreshImpact {
 	impact := localClashRefreshImpact{ConfigPath: configPath, GeneratedConfig: outputPath, SelectionPath: selectionPath}
 	finish := startTaskStage(ctx, "evaluate_localclash_impact.load_config", map[string]any{"config": configPath})
 	config, err := localconfig.Load(configPath)
@@ -2492,9 +2471,6 @@ func (s *Server) evaluateLocalClashAfterRefresh(ctx context.Context, configPath,
 
 	capabilityNodes := map[string][]string{}
 	profiles := configuredCapabilityProfiles(config)
-	if !g204FilterEnabled {
-		capabilityNodes[autoavailable.ProfileID] = subscriptionNodeNames(subscriptionNodes)
-	}
 	var capabilityPromotions []capabilitySnapshotPromotion
 	var capabilityTransactionDir string
 	if len(profiles) > 0 {
@@ -2527,7 +2503,6 @@ func (s *Server) evaluateLocalClashAfterRefresh(ctx context.Context, configPath,
 			impact.NextActions = []string{"inspect the capability qualification task stage", "retry subscriptions_refresh after the probe path is healthy"}
 			return impact
 		}
-		var g204Qualified []string
 		chatGPTEligible, err := chatgptavailable.SelectableProxyNames(proxies)
 		if err != nil {
 			impact.State = "capability_probe_failed"
@@ -2536,27 +2511,17 @@ func (s *Server) evaluateLocalClashAfterRefresh(ctx context.Context, configPath,
 			return impact
 		}
 		for _, profile := range profiles {
-			if profile == autoavailable.ProfileID && !g204FilterEnabled {
-				continue
-			}
 			filename := capabilitySnapshotFilename(profile)
 			promoted := filepath.Join(capabilityRoot, filename)
 			candidate := filepath.Join(capabilityTransactionDir, filename)
 			stageFields := map[string]any{"profile": profile, "proxy_count": len(subscriptionNodes), "candidate": candidate}
 			if profile == chatgptavailable.ProfileID {
-				if g204FilterEnabled {
-					chatGPTEligible = g204Qualified
-					stageFields["input_profile"] = autoavailable.ProfileID
-				} else {
-					stageFields["input_profile"] = "subscription.selectable"
-				}
+				stageFields["input_profile"] = "subscription.selectable"
 				stageFields["input_candidates"] = len(chatGPTEligible)
 			}
 			finish = startTaskStage(ctx, "evaluate_localclash_impact.qualify_capability", stageFields)
 			var result capability.Result
 			switch profile {
-			case autoavailable.ProfileID:
-				result, err = s.rebuildAutoAvailable(ctx, proxies, corePath, capabilityRoot, candidate, promoted)
 			case chatgptavailable.ProfileID:
 				result, err = s.rebuildChatGPT(ctx, proxies, chatGPTEligible, corePath, capabilityRoot, candidate, promoted)
 			}
@@ -2567,9 +2532,6 @@ func (s *Server) evaluateLocalClashAfterRefresh(ctx context.Context, configPath,
 				impact.Error = err.Error()
 				impact.NextActions = []string{"inspect the capability qualification task stage", "retry subscriptions_refresh after the probe path is healthy"}
 				return impact
-			}
-			if profile == autoavailable.ProfileID {
-				g204Qualified = append([]string{}, result.Qualified...)
 			}
 			impact.Capabilities = append(impact.Capabilities, result)
 			capabilityNodes[profile] = append([]string{}, result.Qualified...)
@@ -2757,7 +2719,7 @@ func configuredCapabilityProfiles(config localconfig.Config) []string {
 func validateCapabilityProfiles(profiles []string) error {
 	for _, profile := range profiles {
 		switch profile {
-		case autoavailable.ProfileID, chatgptavailable.ProfileID:
+		case chatgptavailable.ProfileID:
 		case chatgptavailable.LegacyProfileID:
 			return fmt.Errorf("legacy ChatGPT capability %q is no longer supported; refresh the localclash-default policy-template patches before subscription refresh", profile)
 		default:
@@ -2779,8 +2741,6 @@ func subscriptionNodeNames(nodes []localconfig.SubscriptionNode) []string {
 
 func capabilitySnapshotFilename(profile string) string {
 	switch profile {
-	case autoavailable.ProfileID:
-		return "auto-available.json"
 	case chatgptavailable.ProfileID:
 		return "chatgpt-available.json"
 	default:
@@ -2790,9 +2750,6 @@ func capabilitySnapshotFilename(profile string) string {
 
 func validateCapabilitySnapshot(profile, path string) error {
 	switch profile {
-	case autoavailable.ProfileID:
-		_, err := autoavailable.LoadQualified(path)
-		return err
 	case chatgptavailable.ProfileID:
 		_, err := chatgptavailable.LoadQualified(path)
 		return err
@@ -2829,7 +2786,7 @@ func promoteCandidateAttestation(candidate, promoted string) error {
 	return nil
 }
 
-func configuredCapabilityNodesFromSnapshot(config localconfig.Config, capabilityRoot string, g204FilterEnabled bool, unfilteredAutomaticNodes []string) (map[string][]string, error) {
+func configuredCapabilityNodesFromSnapshot(config localconfig.Config, capabilityRoot string) (map[string][]string, error) {
 	profiles := configuredCapabilityProfiles(config)
 	if len(profiles) == 0 {
 		return map[string][]string{}, nil
@@ -2839,16 +2796,10 @@ func configuredCapabilityNodesFromSnapshot(config localconfig.Config, capability
 	}
 	nodes := make(map[string][]string, len(profiles))
 	for _, profile := range profiles {
-		if profile == autoavailable.ProfileID && !g204FilterEnabled {
-			nodes[profile] = append([]string{}, unfilteredAutomaticNodes...)
-			continue
-		}
 		path := filepath.Join(capabilityRoot, capabilitySnapshotFilename(profile))
 		var qualified []string
 		var err error
 		switch profile {
-		case autoavailable.ProfileID:
-			qualified, err = autoavailable.LoadQualified(path)
 		case chatgptavailable.ProfileID:
 			qualified, err = chatgptavailable.LoadQualified(path)
 		}

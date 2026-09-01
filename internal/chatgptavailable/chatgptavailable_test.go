@@ -92,7 +92,7 @@ func TestRebuildPublishesOnlyQualifiedNodes(t *testing.T) {
 	}
 }
 
-func TestRebuildSelectedOnlyProbesG204QualifiedNodes(t *testing.T) {
+func TestRebuildSelectedOnlyProbesEligibleNodes(t *testing.T) {
 	snapshotPath := filepath.Join(t.TempDir(), "chatgpt.json")
 	proxies := []map[string]any{
 		{"name": "HK 01", "type": "ss", "server": "hk.example.com"},
@@ -107,11 +107,11 @@ func TestRebuildSelectedOnlyProbesG204QualifiedNodes(t *testing.T) {
 		t.Fatal(err)
 	}
 	if result.Candidates != 2 || result.Probed != 2 || !reflect.DeepEqual(result.Qualified, []string{"US 01"}) {
-		t.Fatalf("result = %+v, want only g204-qualified candidates probed", result)
+		t.Fatalf("result = %+v, want only eligible candidates probed", result)
 	}
 }
 
-func TestRebuildSelectedPublishesEmptyResultWithoutProbingWhenG204IsEmpty(t *testing.T) {
+func TestRebuildSelectedPublishesEmptyResultWithoutProbingWhenEligibleSetIsEmpty(t *testing.T) {
 	snapshotPath := filepath.Join(t.TempDir(), "chatgpt.json")
 	prober := fakeProber{err: errors.New("must not probe")}
 	result, err := RebuildSelected(context.Background(), []map[string]any{{"name": "US 01", "type": "ss"}}, []string{}, prober, Options{SnapshotPath: snapshotPath})
@@ -124,7 +124,7 @@ func TestRebuildSelectedPublishesEmptyResultWithoutProbingWhenG204IsEmpty(t *tes
 	}
 }
 
-func TestRebuildSelectedRejectsMissingG204Candidate(t *testing.T) {
+func TestRebuildSelectedRejectsMissingEligibleCandidate(t *testing.T) {
 	_, err := RebuildSelected(context.Background(), []map[string]any{{"name": "US 01"}}, []string{"JP 01"}, fakeProber{}, Options{SnapshotPath: filepath.Join(t.TempDir(), "chatgpt.json")})
 	if err == nil || !strings.Contains(err.Error(), "JP 01") {
 		t.Fatalf("error = %v, want missing eligible candidate", err)

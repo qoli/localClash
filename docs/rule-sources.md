@@ -46,32 +46,17 @@ User selection belongs in a separate packs selection gob:
 `proxy_groups` materialize to Clash/Mihomo runtime proxy-groups. `nodes` must
 be exact proxy names from `subscription.gob`; use `subscription_nodes_search`
 to find candidate names first. Most groups do not verify egress regions with IP
-lookup or hostname geolocation. Two built-in capabilities are available during
-`subscriptions_refresh`. `network.connectivity.g204.v1` is optional subscription
-filtering for `⚡ 自动选择` and defaults to disabled. When enabled, it excludes
-referenced `dialer-proxy` helpers, probes every remaining proxy definition
-independently without endpoint or protocol deduplication, and requires an exact HTTP 204 from
-`https://cp.cloudflare.com/generate_204` through an isolated temporary Mihomo.
-Each candidate may be observed twice after one initial failure, with no
-cross-refresh failure hysteresis: either attempt may admit it, and two failures
-remove it from the high-quality automatic set.
-`openai.chatgpt.statsig.v1` is always rebuilt and derives its nodes by
+lookup or hostname geolocation. `openai.chatgpt.statsig.v1` is the built-in
+capability rebuilt by `subscriptions_refresh`; it derives its nodes by
 requiring a successful Brotli-compressed Statsig initialization at
 `https://ab.chatgpt.com/v1/initialize` through an isolated temporary Mihomo. Its
-candidate set is the complete selectable subscription when g204 filtering is
-disabled, or the current `network.connectivity.g204.v1` qualified list when it is
-enabled.
+candidate set is the complete selectable subscription.
 HTTP 200, valid JSON, and a non-empty `derived_fields.country` are required.
 Rejection, connection reset, timeout, malformed response, or a bounded-size
 violation removes the candidate after two failed observations with one retry and
 no failure hysteresis. A completed probe with no qualified nodes publishes an
-explicit empty capability result. When the empty profile is
-`network.connectivity.g204.v1`, `⚡ 自动选择` resolves through its original
-all-subscription-nodes automatic structure. With g204 enabled, ChatGPT consumes
-the observed same-refresh g204 set and therefore remains empty in that case.
-With g204 disabled, ChatGPT instead probes the complete selectable set.
-Infrastructure, missing, and
-malformed snapshot errors do not use this fallback. A `capability` group
+explicit empty capability result. Infrastructure, missing, and malformed
+snapshot errors fail explicitly. A `capability` group
 cannot also declare `nodes` or `match`. Choose either
 `auto: true` or `manual: true`; enabling both is rejected because it would
 create competing runtime groups for the same target.

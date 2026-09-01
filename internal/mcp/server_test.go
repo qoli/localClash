@@ -19,7 +19,6 @@ import (
 	"time"
 
 	"localclash/internal/appinit"
-	"localclash/internal/autoavailable"
 	"localclash/internal/chatgptavailable"
 	"localclash/internal/localconfig"
 	"localclash/internal/mihomotest"
@@ -976,7 +975,6 @@ func TestToolsCallSubscriptionsConfigureReturnsSerializableResult(t *testing.T) 
 		"params": map[string]any{
 			"name": "subscriptions_configure",
 			"arguments": map[string]any{
-				"g204_filter_enabled": true,
 				"sources": []map[string]any{
 					{"url": "https://example.com/sub?token=secret-token"},
 				},
@@ -988,8 +986,8 @@ func TestToolsCallSubscriptionsConfigureReturnsSerializableResult(t *testing.T) 
 	}
 	result := marshalToolResult(t, resp.Result)
 	content := result.StructuredContent.(map[string]any)
-	if content["configured"] != true || content["g204_filter_enabled"] != true {
-		t.Fatalf("configured result = %+v, want enabled g204 filter", content)
+	if content["configured"] != true {
+		t.Fatalf("configured result = %+v, want configured subscription", content)
 	}
 	data, err := json.Marshal(result.StructuredContent)
 	if err != nil {
@@ -997,6 +995,27 @@ func TestToolsCallSubscriptionsConfigureReturnsSerializableResult(t *testing.T) 
 	}
 	if strings.Contains(string(data), "secret-token") || strings.Contains(string(data), "token=") {
 		t.Fatalf("subscriptions_configure leaked token in %s", data)
+	}
+}
+
+func TestToolsCallSubscriptionsConfigureRejectsRemovedG204Option(t *testing.T) {
+	server := NewServerWithState(appinit.RuntimeState{Paths: appinit.RuntimePaths{
+		SubscriptionConfig: filepath.Join(t.TempDir(), "localclash-subscriptions.json"),
+	}})
+	resp := callHandleWithServer(t, server, map[string]any{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  "tools/call",
+		"params": map[string]any{
+			"name": "subscriptions_configure",
+			"arguments": map[string]any{
+				"g204_filter_enabled": true,
+				"sources":             []map[string]any{{"url": "https://example.com/sub"}},
+			},
+		},
+	})
+	if resp.Error == nil || !strings.Contains(resp.Error.Message, "unknown field") {
+		t.Fatalf("removed option response = %+v, want explicit unknown-field failure", resp)
 	}
 }
 
@@ -1197,7 +1216,6 @@ func TestToolsCallSubscriptionsRefreshRebuildsChatGPTAvailable(t *testing.T) {
 		Packs:      []rules.Pack{mcpBlackmatrixPack("OpenAI", "ChatGPT")},
 	})
 	writeMCPFile(t, subscriptionConfig, fmt.Sprintf(`version: 1
-g204_filter_enabled: true
 sources:
   - id: primary
     display_name: "01"
@@ -1208,7 +1226,7 @@ sources:
   "proxy_groups": {
     "⚡ 自动选择": {
       "mode": "smart",
-      "capability": "network.connectivity.g204.v1"
+      "match": {"type": "name_regex", "pattern": ".*", "min": 1}
     },
     "ChatGPT-available": {
       "mode": "smart",
@@ -1240,19 +1258,12 @@ sources:
 		GeneratedConfig:     generated,
 		CorePath:            filepath.Join(dir, "unused-fake-core"),
 	}})
-	server.rebuildAutoAvailable = func(_ context.Context, proxies []map[string]any, _, runtimeParent, snapshotPath, previousSnapshotPath string) (autoavailable.Result, error) {
-		if len(proxies) != 2 || runtimeParent != capabilityRoot || filepath.Dir(snapshotPath) == capabilityRoot || previousSnapshotPath != filepath.Join(capabilityRoot, "auto-available.json") {
-			t.Fatalf("automatic capability inputs proxies=%+v runtime=%q candidate=%q previous=%q", proxies, runtimeParent, snapshotPath, previousSnapshotPath)
-		}
-		writeMCPFile(t, snapshotPath, fmt.Sprintf(`{"version":2,"profile":%q,"updated_at":"2026-08-15T00:00:00Z","qualified":["JP 01"],"nodes":{}}`, autoavailable.ProfileID))
-		return autoavailable.Result{Profile: autoavailable.ProfileID, SnapshotPath: snapshotPath, Candidates: 2, Probed: 2, Qualified: []string{"JP 01"}, QualifiedCount: 1, UnavailableCount: 1}, nil
-	}
 	server.rebuildChatGPT = func(_ context.Context, proxies []map[string]any, eligible []string, _, runtimeParent, snapshotPath, previousSnapshotPath string) (chatgptavailable.Result, error) {
 		if len(proxies) != 2 || proxies[0]["name"] != "US 01" || proxies[1]["name"] != "JP 01" {
 			t.Fatalf("probe proxies = %+v", proxies)
 		}
-		if !reflect.DeepEqual(eligible, []string{"JP 01"}) {
-			t.Fatalf("ChatGPT eligible nodes = %+v, want current g204 result", eligible)
+		if !reflect.DeepEqual(eligible, []string{"US 01", "JP 01"}) {
+			t.Fatalf("ChatGPT eligible nodes = %+v, want all selectable nodes", eligible)
 		}
 		if runtimeParent != capabilityRoot || filepath.Dir(snapshotPath) == capabilityRoot || previousSnapshotPath != filepath.Join(capabilityRoot, "chatgpt-available.json") {
 			t.Fatalf("capability paths = runtime %q candidate %q previous %q", runtimeParent, snapshotPath, previousSnapshotPath)
@@ -1299,7 +1310,7 @@ sources:
 		t.Fatalf("localClash impact = %+v", impact)
 	}
 	capabilities := impact["capabilities"].([]any)
-	if len(capabilities) != 2 || capabilities[0].(map[string]any)["qualified_count"] != float64(1) || capabilities[1].(map[string]any)["qualified_count"] != float64(1) {
+	if len(capabilities) != 1 || capabilities[0].(map[string]any)["qualified_count"] != float64(1) {
 		t.Fatalf("capabilities = %+v", capabilities)
 	}
 	resolvedIntent := readMCPFile(t, intent)
@@ -1316,96 +1327,12 @@ sources:
 		t.Fatalf("ChatGPT policy proxies = %+v", got)
 	}
 	auto := findMCPProxyGroup(t, config, "⚡ 自动选择")
-	if got := auto["proxies"]; !reflect.DeepEqual(got, []any{"JP 01"}) {
+	if got := auto["proxies"]; !reflect.DeepEqual(got, []any{"US 01", "JP 01"}) {
 		t.Fatalf("automatic proxies = %+v", got)
 	}
 }
 
-func TestSubscriptionsRefreshFallsBackToOriginalAutomaticGroupWhenG204IsEmpty(t *testing.T) {
-	dir := t.TempDir()
-	intent := filepath.Join(dir, "localclash-intent.json")
-	generated := filepath.Join(dir, "config.yaml")
-	subscription := filepath.Join(dir, "subscription.gob")
-	capabilityRoot := filepath.Join(dir, "capabilities")
-	rulesCache := filepath.Join(dir, "rules")
-	writeMCPPackIndex(t, rulesCache, rules.PackCache{
-		Version: 1, Source: "blackmatrix7", Adapter: "blackmatrix7", Renderable: true,
-		Packs: []rules.Pack{mcpBlackmatrixPack("Unused", "Auto")},
-	})
-	writeMCPFile(t, intent, `{
-  "version": 5,
-  "proxy_groups": {
-    "Auto": {
-      "mode": "smart",
-      "capability": "network.connectivity.g204.v1"
-    },
-    "ChatGPT-available": {
-      "mode": "smart",
-      "capability": "openai.chatgpt.statsig.v1",
-      "selected_nodes": ["US 01"],
-      "optional": true
-    }
-  }
-}`)
-	writeMCPFile(t, generated, "sentinel: previous-generated-config\n")
-	writeMCPFile(t, subscription, "proxies:\n  - name: US 01\n    type: ss\n    server: us.example.com\n    port: 443\n    cipher: aes-128-gcm\n    password: secret\n")
-	writeMCPFile(t, filepath.Join(capabilityRoot, "auto-available.json"), fmt.Sprintf(`{"version":2,"profile":%q,"updated_at":"old","qualified":["US 01"],"nodes":{}}`, autoavailable.ProfileID))
-	writeMCPFile(t, filepath.Join(capabilityRoot, "chatgpt-available.json"), fmt.Sprintf(`{"version":5,"profile":%q,"updated_at":"old","qualified":["US 01"],"nodes":{}}`, chatgptavailable.ProfileID))
-
-	server := NewServer()
-	stubMihomoCandidateTest(t, server)
-	server.rebuildAutoAvailable = func(_ context.Context, _ []map[string]any, _, _, candidate, previous string) (autoavailable.Result, error) {
-		if previous != filepath.Join(capabilityRoot, "auto-available.json") {
-			t.Fatalf("automatic previous snapshot = %q", previous)
-		}
-		writeMCPFile(t, candidate, fmt.Sprintf(`{"version":2,"profile":%q,"updated_at":"new","qualified":[],"nodes":{}}`, autoavailable.ProfileID))
-		return autoavailable.Result{Profile: autoavailable.ProfileID, SnapshotPath: candidate, Candidates: 1, Probed: 1, Qualified: []string{}, UnavailableCount: 1}, nil
-	}
-	server.rebuildChatGPT = func(_ context.Context, _ []map[string]any, eligible []string, _, _, candidate, previous string) (chatgptavailable.Result, error) {
-		if len(eligible) != 0 || previous != filepath.Join(capabilityRoot, "chatgpt-available.json") {
-			t.Fatalf("ChatGPT eligible = %v previous = %q", eligible, previous)
-		}
-		writeMCPFile(t, candidate, fmt.Sprintf(`{"version":5,"profile":%q,"updated_at":"new","qualified":[],"nodes":{}}`, chatgptavailable.ProfileID))
-		return chatgptavailable.Result{Profile: chatgptavailable.ProfileID, SnapshotPath: candidate, Qualified: []string{}}, nil
-	}
-	impact := server.evaluateLocalClashAfterRefresh(
-		context.Background(),
-		intent,
-		filepath.Join(dir, "selection.gob"),
-		subscription,
-		filepath.Join(dir, "subscriptions.json"),
-		filepath.Join(dir, "subscriptions"),
-		rulesCache,
-		filepath.Join(dir, "runtime.json"),
-		generated,
-		filepath.Join(dir, "mihomo"),
-		capabilityRoot,
-		true,
-		[]localconfig.SubscriptionNode{{Name: "US 01"}},
-		map[string]any{"proxies": []any{map[string]any{"name": "US 01", "type": "ss"}}},
-	)
-	if impact.State != "auto_applied" || !impact.AppliedAuto || impact.RequiresAgentReplan || !impact.CapabilityPromoted {
-		t.Fatalf("impact = %+v, want original automatic fallback to apply", impact)
-	}
-	selectionResult, err := rules.LoadSelection(filepath.Join(dir, "selection.gob"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := selectionResult.ProxyGroups["Auto"].Nodes; !reflect.DeepEqual(got, []string{"US 01"}) {
-		t.Fatalf("automatic fallback proxies = %+v, want all subscription nodes", got)
-	}
-	if got := readMCPFile(t, generated); got == "sentinel: previous-generated-config\n" {
-		t.Fatalf("generated config was not promoted after automatic fallback")
-	}
-	if got, err := autoavailable.LoadQualified(filepath.Join(capabilityRoot, "auto-available.json")); err != nil || len(got) != 0 {
-		t.Fatalf("automatic capability = %v error = %v, want promoted empty result", got, err)
-	}
-	if got, err := chatgptavailable.LoadQualified(filepath.Join(capabilityRoot, "chatgpt-available.json")); err != nil || len(got) != 0 {
-		t.Fatalf("ChatGPT capability = %v error = %v, want promoted empty result", got, err)
-	}
-}
-
-func TestSubscriptionsRefreshAlwaysBuildsChatGPTWhenG204FilterDisabled(t *testing.T) {
+func TestSubscriptionsRefreshBuildsChatGPTFromAllSelectableNodes(t *testing.T) {
 	dir := t.TempDir()
 	intent := filepath.Join(dir, "localclash-intent.json")
 	generated := filepath.Join(dir, ".runtime", "mihomo", "config.yaml")
@@ -1415,7 +1342,7 @@ func TestSubscriptionsRefreshAlwaysBuildsChatGPTWhenG204FilterDisabled(t *testin
 	writeMCPFile(t, intent, `{
   "version": 5,
   "proxy_groups": {
-    "⚡ 自动选择": {"mode": "smart", "capability": "network.connectivity.g204.v1"},
+    "⚡ 自动选择": {"mode": "smart", "match": {"type": "name_regex", "pattern": ".*", "min": 1}},
     "ChatGPT-available": {"mode": "smart", "capability": "openai.chatgpt.statsig.v1", "optional": true}
   }
 }`)
@@ -1428,10 +1355,6 @@ func TestSubscriptionsRefreshAlwaysBuildsChatGPTWhenG204FilterDisabled(t *testin
 
 	server := NewServer()
 	stubMihomoCandidateTest(t, server)
-	server.rebuildAutoAvailable = func(context.Context, []map[string]any, string, string, string, string) (autoavailable.Result, error) {
-		t.Fatal("g204 capability must not be rebuilt while its subscription filter is disabled")
-		return autoavailable.Result{}, nil
-	}
 	server.rebuildChatGPT = func(_ context.Context, _ []map[string]any, eligible []string, _, _, candidate, _ string) (chatgptavailable.Result, error) {
 		if !reflect.DeepEqual(eligible, []string{"HK exit", "US 01"}) {
 			t.Fatalf("ChatGPT eligible nodes = %v, want every selectable subscription proxy", eligible)
@@ -1443,7 +1366,6 @@ func TestSubscriptionsRefreshAlwaysBuildsChatGPTWhenG204FilterDisabled(t *testin
 		context.Background(), intent, filepath.Join(dir, "selection.gob"), filepath.Join(dir, "subscription.gob"),
 		filepath.Join(dir, "subscriptions.json"), filepath.Join(dir, "subscriptions"), rulesCache,
 		filepath.Join(dir, "runtime.json"), generated, filepath.Join(dir, "mihomo"), capabilityRoot,
-		false,
 		[]localconfig.SubscriptionNode{{Name: "dialer helper"}, {Name: "HK exit"}, {Name: "US 01"}},
 		subscriptionDoc,
 	)
@@ -1454,87 +1376,16 @@ func TestSubscriptionsRefreshAlwaysBuildsChatGPTWhenG204FilterDisabled(t *testin
 		t.Fatalf("ChatGPT snapshot = %v error=%v", got, err)
 	}
 	if _, err := os.Stat(filepath.Join(capabilityRoot, "auto-available.json")); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("g204 snapshot should not be created while disabled: %v", err)
+		t.Fatalf("removed g204 snapshot should not be created: %v", err)
 	}
 }
 
-func TestValidateCapabilityProfilesAcceptsChatGPTWithoutG204(t *testing.T) {
+func TestValidateCapabilityProfilesAcceptsChatGPTAndRejectsRemovedG204(t *testing.T) {
 	if err := validateCapabilityProfiles([]string{chatgptavailable.ProfileID}); err != nil {
-		t.Fatalf("ChatGPT capability should be independent of g204: %v", err)
+		t.Fatalf("ChatGPT capability should remain supported: %v", err)
 	}
-}
-
-func TestConfiguredCapabilityNodesFromSnapshotLoadsAutomaticAndChatGPT(t *testing.T) {
-	dir := t.TempDir()
-	writeMCPFile(t, filepath.Join(dir, "auto-available.json"), fmt.Sprintf(`{"version":2,"profile":%q,"updated_at":"2026-09-01T00:00:00Z","qualified":["HK 01"],"nodes":{}}`, autoavailable.ProfileID))
-	writeMCPFile(t, filepath.Join(dir, "chatgpt-available.json"), fmt.Sprintf(`{"version":5,"profile":%q,"updated_at":"2026-09-01T00:00:00Z","qualified":["US 01"],"nodes":{}}`, chatgptavailable.ProfileID))
-	config := localconfig.Config{ProxyGroups: map[string]localconfig.ProxyGroup{
-		"⚡ 自动选择":            {Mode: "auto", Capability: autoavailable.ProfileID},
-		"ChatGPT-available": {Mode: "auto", Capability: chatgptavailable.ProfileID, Optional: true},
-	}}
-	nodes, err := configuredCapabilityNodesFromSnapshot(config, dir, true, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(nodes[autoavailable.ProfileID], []string{"HK 01"}) || !reflect.DeepEqual(nodes[chatgptavailable.ProfileID], []string{"US 01"}) {
-		t.Fatalf("capability nodes = %+v", nodes)
-	}
-}
-
-func TestConfiguredCapabilityNodesUsesFullAutomaticSetAndStillLoadsChatGPTWhenG204Disabled(t *testing.T) {
-	dir := t.TempDir()
-	writeMCPFile(t, filepath.Join(dir, "chatgpt-available.json"), fmt.Sprintf(`{"version":5,"profile":%q,"updated_at":"2026-09-01T00:00:00Z","qualified":["US 01"],"nodes":{}}`, chatgptavailable.ProfileID))
-	config := localconfig.Config{ProxyGroups: map[string]localconfig.ProxyGroup{
-		"⚡ 自动选择":            {Mode: "auto", Capability: autoavailable.ProfileID},
-		"ChatGPT-available": {Mode: "auto", Capability: chatgptavailable.ProfileID, Optional: true},
-	}}
-	nodes, err := configuredCapabilityNodesFromSnapshot(config, dir, false, []string{"HK 01", "US 01"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(nodes[autoavailable.ProfileID], []string{"HK 01", "US 01"}) {
-		t.Fatalf("automatic nodes = %v, want full subscription set", nodes[autoavailable.ProfileID])
-	}
-	if !reflect.DeepEqual(nodes[chatgptavailable.ProfileID], []string{"US 01"}) {
-		t.Fatalf("ChatGPT nodes = %v, want independently built snapshot", nodes[chatgptavailable.ProfileID])
-	}
-}
-
-func TestPromoteCapabilitySnapshotsRollsBackBothSnapshots(t *testing.T) {
-	dir := t.TempDir()
-	transaction := filepath.Join(dir, "transaction")
-	if err := os.MkdirAll(transaction, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	autoPromoted := filepath.Join(dir, "auto-available.json")
-	chatPromoted := filepath.Join(dir, "chatgpt-available.json")
-	autoCandidate := filepath.Join(transaction, "auto-available.json")
-	chatCandidate := filepath.Join(transaction, "chatgpt-available.json")
-	writeMCPFile(t, autoPromoted, fmt.Sprintf(`{"version":2,"profile":%q,"updated_at":"old","qualified":["old-auto"],"nodes":{}}`, autoavailable.ProfileID))
-	writeMCPFile(t, chatPromoted, fmt.Sprintf(`{"version":5,"profile":%q,"updated_at":"old","qualified":["old-chat"],"nodes":{}}`, chatgptavailable.ProfileID))
-	writeMCPFile(t, autoCandidate, fmt.Sprintf(`{"version":2,"profile":%q,"updated_at":"new","qualified":["new-auto"],"nodes":{}}`, autoavailable.ProfileID))
-	writeMCPFile(t, chatCandidate, fmt.Sprintf(`{"version":5,"profile":%q,"updated_at":"new","qualified":["new-chat"],"nodes":{}}`, chatgptavailable.ProfileID))
-	rollback, err := promoteCapabilitySnapshots([]capabilitySnapshotPromotion{
-		{Profile: autoavailable.ProfileID, Candidate: autoCandidate, Promoted: autoPromoted},
-		{Profile: chatgptavailable.ProfileID, Candidate: chatCandidate, Promoted: chatPromoted},
-	}, transaction)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got, _ := autoavailable.LoadQualified(autoPromoted); !reflect.DeepEqual(got, []string{"new-auto"}) {
-		t.Fatalf("promoted automatic snapshot = %v", got)
-	}
-	if got, _ := chatgptavailable.LoadQualified(chatPromoted); !reflect.DeepEqual(got, []string{"new-chat"}) {
-		t.Fatalf("promoted ChatGPT snapshot = %v", got)
-	}
-	if err := rollback(); err != nil {
-		t.Fatal(err)
-	}
-	if got, _ := autoavailable.LoadQualified(autoPromoted); !reflect.DeepEqual(got, []string{"old-auto"}) {
-		t.Fatalf("rolled back automatic snapshot = %v", got)
-	}
-	if got, _ := chatgptavailable.LoadQualified(chatPromoted); !reflect.DeepEqual(got, []string{"old-chat"}) {
-		t.Fatalf("rolled back ChatGPT snapshot = %v", got)
+	if err := validateCapabilityProfiles([]string{"network.connectivity.g204.v1"}); err == nil || !strings.Contains(err.Error(), "unsupported proxy-group capability") {
+		t.Fatalf("removed g204 capability error = %v, want explicit unsupported capability failure", err)
 	}
 }
 
@@ -1559,7 +1410,6 @@ func TestSubscriptionsRefreshCandidateConfigFailurePreservesPromotedConfig(t *te
 		context.Background(), intent, filepath.Join(dir, "selection.gob"), filepath.Join(dir, "subscription.gob"),
 		filepath.Join(dir, "subscriptions.json"), filepath.Join(dir, "subscriptions"), rulesCache,
 		filepath.Join(dir, "runtime.json"), generated, filepath.Join(dir, "mihomo"), filepath.Join(dir, "capabilities"),
-		false,
 		[]localconfig.SubscriptionNode{{Name: "US 01"}},
 		map[string]any{"proxies": []any{map[string]any{"name": "US 01", "type": "ss", "server": "us.example.com", "port": 443, "cipher": "aes-128-gcm", "password": "secret"}}},
 	)

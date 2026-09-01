@@ -16,6 +16,15 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 
 ## Unreleased
 
+Changes:
+
+- 完整移除訂閱刷新中的 g204 前置篩選、`g204_filter_enabled` 設定契約及
+  `network.connectivity.g204.v1` capability；`⚡ 自动选择` 固定使用完整可選
+  訂閱節點並交由 Mihomo 自身健康檢查。
+- `ChatGPT-available` 固定從全部可選訂閱節點獨立建立，不再等待或消費 g204
+  結果。舊 intent 若仍宣告已移除的 capability，會明確失敗並要求同步新版模板。
+- LuCI 訂閱頁同步移除 g204 選項，rpcd 不再保存、讀回或傳遞該欄位。
+
 ## 目前最新版本
 
 | 渠道 | 最新版本 | 發佈時間 |

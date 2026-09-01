@@ -115,44 +115,6 @@ func TestConfigureWritesValidMultiSourcesAndMasksURLs(t *testing.T) {
 	}
 }
 
-func TestConfigurePersistsG204FilterOptionAcrossStatusGetAndRefresh(t *testing.T) {
-	dir := t.TempDir()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte("proxies:\n  - name: US 01\n    type: ss\n    server: us.example\n    port: 443\n    cipher: aes-128-gcm\n    password: secret\n"))
-	}))
-	t.Cleanup(server.Close)
-	configPath := filepath.Join(dir, "localclash-subscriptions.json")
-	mergedPath := filepath.Join(dir, "subscription.gob")
-	runtimeDir := filepath.Join(dir, ".runtime", "subscriptions")
-
-	if _, err := Configure(ConfigureOptions{
-		ConfigPath:        configPath,
-		URIs:              []string{server.URL + "/sub"},
-		G204FilterEnabled: true,
-	}); err != nil {
-		t.Fatal(err)
-	}
-	status, err := Status(StatusOptions{ConfigPath: configPath, MergedPath: mergedPath, RuntimeDir: runtimeDir})
-	if err != nil || !status.G204FilterEnabled {
-		t.Fatalf("status = %+v error=%v, want enabled g204 filter", status, err)
-	}
-	got, err := Get(StatusOptions{ConfigPath: configPath})
-	if err != nil || !got.G204FilterEnabled {
-		t.Fatalf("get = %+v error=%v, want enabled g204 filter", got, err)
-	}
-	refreshed, err := Refresh(context.Background(), RefreshOptions{ConfigPath: configPath, MergedPath: mergedPath, RuntimeDir: runtimeDir})
-	if err != nil || !refreshed.G204FilterEnabled {
-		t.Fatalf("refresh = %+v error=%v, want enabled g204 filter", refreshed, err)
-	}
-}
-
-func TestG204FilterEnabledDefaultsFalseWhenConfigMissing(t *testing.T) {
-	enabled, err := G204FilterEnabled(filepath.Join(t.TempDir(), "missing.json"))
-	if err != nil || enabled {
-		t.Fatalf("enabled=%v error=%v, want missing config to mean disabled", enabled, err)
-	}
-}
-
 func TestConfigureRejectsInvalidInputs(t *testing.T) {
 	dir := t.TempDir()
 	tests := []struct {
