@@ -885,8 +885,12 @@ func runProductRuntime(args []string, state appinit.RuntimeState) error {
 		opts.ConfigSHA256 = input.ConfigSHA256
 		opts.AttestationPath = input.AttestationPath
 		result, err := corerun.Restart(ctx, opts)
-		if err != nil {
-			return err
+		if err != nil || result.Error != "" {
+			message := result.Error
+			if err != nil {
+				message = err.Error()
+			}
+			return codedProductError{code: "runtime_restart_failed", message: message, details: result, nextActions: result.NextActions}
 		}
 		warnings := append([]string{}, result.Warnings...)
 		warnings = append(warnings, refreshCoreVersionCacheWarnings(ctx, state, "")...)

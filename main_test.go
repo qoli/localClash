@@ -1153,12 +1153,21 @@ func TestRunProductRuntimeStartRefreshesCoreVersionCache(t *testing.T) {
 
 func TestRunProductRuntimeRestartAcceptsStrategy(t *testing.T) {
 	dir := t.TempDir()
+	controller := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/version" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"meta":true}`)
+	}))
+	defer controller.Close()
 	t.Setenv("LOCALCLASH_WORKDIR", dir)
 	t.Chdir(dir)
 	core := filepath.Join(dir, runtimeprofile.MetaCorePath)
 	writeMainExecutableCore(t, core, "Mihomo runtime restart")
 	config := filepath.Join(dir, ".runtime", "mihomo", "config.yaml")
-	writeMainTestFile(t, config, "mixed-port: 7890\n")
+	writeMainTestFile(t, config, "mixed-port: 7890\nexternal-controller: "+strings.TrimPrefix(controller.URL, "http://")+"\n")
 
 	output := captureStdout(t, func() error {
 		return run([]string{"runtime", "restart", "--strategy", "process_restart", "--json"})
