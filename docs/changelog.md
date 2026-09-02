@@ -24,8 +24,51 @@ Changes:
 
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
-| localClash Core | [v0.1.77](https://github.com/qoli/localClash/releases/tag/v0.1.77) | 2026-09-01 UTC+8 |
-| localclash-luci | [v0.1.0-70](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-70) | 2026-09-01 UTC+8 |
+| localClash Core | [v0.1.79](https://github.com/qoli/localClash/releases/tag/v0.1.79) | 2026-09-03 UTC+8 |
+| localclash-luci | [v0.1.0-73](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-73) | 2026-09-03 UTC+8 |
+
+## 2026-09-03
+
+### localClash Core v0.1.79
+
+Changes:
+
+- 重啟重用有效配置驗證結果，並在同一交易中完成停止、啟動與身分驗證，修正可導致重複更新後 runtime 停止的問題。
+- 重啟內層失敗會明確反映到 CLI 結果；熱重載後同步提交守護程序的配置身分，供後續恢復使用。
+- 新增獨立 Mihomo 日誌收集命令，提供最長 48 小時、32 MiB 容量上限的本機紀錄；高流量時可能提前淘汰，收集器需另外啟動。
+- Release CI 改為逐套件執行測試，避免 Linux 全機程序掃描讀到其他測試套件的核心替身。
+
+Release:
+
+- [qoli/localClash v0.1.79](https://github.com/qoli/localClash/releases/tag/v0.1.79)
+
+Verification:
+
+- macOS `go test -p 1 ./...`、`go vet ./...` 及 Linux 34 個測試套件逐套件執行通過。
+- [Release workflow 33696199397](https://github.com/qoli/localClash/actions/runs/33696199397) 成功；7 個公開資產與三份 checksum 已重新下載驗證，兩架構二進位來源 commit 一致。
+- v0.1.78 的 Release CI 因跨套件程序替身干擾失敗，未建立公開 Release；保留原 tag，以 v0.1.79 發佈修正後版本。
+- 完整 SOP／G99 尚未通過；既有 QEMU 證據僅覆蓋指定候選的針對性修復及雙核心首次初始化。本次不宣稱完整矩陣、ARM64 或實體路由器驗收完成。
+
+### localclash-luci v0.1.0-73
+
+Changes:
+
+- 修正首次初始化時預設模板與 ChatGPT 能力快照刷新的順序。
+- 預設下載逾時提高至 120 秒。
+- Mihomo 重建 TUN 介面後，依既有意圖與交易鎖恢復接管；明確停止時維持停止意圖。
+- x86_64／aarch64 iStore 離線包固定攜帶 Core v0.1.79。
+
+Release:
+
+- [qoli/localclash-luci v0.1.0-73](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-73)
+
+Verification:
+
+- 本地語法、5 個 JS suite、12 個 Python tests 與 24 個 rpcd／hotplug／takeover shell suite 通過。
+- [Main CI 33696684325](https://github.com/qoli/localclash-luci/actions/runs/33696684325) 與 [Release workflow 33696859177](https://github.com/qoli/localclash-luci/actions/runs/33696859177) 成功。
+- 13 個公開資產與全部 checksum 已重新下載驗證；兩個 `.run` 通過 `--info`、`--list`、`--check`、`--noexec` 與內部 checksum 核對，內含 Core 二進位與 v0.1.79 公開資產一致。
+- 完整 SOP／G99 尚未通過；針對性 iStoreOS x86_64 QEMU 結果不擴大為完整矩陣、ARM64 或實體路由器驗收。
+
 
 ## 2026-09-01
 
