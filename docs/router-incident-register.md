@@ -1,5 +1,12 @@
 # Router Incident Register
 
+> Historical incident and investigation evidence, not a current acceptance
+> checklist. Version-specific contracts (including removed g204 behavior),
+> pending statuses, and old environment observations below are retained as
+> dated context. For every new release use the single
+> [iStoreOS QEMU release test SOP](istoreos-release-test-sop.md); none of these
+> older results substitutes for candidate-bound acceptance.
+
 This document records router-facing usability and performance incidents that
 must be investigated with evidence. Do not treat post-removal or wrong-window
 samples as proof for an incident.

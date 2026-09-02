@@ -58,6 +58,11 @@ pull a newer localClash core through the LuCI "install/update core" flow.
 
 See [更新日誌](docs/changelog.md) for user-facing Core and LuCI release notes.
 
+Before publishing either channel, complete the single
+[iStoreOS QEMU release test SOP](docs/istoreos-release-test-sop.md) and review
+the candidate-bound evidence record. CI and package checks do not replace this
+functional gate; Docker OpenWrt acceptance is retired.
+
 ## Main Bootstrap
 
 Except for the independent `logs collect` observer, localClash builds a shared runtime bootstrap state before serving

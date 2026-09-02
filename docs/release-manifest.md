@@ -69,6 +69,13 @@ Manifest shape:
 }
 ```
 
+Before pushing a release tag or dispatching a release, complete the
+[iStoreOS QEMU release test SOP](istoreos-release-test-sop.md) for the exact
+Core/LuCI candidate pair and review its evidence record. This is a manual
+functional gate: the current workflow does not run QEMU or verify that report.
+If candidate distribution is unavailable, acceptance is blocked; publishing
+first and testing the public release afterward does not satisfy this gate.
+
 The release workflow is `.github/workflows/release.yml`. It runs the Go test
 suite first, then builds linux `amd64` and `arm64` binaries with:
 

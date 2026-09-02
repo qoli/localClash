@@ -6,8 +6,10 @@
 > The material below is retained as historical design context and must not be
 > used as the current ownership contract.
 
-Status: draft; source investigation completed on 2026-07-12, localClash
-implementation not started.
+Status: retired architecture proposal; source investigation completed on
+2026-07-12, implementation of this proposal was not started. The sections below
+describe that proposal, not the current product contract. Release acceptance is
+owned solely by the [iStoreOS QEMU SOP](istoreos-release-test-sop.md).
 
 ## Current Status
 
@@ -331,9 +333,11 @@ The current implementation anchors are the built-in
 Go tests remain necessary but are not a functional OpenWrt acceptance gate.
 The current takeover tests already document this limitation.
 
-### Docker OpenWrt
+### Historical Functional Cases
 
-Use the prepared OpenWrt Docker environment for destructive integration tests:
+These were proposed cases for the retired auto-routing design, not supported
+features or a second release gate. If the design is revived, map applicable
+cases into the iStoreOS QEMU SOP before implementation:
 
 - LAN-forwarded TCP reaches Mihomo through REDIRECT with the original
   destination intact.
@@ -368,11 +372,10 @@ backends. Record at least:
 - process start, restart, and takeover-ready time;
 - packet/rule counters proving which capture path handled the traffic.
 
-The low-resource UTM OpenWrt environment can expose CPU, memory, and restart
-regressions. Docker is suitable for lifecycle correctness. Neither x86 target
-proves behavior or performance on the ARM64 production router, so the final
-Meta and Smart canaries must run on an isolated ARM64 router with explicit user
-authorization.
+Comparative performance work is outside the current release gate. Use isolated
+iStoreOS QEMU for product-flow acceptance; it does not prove ARM64 hardware
+performance. Any hardware investigation needs its own explicit authorization
+and must not become an implicit requirement of the release SOP.
 
 Performance promotion requires measured improvement or meaningful operational
 simplification without a material performance regression. The numeric release
@@ -390,8 +393,8 @@ advance.
    live activation path.
 4. **Lifecycle support.** Implement process-restart-only transitions, verified
    start/stop, DNS preservation, stale cleanup, and MCP/CLI safety contracts.
-5. **Isolated OpenWrt canary.** Pass the Docker matrix, then UTM performance
-   checks, then an explicitly authorized ARM64 router canary.
+5. **Isolated iStoreOS QEMU canary.** If this proposal is revived, add its
+   supported cases to the canonical SOP and pass that gate.
 6. **Opt-in release.** Expose the mode in LuCI/MCP while retaining the current
    `router` default.
 7. **Default decision.** Consider changing the default only after Meta and
@@ -416,8 +419,8 @@ advance.
 - [Mihomo API Hot Reload Development Plan](mihomo-api-hot-reload-plan.md)
   defines config-test and reload semantics. This plan overrides hot reload for
   takeover-owner transitions by requiring process restart.
-- [OpenWrt Test Environments](openwrt-test-environments.md) defines which
-  environment may run destructive lifecycle and performance checks.
+- [iStoreOS QEMU Release Test SOP](istoreos-release-test-sop.md) is the only
+  current functional release gate; this retired proposal does not override it.
 - [Router Incident Register](router-incident-register.md) records the fw4
   reload and local DNS regressions that this mode must not reintroduce.
 - [OpenWrt LuCI Support](openwrt-luci.md) defines the core/LuCI ownership
