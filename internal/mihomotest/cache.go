@@ -259,6 +259,38 @@ func CacheStatus(ctx context.Context, opts ValidationOptions) CacheStatusResult 
 	return out
 }
 
+// VerifyCachedValidation checks that a previously established fingerprint still
+// has a passing durable cache entry. It does not probe the core or read current
+// file metadata; the caller must separately bind the proof to its input bytes.
+func VerifyCachedValidation(proof ValidationResult) error {
+	if !proof.Passed {
+		return errors.New("passing validation proof is required")
+	}
+	if strings.TrimSpace(proof.CacheWriteError) != "" {
+		return fmt.Errorf("validation cache was not written: %s", proof.CacheWriteError)
+	}
+	if strings.TrimSpace(proof.CachePath) == "" {
+		return errors.New("validation cache path is required")
+	}
+	if strings.TrimSpace(proof.ConfigSHA256) == "" || strings.TrimSpace(proof.CoreSHA256) == "" || strings.TrimSpace(proof.CoreVersion) == "" || strings.TrimSpace(proof.CoreType) == "" {
+		return errors.New("complete config/core SHA-256, core version and core type fingerprint is required")
+	}
+	cache, err := readValidationCache(proof.CachePath)
+	if err != nil {
+		return fmt.Errorf("read validation cache: %w", err)
+	}
+	for _, entry := range cache.Entries {
+		if entry.ConfigSHA256 != proof.ConfigSHA256 || entry.CoreSHA256 != proof.CoreSHA256 || entry.CoreVersion != proof.CoreVersion || entry.CoreType != proof.CoreType {
+			continue
+		}
+		if !entry.Passed {
+			return fmt.Errorf("matching validation cache entry is not passing: %s", entry.Error)
+		}
+		return nil
+	}
+	return errors.New("validation cache no longer contains the verified fingerprint")
+}
+
 type validationFingerprint struct {
 	ConfigSHA256  string
 	CoreSHA256    string

@@ -92,15 +92,7 @@ func Start(ctx context.Context, opts StartOptions) (StartResult, error) {
 		return StartResult{}, err
 	}
 	finish(nil, 0)
-	baseResult := StartResult{
-		Config:     runOpts.ConfigPath,
-		RuntimeDir: runOpts.WorkDir,
-		LogFile:    runOpts.LogPath,
-		Warnings:   append([]string(nil), NetworkInterruptionWarnings...),
-	}
-	endpoints := readRuntimeConfigEndpoints(runOpts.ConfigPath)
-	baseResult.ExternalController = endpoints.ExternalController
-	baseResult.ExternalUIURL = externalUIURL(baseResult.ExternalController, endpoints.ExternalUI)
+	baseResult := newStartResult(runOpts)
 
 	cachePath := validationCachePath(opts.ValidationCachePath, runOpts.WorkDir)
 	var validation mihomotest.ValidationResult
@@ -142,6 +134,20 @@ func Start(ctx context.Context, opts StartOptions) (StartResult, error) {
 		result = baseResult
 	}
 	return result, err
+}
+
+func newStartResult(runOpts Options) StartResult {
+	result := StartResult{
+		Config:     runOpts.ConfigPath,
+		RuntimeDir: runOpts.WorkDir,
+		LogFile:    runOpts.LogPath,
+		Warnings:   append([]string(nil), NetworkInterruptionWarnings...),
+	}
+	endpoints := readRuntimeConfigEndpoints(runOpts.ConfigPath)
+	result.ExternalController = endpoints.ExternalController
+	result.ExternalUIURL = externalUIURL(result.ExternalController, endpoints.ExternalUI)
+
+	return result
 }
 
 func startValidatedLocked(ctx context.Context, opts StartOptions, runOpts Options, cachePath string, result StartResult, validation mihomotest.ValidationResult, stage func(string, map[string]any) func(error, int)) (StartResult, error) {

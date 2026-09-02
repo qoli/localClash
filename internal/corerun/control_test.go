@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -413,6 +414,7 @@ func stubProcessZombie(t *testing.T, pid int, zombie bool) {
 }
 
 type processTable struct {
+	mu          sync.RWMutex
 	names       map[int]string
 	args        map[int][]string
 	executables map[int]string
@@ -434,6 +436,8 @@ func stubProcessTable(t *testing.T) *processTable {
 	originalExecutable := readProcessExecutable
 	originalCWD := readProcessCWD
 	listProcessIDs = func() []int {
+		table.mu.RLock()
+		defer table.mu.RUnlock()
 		pids := make([]int, 0, len(table.names))
 		for pid := range table.names {
 			pids = append(pids, pid)
@@ -441,24 +445,32 @@ func stubProcessTable(t *testing.T) *processTable {
 		return pids
 	}
 	readProcessComm = func(candidate int) (string, bool, error) {
+		table.mu.RLock()
+		defer table.mu.RUnlock()
 		if name, ok := table.names[candidate]; ok {
 			return name, true, nil
 		}
 		return originalComm(candidate)
 	}
 	readProcessCommandLine = func(candidate int) ([]string, bool, error) {
+		table.mu.RLock()
+		defer table.mu.RUnlock()
 		if args, ok := table.args[candidate]; ok {
 			return append([]string(nil), args...), true, nil
 		}
 		return originalCommandLine(candidate)
 	}
 	readProcessExecutable = func(candidate int) (string, bool, error) {
+		table.mu.RLock()
+		defer table.mu.RUnlock()
 		if executable, ok := table.executables[candidate]; ok {
 			return executable, true, nil
 		}
 		return originalExecutable(candidate)
 	}
 	readProcessCWD = func(candidate int) (string, bool, error) {
+		table.mu.RLock()
+		defer table.mu.RUnlock()
 		if cwd, ok := table.cwds[candidate]; ok {
 			return cwd, true, nil
 		}
@@ -487,6 +499,8 @@ func stubSupervisionRuntime(t *testing.T) {
 }
 
 func (table *processTable) add(pid int, name string, args []string) {
+	table.mu.Lock()
+	defer table.mu.Unlock()
 	table.names[pid] = name
 	table.args[pid] = append([]string(nil), args...)
 	if len(args) > 0 {
@@ -498,6 +512,8 @@ func (table *processTable) add(pid int, name string, args []string) {
 }
 
 func (table *processTable) remove(pid int) {
+	table.mu.Lock()
+	defer table.mu.Unlock()
 	delete(table.names, pid)
 	delete(table.args, pid)
 	delete(table.executables, pid)

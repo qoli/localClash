@@ -166,26 +166,24 @@ func disarmSupervisionLocked(runOpts Options, hadProcesses bool, now time.Time) 
 	return nil
 }
 
-func markSupervisionRestarting(runOpts Options, now time.Time) error {
-	return runtimesupervision.WithLock(runOpts.WorkDir, func() error {
-		state, err := runtimesupervision.Read(runOpts.WorkDir)
-		if err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				return nil
-			}
-			return err
-		}
-		if state.State != runtimesupervision.StateRunning && state.State != runtimesupervision.StateLatchedFailed {
+func markSupervisionRestartingLocked(runOpts Options, now time.Time) error {
+	state, err := runtimesupervision.Read(runOpts.WorkDir)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
 			return nil
 		}
-		bootID, err := currentBootID()
-		if err != nil || bootID != state.BootID {
-			return nil
-		}
-		state.State = runtimesupervision.StateRestarting
-		state.UpdatedAt = supervisionTimestamp(now)
-		return runtimesupervision.Write(runOpts.WorkDir, state)
-	})
+		return err
+	}
+	if state.State != runtimesupervision.StateRunning && state.State != runtimesupervision.StateLatchedFailed {
+		return nil
+	}
+	bootID, err := currentBootID()
+	if err != nil || bootID != state.BootID {
+		return nil
+	}
+	state.State = runtimesupervision.StateRestarting
+	state.UpdatedAt = supervisionTimestamp(now)
+	return runtimesupervision.Write(runOpts.WorkDir, state)
 }
 
 // prepareHotReloadSupervisionLocked verifies recovery proof before the controller

@@ -223,7 +223,22 @@ func Restart(ctx context.Context, opts RestartOptions) (RestartResult, error) {
 		return result, nil
 	}
 	stage(RestartStageEvent{Stage: "config_test", Event: "done", DurationMS: result.Timings.ValidateMS})
-	if err := markSupervisionRestarting(runOpts, time.Now()); err != nil {
+	err = runtimesupervision.WithLock(runOpts.WorkDir, func() error {
+		var restartErr error
+		result, restartErr = restartValidatedLocked(ctx, opts, startOpts, runOpts, result, validation, stage, totalStarted)
+		return restartErr
+	})
+	return result, err
+}
+
+func restartValidatedLocked(ctx context.Context, opts RestartOptions, startOpts StartOptions, runOpts Options, result RestartResult, validation mihomotest.ValidationResult, stage func(RestartStageEvent), totalStarted time.Time) (RestartResult, error) {
+	if err := verifyRestartValidationProof(runOpts, validation); err != nil {
+		result.Error = "cannot restart with the validated inputs: " + err.Error()
+		result.Timings.TotalMS = elapsedMS(totalStarted)
+		stage(RestartStageEvent{Stage: "config_test", Event: "error", Error: result.Error})
+		return result, nil
+	}
+	if err := markSupervisionRestartingLocked(runOpts, time.Now()); err != nil {
 		result.Error = "cannot mark runtime supervision as restarting: " + err.Error()
 		result.Timings.TotalMS = elapsedMS(totalStarted)
 		return result, nil
@@ -231,13 +246,8 @@ func Restart(ctx context.Context, opts RestartOptions) (RestartResult, error) {
 
 	stopStarted := time.Now()
 	stage(RestartStageEvent{Stage: "stop", Event: "started"})
-	stop, err := Stop(StopOptions{
-		CorePath:                 runOpts.CorePath,
-		ConfigPath:               runOpts.ConfigPath,
-		WorkDir:                  runOpts.WorkDir,
-		Timeout:                  opts.StopTimeout,
-		ForceKill:                opts.ForceKill,
-		PreserveSupervisionState: true,
+	stop, err := stopLocked(runOpts, StopOptions{
+		Timeout: opts.StopTimeout, ForceKill: opts.ForceKill, PreserveSupervisionState: true,
 	})
 	result.Stop = stop
 	result.Timings.StopMS = elapsedMS(stopStarted)
@@ -256,7 +266,21 @@ func Restart(ctx context.Context, opts RestartOptions) (RestartResult, error) {
 
 	startStarted := time.Now()
 	stage(RestartStageEvent{Stage: "start", Event: "started"})
-	start, err := Start(ctx, startOpts)
+	if err := verifyRestartValidationProof(runOpts, validation); err != nil {
+		result.Error = "validation proof no longer valid after stopping runtime: " + err.Error()
+		if stateErr := disarmSupervisionLocked(runOpts, stop.WasRunning, time.Now()); stateErr != nil {
+			result.Error += "; cannot record stopped supervision: " + stateErr.Error()
+		}
+		markRuntimeStartFailure(runOpts.WorkDir, "restart_validation_changed", err, time.Now())
+		result.Timings.StartMS = elapsedMS(startStarted)
+		result.Timings.TotalMS = elapsedMS(totalStarted)
+		stage(RestartStageEvent{Stage: "start", Event: "error", DurationMS: result.Timings.StartMS, Error: result.Error})
+		return result, nil
+	}
+	baseStart := newStartResult(runOpts)
+	baseStart.ConfigTestSkipped = true
+	baseStart.ConfigValidation = validation
+	start, err := startValidatedLocked(ctx, startOpts, runOpts, validationCachePath(opts.ValidationCachePath, runOpts.WorkDir), baseStart, validation, startStageEmitter(startOpts.OnStage))
 	result.Start = start
 	result.Timings.StartMS = elapsedMS(startStarted)
 	if err != nil {
@@ -283,6 +307,29 @@ func Restart(ctx context.Context, opts RestartOptions) (RestartResult, error) {
 	result.Restarted = start.Started
 	result.Timings.TotalMS = elapsedMS(totalStarted)
 	return result, nil
+}
+
+// verifyRestartValidationProof binds the already completed validation to the
+// bytes used by this restart without executing another core version probe.
+func verifyRestartValidationProof(runOpts Options, validation mihomotest.ValidationResult) error {
+	if err := mihomotest.VerifyCachedValidation(validation); err != nil {
+		return fmt.Errorf("restart requires a durable validation cache: %w", err)
+	}
+	coreSHA, err := runtimesupervision.HashFile(runOpts.CorePath)
+	if err != nil {
+		return fmt.Errorf("hash validated restart core: %w", err)
+	}
+	if coreSHA != validation.CoreSHA256 {
+		return errors.New("core SHA-256 no longer matches the restart validation proof")
+	}
+	configSHA, err := runtimesupervision.HashFile(runOpts.ConfigPath)
+	if err != nil {
+		return fmt.Errorf("hash validated restart config: %w", err)
+	}
+	if configSHA != validation.ConfigSHA256 {
+		return errors.New("config SHA-256 no longer matches the restart validation proof")
+	}
+	return nil
 }
 
 func normalizeRestartOptions(opts RestartOptions) RestartOptions {
@@ -425,10 +472,6 @@ func Stop(opts StopOptions) (StopResult, error) {
 		ConfigPath: opts.ConfigPath,
 		WorkDir:    opts.WorkDir,
 	})
-	timeout := opts.Timeout
-	if timeout <= 0 {
-		timeout = 5 * time.Second
-	}
 	result := StopResult{
 		RuntimeDir: normalized.WorkDir,
 	}
@@ -440,29 +483,38 @@ func Stop(opts StopOptions) (StopResult, error) {
 	runOpts := normalizeOptions(Options{CorePath: normalized.CorePath, ConfigPath: normalized.ConfigPath, WorkDir: normalized.WorkDir, LogPath: normalized.LogPath})
 	var stopResult StopResult
 	err := runtimesupervision.WithLock(runOpts.WorkDir, func() error {
-		processes := findManagedRuntimeProcesses()
-		stopResult = result
-		if !opts.PreserveSupervisionState {
-			if err := disarmSupervisionLocked(runOpts, len(processes) > 0, time.Now()); err != nil {
-				return err
-			}
-		}
-		if len(processes) == 0 {
-			return nil
-		}
-		stopResult.PID = processes[0].PID
-		for _, process := range processes {
-			stopResult.PIDs = appendUniquePIDs(stopResult.PIDs, process.PID)
-			stopResult.ProcessNames = appendUniqueStrings(stopResult.ProcessNames, process.Name)
-		}
 		var stopErr error
-		stopResult, stopErr = stopRuntimePIDs(stopResult.PIDs, stopResult, timeout, opts.ForceKill)
+		stopResult, stopErr = stopLocked(runOpts, opts)
 		return stopErr
 	})
 	if stopResult.RuntimeDir == "" {
 		stopResult = result
 	}
 	return stopResult, err
+}
+
+// stopLocked is shared by standalone Stop and the complete restart transaction.
+func stopLocked(runOpts Options, opts StopOptions) (StopResult, error) {
+	timeout := opts.Timeout
+	if timeout <= 0 {
+		timeout = 5 * time.Second
+	}
+	result := StopResult{RuntimeDir: runOpts.WorkDir}
+	processes := findManagedRuntimeProcesses()
+	if !opts.PreserveSupervisionState {
+		if err := disarmSupervisionLocked(runOpts, len(processes) > 0, time.Now()); err != nil {
+			return result, err
+		}
+	}
+	if len(processes) == 0 {
+		return result, nil
+	}
+	result.PID = processes[0].PID
+	for _, process := range processes {
+		result.PIDs = appendUniquePIDs(result.PIDs, process.PID)
+		result.ProcessNames = appendUniqueStrings(result.ProcessNames, process.Name)
+	}
+	return stopRuntimePIDs(result.PIDs, result, timeout, opts.ForceKill)
 }
 
 func stopRuntimePIDs(pids []int, result StopResult, timeout time.Duration, forceKill bool) (StopResult, error) {

@@ -237,3 +237,36 @@ func TestCacheStatusReportsMalformedCache(t *testing.T) {
 		t.Fatalf("status = %+v", status)
 	}
 }
+
+func TestVerifyCachedValidationUsesEstablishedFingerprint(t *testing.T) {
+	dir := t.TempDir()
+	proof := ValidationResult{
+		Passed: true, CachePath: filepath.Join(dir, "cache.json"),
+		ConfigPath: filepath.Join(dir, "absent-config"), CorePath: filepath.Join(dir, "absent-core"),
+		ConfigSHA256: "config-sha", CoreSHA256: "core-sha", CoreVersion: "Mihomo Smart test", CoreType: "smart",
+	}
+	if err := writeValidationCache(proof.CachePath, proof); err != nil {
+		t.Fatal(err)
+	}
+	if err := VerifyCachedValidation(proof); err != nil {
+		t.Fatalf("must not probe core or read input metadata: %v", err)
+	}
+	for _, field := range []string{"config_sha", "core_sha", "core_version", "core_type"} {
+		t.Run(field, func(t *testing.T) {
+			changed := proof
+			switch field {
+			case "config_sha":
+				changed.ConfigSHA256 = "different"
+			case "core_sha":
+				changed.CoreSHA256 = "different"
+			case "core_version":
+				changed.CoreVersion = "different"
+			case "core_type":
+				changed.CoreType = "meta"
+			}
+			if err := VerifyCachedValidation(changed); err == nil {
+				t.Fatal("accepted a different fingerprint")
+			}
+		})
+	}
+}
