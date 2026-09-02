@@ -10,6 +10,8 @@
 目的是逐項發現並報告受測功能的缺陷，不是靠補救把流程跑到最後。
 預設驗收目標是發版任務開始時鎖定的 **HEAD commit 候選**；歷史正式版本只是
 升級起點。兩者的錯誤都要報告，但不得混成同一版本的驗收結果。
+所有異常都要記錄；「請求失敗」「已確認產品缺陷」「阻擋發版」是三個獨立判定。
+本 SOP 驗證 localClash／LuCI 的功能與所選核心整合，不保證公共網際網路品質。
 
 ## 1. 範圍、責任與安全界線
 
@@ -22,6 +24,10 @@
 - Core 負責訂閱、策略／配置材料交易、Mihomo 生命週期及版本化 runtime facts。
   LuCI 負責 UI、ACL、RPCD、套件／procd、fw4/nft、policy routing、DNS hijack、
   接管及跨層恢復交易。兩層都必須取證。
+- Mihomo 負責實際代理／直連撥號及核心內部處理；節點供應商、DNS 上游、目的
+  服務、QEMU／宿主網路各有獨立邊界。外部逾時不能直接算作 Core／LuCI 缺陷，
+  也不能只因看到 Mihomo 錯誤日誌就斷言核心有 Bug。所選核心若在受控環境確實
+  破壞必要功能，仍屬候選整合阻擋，但不要求必須修改 localClash 程式才能解決。
 - 只操作本輪指定的可拋棄 VM。不得清理或替換生產路由器的配置、訂閱、binary、
   防火牆、DNS、服務或接管狀態；也不得為本測試修改宿主機的預設路由／DNS。
 - 全新基線使用 overlay 重建，不沿用舊真機清理指南，也不使用廣域刪除或
@@ -47,13 +53,18 @@ G00 候選版本與前置檢查
 `smart-to-meta` 或本文件允許的 `shared`；不能以一筆「Mihomo 通過」代表全部。
 結果只有 `PASS`、`FAIL`、`BLOCKED`、`N/A`：
 
+每項另填 `acceptance_scope`（`required_function` 或 `external_observation`），
+每筆異常另填歸屬、信心與阻擋理由。結果記錄實測，範圍決定是否納入放行判定；
+不得因外部觀察 FAIL，就將已獨立驗證的產品功能或整個核心結果改為 FAIL。
+
 - 預期拒絕的負向案例，在明確拒絕且狀態保護正確時才是 PASS。
 - 未執行、環境不具備、只有模擬結果或缺少證據，一律 BLOCKED，不是 PASS。
 - A–E、K、V、IPv4 的 N、R、X、Z 不得因時間或既有故障而標 N/A。
   只有本文明列的條件分支（F8 最佳化成功、N5 IPv6、X7 不相容舊策略）可 N/A，
   且必須附不適用證據。
-- 已知問題不自動豁免。必跑項 FAIL／BLOCKED 時，本次完整驗收不通過。
-- 上一關失敗時停止依賴該成功前提的下游，將下游標為 BLOCKED 並引用缺陷 ID；
+- 已知問題不自動豁免。必要功能關卡 FAIL／BLOCKED 時不能放行；外部品質觀察
+  不要求全部成功。報告漏列異常仍阻擋 G99，已完整記錄的非阻擋異常則不等於漏測。
+- 必要功能關卡失敗時停止依賴該成功前提的下游，標為 BLOCKED 並引用異常／缺陷 ID；
   可以在另一合格的獨立基線採集其他案例，但不能沖銷失敗或將補救副本當正常 S2。
 - 測試中修正程式或替換候選資產，產生新的候選識別並重跑受影響的情境、V、
   N 及相關 R/X；若變更初始化、更新或共用材料交易，重跑雙核心 A–E。
@@ -68,16 +79,18 @@ G00 候選版本與前置檢查
    範圍包含候選功能、歷史基線建立、安裝／交接、恢復及測試工具；不得只列最終
    成功的主線。父項或整輪已 FAIL／BLOCKED，也不能省略後來發現的另一項缺陷。
 2. 發生非預期失敗，先保留原始 task／錯誤碼、完整錯誤訊息、時間、版本身分及
-   前後狀態，再立即建立缺陷 ID，連到案例與證據，並向使用者報告。
+   前後狀態，再立即建立異常 ID，連到案例與證據，並向使用者報告。已確認功能
+   缺陷另連缺陷 ID；歸屬未明先列待定位，不能直接命名為 localClash 待修 Bug。
    不得等補救成功才決定是否報告，也不得只藏在 log、備註或子代理交接訊息內。
 3. 正常功能偏離預期即記 FAIL；未執行、身分不明或觀測工具使結果不可判讀記
    BLOCKED。根因未明仍須報告症狀與影響，分類可暫為「待定位」，不可先歸咎上游。
-   每個非預期失敗事件都要入索引；若多次事件屬於同一缺陷，可共用缺陷 ID，
+   每個非預期失敗事件都要入索引；若多次事件屬於同一問題，可關聯同一問題 ID，
    但不得丟失各次版本、時間及嘗試紀錄。
 4. 本來就預期拒絕的負向案例按既定斷言判定；產品內建重試／備援來源若符合
    事先鎖定的契約，可按該契約判定成功。所有中途錯誤、重試與 warning 仍要
    索引並說明判定理由；不能事後把非預期失敗改稱負向測試或正常重試。
-5. 報告逐項標明候選產品、歷史版本、測試工具、環境或 SOP／能力不一致問題。
+5. 報告逐項標明候選產品、歷史版本、核心依賴、外部服務、測試工具、環境或
+   SOP／能力不一致問題，並區分已確認與待定位。記錄異常不等於要求新增修復 commit。
    「舊版已有」「今天已修」「其他案例成功」均不是漏報理由；已知修復必須連到
    owning repo 的 commit，核對受測檔案是否包含它，並另附新候選重驗結果。
 6. 一般測試授權不包含任意 workaround。首次初始化失敗後，不得自行追加
@@ -101,14 +114,38 @@ G00 候選版本與前置檢查
 - 案例 runner 遇非預期產品失敗或斷言失敗，必須回傳非零退出碼。若純觀察器以
   0 表示「已取得終態」，上層必須解析明確的產品／案例結果；不得只看觀察器退出碼。
   欄位缺失、結果無法解析、未取得終態、工具逾時都不得預設成功。
+- 外部觀察的單項 runner 同樣保留失敗退出碼；總彙整按 `acceptance_scope`、
+  必要斷言及有證據的 `release_blocking` 判定放行，不將所有子程序退出碼直接
+  合併成產品 FAIL，也不為了避免阻擋而把外部失敗退出碼改成 0。
 - 單筆請求失敗不得被後面的成功命令或 shell 最後一次退出碼掩蓋。各次請求、
   任務和人工操作均有嘗試紀錄；補救、重試、取消都不能覆寫原始失敗檔。
-- 收尾將原始終態、請求結果、工具錯誤、UI 錯誤／warning 與案例／缺陷索引逐筆
-  對帳。每個事件須指向缺陷，或有可查證的預期拒絕／產品內建恢復判定；只做
+- 收尾將原始終態、請求結果、工具錯誤、UI 錯誤／warning 與案例／異常／缺陷索引逐筆
+  對帳。每個事件須指向異常／缺陷，或有可查證的預期拒絕／產品內建恢復判定；只做
   關鍵字搜尋、只讀父任務成功、或只人工列主要 Bug，都不足以完成對帳。
 - 未映射錯誤、漏列缺陷或沒有結果的已執行案例數必須為零，否則 G99 BLOCKED，
   不得聲稱報告已完整。可以提交「尚未完成」報告，但須列出遺漏及待查範圍。
   這些是工具必須滿足的契約，不表示現有腳本／CI 已實作自動收集與強制攔截。
+
+### 2.3 歸屬與放行分開判定
+
+| 已有證據 | 紀錄與責任 | 放行影響 |
+| --- | --- | --- |
+| 配置／訂閱材料錯誤、錯核心、任務假成功、生命週期或接管不符合契約 | Core／LuCI 功能缺陷，指定 owning repo | 必要功能 FAIL，阻擋 |
+| 正確配置下，所選 Mihomo 在受控端點可重現必要功能失效 | 核心依賴／整合問題；不能自動歸責 Core 程式 | 候選必要整合 FAIL，阻擋；可修依賴或調整候選，無須湊 Core 修復 commit |
+| 工具／環境不可用，無法取得必要功能斷言 | 測試證據缺口，不先稱產品 Bug | 只阻擋未驗證的必要關卡；先修測試環境或建立合格受控證據 |
+| 受控必要功能已驗證，公共網站／外部節點偶發失敗，無候選破壞功能的證據 | 外部觀察異常；根因可仍未明，不擅自歸責 Mihomo 或上游 | 異常保留、單獨說明，不僅因它未解根因而阻擋發布 |
+
+是否阻擋取決於「哪個必要功能未成立／未驗證」，不是是否已查清每筆外網逾時。
+確認必要功能違反契約不必等到定位某行程式；根因或 owning repo 仍待定位時，
+該功能的失敗與阻擋仍保留，不能因此降為非阻擋外部觀察。
+不要求以修復 localClash、增加重試、放寬 timeout 或新增 commit 結束外部品質調查。
+但不能把已重現的產品功能故障改稱外部觀察；單有 running、controller ready 或
+`DIRECT` chain，也不足以證明所有配置／接管正確。
+
+在 G00/G01 預先指定必要斷言、受控端點與外部觀察範圍；不得看到 FAIL 後偷偷
+降級範圍或換較容易的網站取代原結果。若發現測試設計把外部品質錯當產品功能，
+明列設計缺陷、調整理由與新案例對應，保留舊結果，經審核再以合格副本補驗必要
+斷言。這是修正測試設計，不是補救產品或把舊 FAIL 改成 PASS。
 
 ## 3. G00：鎖定候選、舊版與前置檢查
 
@@ -221,8 +258,15 @@ scripts/istoreos-test-env.sh wait
 - 現有腳本只有 WAN/LAN user-mode NIC 與管理 port-forward，**不會自動建立
   LAN client 或共享的 QEMU LAN**。操作人須先提供並記錄可重現的 client 拓撲、
   啟動方式與成功進入 guest LAN 的證據；做不到就 BLOCKED，不能略過 N。
-- 固定直連與代理的 HTTP/TCP 及 UDP echo/DNS 測試端點，先在接管前驗證服務正常；
-  記錄預期回應、出口、逾時與探測間隔。不能僅靠某網站打得開推斷分流。
+- 必要功能使用受控 WAN 側 HTTP/TCP、UDP echo／DNS 回應端及可識別出口的
+  測試代理；預先驗證端點健康、固定預期 payload／答案、路由意圖、逾時與探測
+  間隔。請求須由 LAN client 經受測 router／Mihomo，不可用純 LAN bypass
+  或宿主 mock 成功取代。受控環境可用隔離 QEMU 拓撲，不要求裸 ISP WAN。
+- 公共網站、公共 DNS、真實訂閱節點的可達性／延遲另列外部觀察，不能拿
+  「三次皆成功」當成必要功能的唯一斷言。記錄其地區、協定、預期直連／代理
+  及選用理由，不能假設所有裸 IP 都應 DIRECT 或所有海外服務都可直接到達。
+- 受控端點與可識別測試代理是需具備的測試資源，不宣稱現有 VM 腳本已提供。
+  缺少它們時列出具體缺失的功能證據，不要求修改 localClash 來修復外網品質。
 
 ### 4.3 測試資料與三種基線
 
@@ -230,7 +274,7 @@ scripts/istoreos-test-env.sh wait
 | --- | --- |
 | S0 乾淨韌體 | 無 localClash 套件、訂閱、runtime、接管；只有必要管理／測試網路設定 |
 | S1 已安裝未初始化 | 套件／bundle 自帶 binary 和資源可存在；沒有訂閱、生成配置、能力快照、使用者策略或接管 |
-| S2 已初始化 | 由指定版本的正式 UI 流程生成，V/N 通過；保存精確版本及狀態指紋 |
+| S2 已初始化 | 由指定版本的正式 UI 流程生成，V/N 必要功能通過；保存精確版本及狀態指紋，外部品質觀察另列 |
 
 建立 S0/S1/S2 本身也要有案例與嘗試紀錄。基線建立失敗不是可省略的準備雜訊；
 受影響的 D/E 等關卡不得接著當正常路徑執行。可使用另一份有來源與成功證據的
@@ -346,7 +390,7 @@ C/D 記錄使用 `.run` 或 LuCI 套件更新入口，不混寫為 E。E 不得�
 | V3 材料 | 本輪真實來源摘要、節點／候選／合格數、策略／自訂網站摘要、配置 SHA、材料提交結果；無舊快照冒充新結果 |
 | V4 配置／runtime | 由目標核心執行的 `mihomo -t`／attestation 成功；managed PID／實際 executable 身分、flavor、router profile、controller、載入代理組型別與配置相符；Smart 另需 K4 模型載入證據 |
 | V5 接管 | LuCI `takeover_status` effective、ownership、TUN、policy rule/route、nft/DNS 檢查與本輪配置一致 |
-| V6 網路 | 本情境下重新執行 N1–N4，附 LAN 客戶端與實際直連／代理出口證據 |
+| V6 網路 | 本情境下重新執行 N1–N4 必要功能斷言，附受控 LAN 請求／回應、接管與可識別直連／代理路徑；外部品質觀察另列，不要求外網零失敗 |
 
 在 **已驗證身分的測試 guest** 內可使用以下唯讀入口：
 
@@ -422,6 +466,8 @@ Meta 可使用一般 cache，但不應依賴 LightGBM 模型或啟動 Smart 資�
 **選路與效能：**K6 使用獨立測試 intent／規則、固定節點與隔離故障，原始完整
 主線配置仍須保留。先記錄候選的健康檢查／重試／失敗暫停窗口及允許恢復時間，
 不假定兩核心立即切換或算法相同；沒有受控節點／觀測能力就 BLOCKED。
+K6 驗證候選的核心／配置整合與受控失敗處理，不保證供應商節點品質、公共網站
+可達性或 Smart 必然比 Meta 快；演算法／Mihomo 依賴缺陷與 Core／LuCI 歸屬分列。
 K3/K6 分別記錄冷、暖、首次請求與後續請求，不用平均值掩蓋第一筆超時。
 CPU/RSS、啟動及請求耗時在相同 QEMU 資源／輸入下比較；退化門檻在 G00 固定，
 不得事後放寬，也不把 TCG 結果宣稱為實機效能排名。
@@ -485,28 +531,62 @@ Meta、Smart 各自從相同核心的 S2 克隆兩份，一份開啟預設策略
 已移除的 g204 capability；舊 intent 在不更新策略時明確拒絕可作負向 PASS，
 但必須接著走同步新版預設策略的支援路徑成功，不能把拒絕本身當完成升級。
 
-## 11. N：真正的網路功能
+## 11. N：受控網路功能與外部品質觀察
 
-G01 的 LAN client 與固定端點是前置條件。每輪記錄實際目的地、時間、回應及
-本輪 policy/controller/nft 證據；事先在紀錄中固定探測逾時和允許的切換中斷預算，
-不得看到結果後才放寬標準。每種正常狀態至少連續探測三次，保留全部失敗。
+### 11.1 必要的網路功能驗證
+
+G01 的 LAN client、受控端點與可識別測試代理是前置條件。每輪記錄實際目的地、
+時間、回應及本輪 policy/controller/nft 證據；事先固定探測逾時和允許的切換
+中斷預算，不得看到結果後才放寬標準。每種正常狀態至少連續探測三次，保留
+全部失敗；三次成功只滿足取樣要求，不替代功能斷言與責任判讀。
 N1–N6 分別綁定 Meta／Smart 與冷暖狀態；每次 K8 切換後重跑 N1–N4，
-不能借用切換前另一核心的流量結果。N5 的條件性 N/A 也要分核心記錄原因。
+不能借用切換前另一核心的流量結果。以下均為 `required_function`，N5 的
+條件性 N/A 也要分核心記錄原因；公共網路品質不是這些必要斷言的一部分。
 
 | ID | 測試 | 必需結果 |
 | --- | --- | --- |
-| N1 直連 | LAN client → 指定直連域名／HTTP 端點 | 正確回應及直連 chain／出口，不能其實被上游代理接走 |
-| N2 代理 | 同一 client → 指定代理域名／HTTP 端點 | 命中測試規則和預期代理鏈／出口；與直連對照，不只看 HTTP 200 |
-| N3 DNS／區網 | 公開域名、router DNS、固定本地域名／DHCP 名稱、LAN 服務 | 正確答案及連通性；公共 DNS 接管沒有破壞本地解析／連線 |
-| N4 UDP | client 對固定 UDP echo 或受控 UDP DNS 端點發唯一測試 payload | 有應用層回應、TUN／路由計數及預期出口；TCP 成功不能替代 |
+| N1 直連 | LAN client → 受控 WAN 側直連 HTTP/TCP 端點 | 固定 payload 正確回應，符合預期 DIRECT 規則；client ingress、受測轉送路徑及端點身分可對應，不只看 HTTP 200 |
+| N2 代理 | 同一 client → 經可識別測試代理到受控端點 | 命中預期代理鏈，端點或代理側證據能區分直連與代理；沒有被錯配置為 DIRECT，不能只靠網站可達性 |
+| N3 DNS／區網 | 受控 DNS 查詢／答案、router DNS、固定本地域名／DHCP 名稱、LAN 服務 | 上下游查詢與答案符合配置；需接管與本地 bypass 路徑分別正確，不破壞本地解析／連線；不以公共 DNS 永不逾時作承諾 |
+| N4 UDP | client 對受控 WAN 側 UDP echo／DNS 端點發唯一 payload | 預先指定直連／代理意圖，有應用層回應、TUN／路由計數及對應出入流量；TCP 成功不能替代，不把任意公共 UDP 端點當必達服務 |
 | N5 IPv6 | 已宣稱支援且具可驗證 IPv6 路徑時重跑 N1–N4 | 正確 IPv6 捕獲／出口／DNS；未配置 IPv6 可 N/A，但報告不可宣稱驗證 IPv6 |
-| N6 連續性 | 初始化後、更新各檢查點、重啟／停止／恢復期間持續探測 | 準備階段不提前破壞舊鏈；切換中斷與恢復時間可量測，無切換後持續黑洞 |
+| N6 連續性 | 初始化後、更新各檢查點、重啟／停止／恢復期間持續探測受控端點 | 準備階段不提前破壞舊鏈；在端點健康前提下量測候選切換中斷與恢復，無切換後持續黑洞；外部網站掉包另記 |
 
 明確停止期間不要求代理路徑通過；要驗證已停止及正常直連／管理通道。
 只有執行恢復後，才按預先設定的恢復預算要求代理及接管重新可用。
 
-若環境無法區分 VM 代理與上游透明代理，該出口結論 BLOCKED；不能拿相同 public IP
-作為唯一證據。指定 proxy curl 可作輔助診斷，不取代 LAN-forwarded N1–N4。
+受控端點不能只位於會被直接 bypass 的管理 LAN，必須證明流量走過待驗的
+轉送／代理路徑。測試路由使用產品支援的入口，保存完整主線配置與測試意圖；
+不靠手改生成 YAML 製造通過。控制面與實際回應都須驗證，不能只驗程序存在。
+若仍無法區分受測直連／代理路徑，該必要斷言 BLOCKED；若受控證據已足夠，
+無法判定宿主更下游的真實 public IP／ISP 品質僅限制外部出口聲稱，不阻擋已驗證
+的產品功能。指定 proxy curl 可作輔助診斷，不取代 LAN-forwarded N1–N4。
+
+### 11.2 外部品質觀察及失敗處置
+
+公共網站、公共 DNS、真實訂閱節點另建 `external_observation` 案例，記錄
+目的地／地區、TCP／UDP、實際匹配規則、預期路徑、每次回應與耗時；原始
+逾時仍是該次觀察 FAIL，不刪除、不因後續成功改寫，也不自動加入產品待修清單。
+
+例如：`www.baidu.com:443` 命中 `GeoSite/cn → DIRECT` 與
+`9.9.9.9:9953` 命中 `MATCH → DIRECT` 是不同測試內容；不能把兩者統稱為
+「直連失敗」。後者是裸 IP 公共 UDP DNS，先核對測試的路由意圖與當地可達性，
+不能由其逾時反推 localClash 有 Bug。前者即使符合直連規則，逾時也仍可能涉及
+Mihomo、DNS、QEMU、宿主／ISP 或目的服務，僅有撥號錯誤不足以確定根因。
+
+外部失敗後進行有界核對：
+
+1. 核對候選身分、生成與載入的配置、匹配規則、接管及同時段任務狀態，
+   先排查是否有 Core／LuCI 破壞必要功能的直接證據。
+2. 以事先準備的受控端點核對相關 N 斷言；必要時比對同次 client／guest
+   出入流量、DNS ID、目的回應及端點健康。只有缺哪層證據才追加哪層觀測，
+   不為了替一次偶發逾時找根因無限重測，或擅自擴大到宿主／生產網路操作。
+3. 若必要功能失效，按第 2.3 節列功能缺陷或證據缺口；如果必要功能已驗證且
+   沒有候選回歸證據，保留非阻擋的待定位外部觀察，說明證據與未確認範圍。
+   不要求每個外部觀察都找到根因／有修復 commit，才允許結束驗收。
+
+改用受控端點不是把原公共網站 FAIL 改成 PASS；兩者是不同的斷言及結果。
+候選功能本身的失敗仍受第 2.1 節限制，不能靠 workaround 或事後分類逃避重驗。
 
 ## 12. R：真正重啟與恢復
 
@@ -576,10 +656,11 @@ runtime，確認停止成功。
 
 每輪在 `.runtime/istoreos-acceptance/<run-id>/` 保存一份執行紀錄及脫敏證據。
 `run-id` 包含日期和候選識別；不要把歷史目錄中的 success.json 當作本輪結果。
-報告必須同時包含逐功能／子案例結果、完整缺陷清單、補救操作、未執行項及
+報告必須同時包含逐功能／子案例結果、異常索引、已確認缺陷清單、補救操作、未執行項及
 錯誤對帳結果。摘要不能只列主要 Bug；每項非預期失敗都可從摘要索引追到其
-版本、嘗試及證據。報告完整與候選可發布是兩個判定：完整的 FAIL 報告不是 PASS，
-未完成的報告也不能假稱已找出所有缺陷。
+版本、嘗試及證據。報告完整、案例結果與候選可發布分開判定：必要功能 FAIL
+不能放行；外部觀察 FAIL 可與必要功能 PASS 並存，須附不阻擋的理由及證據。
+未完成的報告不能假稱已找出所有缺陷；根因未知也不等於報告必須無限保持未完成。
 以下是紀錄模板，不是另一份 SOP：
 
 ```yaml
@@ -608,6 +689,7 @@ cases:
   - id: <A-meta-or-K8-meta-to-smart>
     attempt_id: <unique-attempt-id-never-overwritten>
     core_scope: <meta-smart-meta-to-smart-smart-to-meta-or-shared>
+    acceptance_scope: <required_function-or-external_observation>
     execution_role: <candidate-acceptance-historical-baseline-or-recovery-diagnostic>
     candidate_id: <locked-candidate-id>
     vm_id: <overlay-id-and-management-port>
@@ -628,14 +710,32 @@ cases:
     duration_seconds: <number>
     result: <PASS-FAIL-BLOCKED-N/A>
     reason: <required-for-non-PASS>
-    defect_ids: [<defect-id-if-unexpected-failure>]
+    anomaly_ids: [<anomaly-id-for-each-unexpected-failure>]
+    defect_ids: [] # Confirmed defects only; empty does not erase anomaly records.
+    release_blocking: <true-or-false-with-evidence-not-inferred-from-result-alone>
+    blocking_reason: <unmet-required-assertion-or-evidence-for-nonblocking-disposition>
     workaround_applied: false
     eligible_as_normal_baseline: <true-only-with-required-baseline-proof>
     recovery_and_retest: <result-or-not-needed>
+anomalies:
+  - id: <unique-anomaly-id>
+    case_attempt_ids: [<associated-attempt-ids>]
+    observed_at: <timestamp-with-timezone>
+    actual_versions: <fault-time-identities>
+    symptom: <exact-redacted-error-and-observed-impact>
+    owner: <core-luci-mihomo-external-service-test-tool-environment-or-unknown>
+    attribution_confidence: <confirmed-suspected-or-unknown>
+    attribution_evidence: [<evidence-or-explicit-gap>]
+    defect_ids: [] # Link a confirmed defect if established; no invented fix obligation.
+    required_assertions: [<affected-function-assertions-or-none>]
+    release_blocking: <true-or-false>
+    disposition: <blocking-defect-evidence-gap-or-nonblocking-observation>
+    disposition_reason: <evidence-and-remaining-unknowns>
 defects:
   - id: <unique-defect-id>
     case_attempt_ids: [<all-associated-attempt-ids>]
-    category: <candidate-product-historical-product-tool-environment-sop-or-unresolved>
+    category: <candidate-product-historical-product-mihomo-dependency-tool-environment-or-sop>
+    anomaly_ids: [<supporting-anomaly-ids>]
     function: <affected-function-and-subcase>
     observed_at: <timestamp-with-timezone>
     actual_versions: <fault-time-core-luci-and-active-mihomo-identities>
@@ -650,7 +750,7 @@ defects:
     workaround: <none-or-authorized-separate-attempt-with-scope-and-result>
 error_reconciliation:
   source_inventory: <all-task-probe-tool-and-ui-event-records>
-  event_index: <each-error-warning-to-defect-or-predeclared-expectation>
+  event_index: <each-error-warning-to-anomaly-defect-or-predeclared-expectation>
   unmapped_event_count: <must-be-zero-for-report-completeness>
   executed_attempts_without_result: <must-be-zero-for-report-completeness>
   completeness: <complete-or-incomplete>
@@ -659,6 +759,11 @@ core_results:
   smart: <PASS-FAIL-BLOCKED>
   meta_to_smart: <PASS-FAIL-BLOCKED>
   smart_to_meta: <PASS-FAIL-BLOCKED>
+release_assessment:
+  required_case_ids: [<all-required-function-cases>]
+  blocking_anomaly_or_defect_ids: [<unresolved-blocking-items-or-empty>]
+  nonblocking_observation_ids: [<retained-external-observations-or-empty>]
+  rationale: <functional-evidence-completeness-and-scope-limits>
 release_decision: <PASS-or-BLOCKED>
 reviewed_by: <reviewer>
 ```
@@ -666,9 +771,10 @@ reviewed_by: <reviewer>
 放行者逐項確認：
 
 1. G00–G03、雙核心 A–E（含每個選定舊版配對）、K、V、F、N、R、X、Z 都有
-   第 7 節矩陣要求的結果。Meta、Smart、Meta → Smart、Smart → Meta 四個分項
-   全部 PASS 才能放行；不得 N/A 或以其中一項代替另一項。案例級 N/A 僅限本文
-   已允許的條件分支，shared 只限明列子項，沒有未處理的 FAIL／BLOCKED。
+   第 7 節矩陣要求的必要功能結果。Meta、Smart、Meta → Smart、Smart → Meta
+   四個必要功能分項全部 PASS 才能放行；不得 N/A 或以其中一項代替另一項。
+   案例級 N/A 僅限本文已允許的條件分支，shared 只限明列子項，沒有未解的
+   必要功能 FAIL／BLOCKED。外部觀察結果不直接併入這四個分項。
 2. 訂閱／配置內容、task、PID、controller、接管與 LAN 請求證據屬於同輪候選；
    不以 CI、封裝結果、舊事故紀錄或後來的手動修復頂替。
 3. 大訂閱沒有縮小、預設策略同步未被主線關閉、失敗請求沒有被成功重試抹掉；
@@ -679,12 +785,16 @@ reviewed_by: <reviewer>
    要求「公開前逐位元相同」時，管線必須先具備候選資產直接提升的能力；
    現行 tag 自動發布不能被文件描述成已具備該能力。
 5. 證據脫敏，記錄未覆蓋平台／協定，明確寫「iStoreOS QEMU 驗收」，不擴大成實機結論。
-6. 所有已執行功能／子案例、歷史基線及補救嘗試均在索引；非預期失敗都有缺陷 ID，
+6. 所有已執行功能／子案例、歷史基線及補救嘗試均在索引；非預期失敗都有異常 ID，
+   已確認缺陷另有缺陷 ID，沒有把未知外部逾時一律當作 Core／LuCI 待修 Bug。
    預期拒絕／內建重試有事前契約及實際斷言，warning 有判讀。對帳不得有未映射
    事件或缺少結果的已執行嘗試；即使整輪已 FAIL，也要補齊其餘已發現缺陷。
 7. 沒有把人工 refresh／保存應用後的成功當成首次初始化通過，沒有把補救副本
    當正常 S2；每個下游的基線資格可追溯。已修復缺陷有新候選的直接重驗，
    原始 FAIL 不刪除；歷史版本缺陷與目前候選結果分列，不互相冒充。
+8. 每個阻擋項指出尚未成立的必要斷言；每個非阻擋外部異常有功能驗證證據、
+   歸屬信心及未確認範圍。不以「外網一定正常」作放行前提，不要求外部異常
+   都有修復 commit；也不以「可能是外網」豁免候選整合故障或缺失的功能證據。
 
 ## 16. 文件與工具的唯一入口
 
