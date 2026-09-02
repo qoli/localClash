@@ -1,0 +1,16 @@
+#!/bin/sh /etc/rc.common
+# Independent observer. No Mihomo start/stop, render, UCI, or takeover operations.
+START=96
+STOP=9
+USE_PROCD=1
+
+start_service() {
+	procd_open_instance
+	procd_set_param command /usr/local/bin/localclash logs collect \
+		--config /root/localclash/.runtime/mihomo/config.yaml \
+		--output-dir /root/localclash/.runtime/logs/mihomo-history
+	procd_set_param respawn 3600 5 5
+	procd_set_param stdout 1
+	procd_set_param stderr 1
+	procd_close_instance
+}

@@ -51,6 +51,7 @@ Usage:
   localclash apply --input desired-state.json --json
   localclash reset [--full] [--dry-run] [--workspace <path>] --json
   localclash mcp serve [flags]
+  localclash logs collect [--config PATH] [--output-dir PATH]
 
 Advanced/internal commands:
   localclash core download [flags]
@@ -181,6 +182,10 @@ func main() {
 }
 
 func run(args []string) error {
+	// The collector must not bootstrap, render, restart, or repair the runtime.
+	if len(args) >= 2 && args[0] == "logs" && args[1] == "collect" {
+		return runLogCollector(args[2:])
+	}
 	if len(args) == 0 {
 		fmt.Fprint(os.Stderr, usage)
 		return nil

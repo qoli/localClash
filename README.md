@@ -1,5 +1,9 @@
 # localClash
 
+Existing Mihomo debug logs can be retained by an independent observer with a
+sliding 48-hour window and 32 MiB budget; see
+[Mihomo log persistence](docs/mihomo-log-persistence.md). No Smart core change is required.
+
 Local Mihomo runtime wrapper with an MCP management interface for AI-assisted
 Clash, Mihomo, and router workflows.
 
@@ -56,7 +60,7 @@ See [更新日誌](docs/changelog.md) for user-facing Core and LuCI release note
 
 ## Main Bootstrap
 
-Every localClash process builds a shared runtime bootstrap state before serving
+Except for the independent `logs collect` observer, localClash builds a shared runtime bootstrap state before serving
 CLI commands or MCP tools. This state owns common paths and preflight results
 for the Mihomo core, subscription artifacts, rule sources, packs catalog,
 generated config, and runtime directory.
