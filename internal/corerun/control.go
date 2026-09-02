@@ -297,6 +297,15 @@ func normalizeRestartOptions(opts RestartOptions) RestartOptions {
 }
 
 func hotReload(ctx context.Context, opts RestartOptions, runOpts Options, result RestartResult, stage func(RestartStageEvent), totalStarted time.Time) (RestartResult, error) {
+	err := runtimesupervision.WithLock(runOpts.WorkDir, func() error {
+		var reloadErr error
+		result, reloadErr = hotReloadLocked(ctx, opts, runOpts, result, stage, totalStarted)
+		return reloadErr
+	})
+	return result, err
+}
+
+func hotReloadLocked(ctx context.Context, opts RestartOptions, runOpts Options, result RestartResult, stage func(RestartStageEvent), totalStarted time.Time) (RestartResult, error) {
 	if opts.ForceConfigTest {
 		result.Error = "force_config_test is not supported for hot_reload; call mihomo_config_test first"
 		result.Timings.TotalMS = elapsedMS(totalStarted)
@@ -369,6 +378,16 @@ func hotReload(ctx context.Context, opts RestartOptions, runOpts Options, result
 		stage(RestartStageEvent{Stage: "hot_reload", Event: "error", DurationMS: elapsedMS(reloadStarted), Error: err.Error()})
 		return result, nil
 	}
+	supervision, err := prepareHotReloadSupervisionLocked(ctx, runOpts, validationCachePath(opts.ValidationCachePath, runOpts.WorkDir), status.PID, actual)
+	if err != nil {
+		result.Error = "prepare runtime supervision for hot reload: " + err.Error()
+		result.Timings.TotalMS = elapsedMS(totalStarted)
+		stage(RestartStageEvent{Stage: "hot_reload", Event: "error", DurationMS: elapsedMS(reloadStarted), Error: result.Error})
+		return result, nil
+	}
+	if supervision == nil {
+		result.Warnings = append(result.Warnings, "Runtime supervision is unavailable for this running process.")
+	}
 	response, err := client.Request(ctx, mihomoapi.RequestOptions{
 		Method:  "PUT",
 		Path:    "/configs",
@@ -384,9 +403,12 @@ func hotReload(ctx context.Context, opts RestartOptions, runOpts Options, result
 		return result, nil
 	}
 	result.Reloaded = true
-	if err := updateSupervisionAfterHotReload(ctx, runOpts, validationCachePath(opts.ValidationCachePath, runOpts.WorkDir), status.PID, time.Now()); err != nil {
-		result.Warnings = append(result.Warnings, "Hot reload succeeded, but runtime supervision identity was not updated: "+err.Error())
+	if err := commitHotReloadSupervisionLocked(runOpts.WorkDir, supervision, time.Now()); err != nil {
+		result.Error = "Hot reload succeeded, but runtime supervision identity was not updated: " + err.Error()
 		markRuntimeStartFailure(runOpts.WorkDir, "hot_reload_state_update_failed", err, time.Now())
+		result.Timings.TotalMS = elapsedMS(totalStarted)
+		stage(RestartStageEvent{Stage: "hot_reload", Event: "error", DurationMS: elapsedMS(reloadStarted), PID: status.PID, Error: result.Error})
+		return result, nil
 	}
 	result.Timings.TotalMS = elapsedMS(totalStarted)
 	stage(RestartStageEvent{Stage: "hot_reload", Event: "done", DurationMS: elapsedMS(reloadStarted), PID: status.PID})

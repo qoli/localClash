@@ -3,10 +3,13 @@ package corerun
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -354,10 +357,23 @@ func TestStopWaitsForInFlightRecoveryThenDisarmsIt(t *testing.T) {
 func TestHotReloadSuccessUpdatesSupervisedConfigHash(t *testing.T) {
 	fixture := newSupervisedFixture(t)
 	before := readSupervisionState(t, fixture.workDir)
+	update := func() error {
+		return runtimesupervision.WithLock(fixture.workDir, func() error {
+			configSHA, err := runtimesupervision.HashFile(fixture.config)
+			if err != nil {
+				return err
+			}
+			state, err := prepareHotReloadSupervisionLocked(context.Background(), Options{CorePath: fixture.core, ConfigPath: fixture.config, WorkDir: fixture.workDir, LogPath: before.LogPath}, before.ValidationCachePath, fixture.pid, configSHA)
+			if err != nil {
+				return err
+			}
+			return commitHotReloadSupervisionLocked(fixture.workDir, state, time.Now())
+		})
+	}
 	if err := os.WriteFile(fixture.config, []byte("external-controller: 127.0.0.1:9090\nexternal-ui: ui/zashboard\nmode: global\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := updateSupervisionAfterHotReload(context.Background(), Options{CorePath: fixture.core, ConfigPath: fixture.config, WorkDir: fixture.workDir, LogPath: before.LogPath}, before.ValidationCachePath, fixture.pid, time.Now()); err == nil {
+	if err := update(); err == nil {
 		t.Fatal("hot reload supervision update succeeded without a matched validation cache")
 	}
 	if unchanged := readSupervisionState(t, fixture.workDir); unchanged.ConfigSHA256 != before.ConfigSHA256 {
@@ -372,12 +388,184 @@ func TestHotReloadSuccessUpdatesSupervisedConfigHash(t *testing.T) {
 	if err != nil || !validation.Passed {
 		t.Fatalf("validation = %+v, err = %v", validation, err)
 	}
-	if err := updateSupervisionAfterHotReload(context.Background(), Options{CorePath: fixture.core, ConfigPath: fixture.config, WorkDir: fixture.workDir, LogPath: before.LogPath}, before.ValidationCachePath, fixture.pid, time.Now()); err != nil {
+	if err := update(); err != nil {
 		t.Fatal(err)
 	}
 	after := readSupervisionState(t, fixture.workDir)
 	if after.ConfigSHA256 == before.ConfigSHA256 || after.ConfigSHA256 != validation.ConfigSHA256 {
 		t.Fatalf("before = %+v, after = %+v, validation = %+v", before, after, validation)
+	}
+}
+
+func TestHotReloadCommitsPreparedSupervisionProof(t *testing.T) {
+	for _, scenario := range []string{"version_fails_after_put", "version_fails_before_put", "config_changes_during_put", "state_write_fails_after_put", "no_supervision"} {
+		t.Run(scenario, func(t *testing.T) {
+			fixture := newSupervisedFixture(t)
+			before := readSupervisionState(t, fixture.workDir)
+			var requests atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodPut || r.URL.Path != "/configs" {
+					t.Errorf("unexpected controller request: %s %s", r.Method, r.URL.Path)
+					w.WriteHeader(http.StatusNotFound)
+					return
+				}
+				requests.Add(1)
+				switch scenario {
+				case "version_fails_after_put":
+					if err := os.WriteFile(fixture.core+".version-fail", nil, 0o600); err != nil {
+						t.Error(err)
+					}
+				case "config_changes_during_put":
+					if err := os.WriteFile(fixture.config, []byte("mode: direct\n"), 0o600); err != nil {
+						t.Error(err)
+					}
+				case "state_write_fails_after_put":
+					if err := os.Remove(runtimesupervision.Path(fixture.workDir)); err != nil {
+						t.Error(err)
+					}
+					if err := os.Mkdir(runtimesupervision.Path(fixture.workDir), 0o700); err != nil {
+						t.Error(err)
+					}
+				}
+				w.WriteHeader(http.StatusNoContent)
+			}))
+			defer server.Close()
+			config := "external-controller: " + strings.TrimPrefix(server.URL, "http://") + "\nmode: global\n"
+			if err := os.WriteFile(fixture.config, []byte(config), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			validation, err := mihomotest.ValidateCached(context.Background(), mihomotest.ValidationOptions{
+				CorePath: fixture.core, ConfigPath: fixture.config, WorkDir: fixture.workDir, CachePath: before.ValidationCachePath,
+			})
+			if err != nil || !validation.Passed {
+				t.Fatalf("validation = %+v, err = %v", validation, err)
+			}
+			queriesBefore, err := os.ReadFile(fixture.core + ".version-calls")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if scenario == "version_fails_before_put" {
+				if err := os.WriteFile(fixture.core+".version-fail", nil, 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if scenario == "no_supervision" {
+				if err := os.Remove(runtimesupervision.Path(fixture.workDir)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			result, err := Restart(context.Background(), RestartOptions{
+				Strategy: RestartStrategyHotReload, CorePath: fixture.core, ConfigPath: fixture.config,
+				WorkDir: fixture.workDir, ConfigSHA256: validation.ConfigSHA256, ValidationCachePath: before.ValidationCachePath,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			switch scenario {
+			case "version_fails_before_put":
+				if result.Reloaded || requests.Load() != 0 || !strings.Contains(result.Error, "query core version: exit status 7") {
+					t.Fatalf("reload = %+v, requests = %d; want preflight failure without controller mutation", result, requests.Load())
+				}
+			case "config_changes_during_put", "state_write_fails_after_put":
+				if !result.Reloaded || requests.Load() != 1 || !strings.Contains(result.Error, "supervision identity was not updated") {
+					t.Fatalf("reload = %+v, requests = %d; want explicit partial completion", result, requests.Load())
+				}
+			default:
+				if !result.Reloaded || result.Error != "" || requests.Load() != 1 {
+					t.Fatalf("reload = %+v, requests = %d", result, requests.Load())
+				}
+			}
+			if scenario == "no_supervision" {
+				if _, err := os.Stat(runtimesupervision.Path(fixture.workDir)); !os.IsNotExist(err) {
+					t.Fatalf("invented supervision state: %v", err)
+				}
+				return
+			}
+			queriesAfter, err := os.ReadFile(fixture.core + ".version-calls")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.Count(string(queriesAfter), "query")-strings.Count(string(queriesBefore), "query") != 1 {
+				t.Fatal("hot reload must query the core version once, before PUT")
+			}
+			if scenario == "state_write_fails_after_put" {
+				return
+			}
+			after := readSupervisionState(t, fixture.workDir)
+			wantSHA := before.ConfigSHA256
+			if scenario == "version_fails_after_put" {
+				wantSHA = validation.ConfigSHA256
+			}
+			if after.ConfigSHA256 != wantSHA {
+				t.Fatalf("guard SHA = %s, want %s", after.ConfigSHA256, wantSHA)
+			}
+		})
+	}
+}
+
+func TestStopWaitsForHotReloadSupervisionCommit(t *testing.T) {
+	fixture := newSupervisedFixture(t)
+	before := readSupervisionState(t, fixture.workDir)
+	putStarted := make(chan struct{})
+	releasePut := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(putStarted)
+		<-releasePut
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+	defer func() {
+		select {
+		case <-releasePut:
+		default:
+			close(releasePut)
+		}
+	}()
+	if err := os.WriteFile(fixture.config, []byte("external-controller: "+strings.TrimPrefix(server.URL, "http://")+"\nmode: global\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	validation, err := mihomotest.ValidateCached(context.Background(), mihomotest.ValidationOptions{
+		CorePath: fixture.core, ConfigPath: fixture.config, WorkDir: fixture.workDir, CachePath: before.ValidationCachePath,
+	})
+	if err != nil || !validation.Passed {
+		t.Fatalf("validation = %+v, err = %v", validation, err)
+	}
+	reloadDone := make(chan error, 1)
+	go func() {
+		result, err := Restart(context.Background(), RestartOptions{
+			Strategy: RestartStrategyHotReload, CorePath: fixture.core, ConfigPath: fixture.config,
+			WorkDir: fixture.workDir, ConfigSHA256: validation.ConfigSHA256, ValidationCachePath: before.ValidationCachePath,
+		})
+		if err == nil && result.Error != "" {
+			err = errors.New(result.Error)
+		}
+		reloadDone <- err
+	}()
+	select {
+	case <-putStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("reload did not reach controller")
+	}
+	stopDone := make(chan error, 1)
+	go func() {
+		_, err := Stop(StopOptions{CorePath: fixture.core, ConfigPath: fixture.config, WorkDir: fixture.workDir, Timeout: 2 * time.Second})
+		stopDone <- err
+	}()
+	select {
+	case err := <-stopDone:
+		t.Fatalf("stop completed before hot reload released its lifecycle lock: %v", err)
+	case <-time.After(25 * time.Millisecond):
+	}
+	close(releasePut)
+	if err := <-reloadDone; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-stopDone; err != nil {
+		t.Fatal(err)
+	}
+	after := readSupervisionState(t, fixture.workDir)
+	if after.State != runtimesupervision.StateStopped || after.ConfigSHA256 != validation.ConfigSHA256 {
+		t.Fatalf("state = %+v, want stop to disarm the newly committed config", after)
 	}
 }
 
@@ -395,6 +583,8 @@ func newSupervisedFixture(t *testing.T) supervisedFixture {
 	core := filepath.Join(dir, "lc-mihomo-smart")
 	writeStartExecutable(t, core, `#!/bin/sh
 if [ "$1" = "-v" ]; then
+  echo query >> "$0.version-calls"
+  if [ -f "$0.version-fail" ]; then exit 7; fi
   echo Mihomo Smart test
   exit 0
 fi

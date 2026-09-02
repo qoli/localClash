@@ -981,7 +981,7 @@ func TestApplyTemplateTransactionMigratesOldIntentWithoutG204Material(t *testing
 }`)
 	writeMainTestFile(t, filepath.Join(dir, "localclash-intent.json"), `{"version":4,"policy_template":"old","proxy_groups":{},"packs":[]}`)
 	writeMainTestPackIndex(t, state.Paths.RulesCacheDir)
-	writeMainTestFile(t, state.Paths.CorePath, "#!/bin/sh\nexit 0\n")
+	writeMainTestFile(t, state.Paths.CorePath, "#!/bin/sh\nif [ \"$1\" = -v ]; then echo 'Mihomo template test'; fi\nexit 0\n")
 	if err := os.Chmod(state.Paths.CorePath, 0o755); err != nil {
 		t.Fatal(err)
 	}

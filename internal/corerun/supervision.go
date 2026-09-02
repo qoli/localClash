@@ -188,63 +188,95 @@ func markSupervisionRestarting(runOpts Options, now time.Time) error {
 	})
 }
 
-func updateSupervisionAfterHotReload(ctx context.Context, runOpts Options, cachePath string, pid int, now time.Time) error {
-	return runtimesupervision.WithLock(runOpts.WorkDir, func() error {
-		state, err := runtimesupervision.Read(runOpts.WorkDir)
-		if err != nil {
-			return err
-		}
-		if state.State != runtimesupervision.StateRunning {
-			return fmt.Errorf("runtime supervision state is %q, want %q", state.State, runtimesupervision.StateRunning)
-		}
-		if state.PID != pid {
-			return fmt.Errorf("runtime supervision pid mismatch: state has %d, runtime has %d", state.PID, pid)
-		}
-		bootID, err := currentBootID()
-		if err != nil {
-			return err
-		}
-		if state.BootID != bootID {
-			return fmt.Errorf("runtime supervision boot_id mismatch")
-		}
-		coreSHA, err := runtimesupervision.HashFile(state.CorePath)
-		if err != nil {
-			return fmt.Errorf("hash supervised core after hot reload: %w", err)
-		}
-		if coreSHA != state.CoreSHA256 {
-			return fmt.Errorf("runtime supervision core hash changed during hot reload")
-		}
-		configSHA, err := runtimesupervision.HashFile(state.ConfigPath)
-		if err != nil {
-			return fmt.Errorf("hash supervised config after hot reload: %w", err)
-		}
-		cache := mihomotest.CacheStatus(ctx, mihomotest.ValidationOptions{
-			CorePath:   state.CorePath,
-			ConfigPath: state.ConfigPath,
-			WorkDir:    state.WorkDir,
-			CachePath:  cachePath,
-		})
-		if !cache.Present || !cache.Matched || !cache.Passed {
-			return fmt.Errorf("runtime supervision validation cache is not a matched pass: %s", cache.Status)
-		}
-		if cache.CoreSHA256 != coreSHA || cache.ConfigSHA256 != configSHA {
-			return fmt.Errorf("runtime supervision validation cache hashes do not match hot-reloaded inputs")
-		}
-		state.ConfigSHA256 = configSHA
-		state.ValidationCachePath = cache.CachePath
-		state.UpdatedAt = supervisionTimestamp(now)
-		if err := runtimesupervision.Write(runOpts.WorkDir, state); err != nil {
-			return err
-		}
-		appendRuntimeSupervisionEvent(runOpts.WorkDir, now, map[string]any{
-			"event":         "runtime_supervision_armed",
-			"action":        "hot_reload",
-			"pid":           pid,
-			"core_sha256":   state.CoreSHA256,
-			"config_sha256": state.ConfigSHA256,
-		})
-		return nil
+// prepareHotReloadSupervisionLocked verifies recovery proof before the controller
+// receives the new config. The caller holds the lifecycle lock through commit.
+func prepareHotReloadSupervisionLocked(ctx context.Context, runOpts Options, cachePath string, pid int, configSHA string) (*runtimesupervision.State, error) {
+	state, err := runtimesupervision.Read(runOpts.WorkDir)
+	if errors.Is(err, os.ErrNotExist) {
+		// Runtimes started without supervision remain usable; do not invent proof.
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if state.State != runtimesupervision.StateRunning {
+		return nil, fmt.Errorf("runtime supervision state is %q, want %q", state.State, runtimesupervision.StateRunning)
+	}
+	if state.PID != pid {
+		return nil, fmt.Errorf("runtime supervision pid mismatch: state has %d, runtime has %d", state.PID, pid)
+	}
+	identity, err := canonicalSupervisionIdentity(runOpts, cachePath)
+	if err != nil {
+		return nil, err
+	}
+	if state.CorePath != identity.CorePath || state.ConfigPath != identity.ConfigPath || state.WorkDir != identity.WorkDir {
+		return nil, errors.New("runtime supervision paths do not match hot reload inputs")
+	}
+	state.ConfigSHA256 = configSHA
+	state.ValidationCachePath = identity.ValidationCachePath
+	cache := mihomotest.CacheStatus(ctx, mihomotest.ValidationOptions{
+		CorePath: state.CorePath, ConfigPath: state.ConfigPath,
+		WorkDir: state.WorkDir, CachePath: state.ValidationCachePath,
 	})
+	if !cache.Present || !cache.Matched || !cache.Passed {
+		return nil, fmt.Errorf("runtime supervision validation cache is not a matched pass: %s: %s", cache.Status, cache.Error)
+	}
+	if cache.CoreSHA256 != state.CoreSHA256 || cache.ConfigSHA256 != state.ConfigSHA256 {
+		return nil, errors.New("runtime supervision validation cache hashes do not match hot reload inputs")
+	}
+	// Check the actual bytes after the version probe, including metadata hits.
+	if err := verifyHotReloadSupervisionInputs(&state); err != nil {
+		return nil, err
+	}
+	return &state, nil
+}
+
+func verifyHotReloadSupervisionInputs(state *runtimesupervision.State) error {
+	bootID, err := currentBootID()
+	if err != nil {
+		return err
+	}
+	if state.BootID != bootID {
+		return errors.New("runtime supervision boot_id mismatch")
+	}
+	if _, err := InspectManagedRuntimeProcess(state.PID, state.CorePath, state.ConfigPath, state.WorkDir); err != nil {
+		return fmt.Errorf("inspect supervised process during hot reload: %w", err)
+	}
+	coreSHA, err := runtimesupervision.HashFile(state.CorePath)
+	if err != nil {
+		return fmt.Errorf("hash supervised core during hot reload: %w", err)
+	}
+	if coreSHA != state.CoreSHA256 {
+		return errors.New("runtime supervision core hash changed during hot reload")
+	}
+	configSHA, err := runtimesupervision.HashFile(state.ConfigPath)
+	if err != nil {
+		return fmt.Errorf("hash supervised config during hot reload: %w", err)
+	}
+	if configSHA != state.ConfigSHA256 {
+		return errors.New("runtime supervision config hash changed during hot reload")
+	}
+	return nil
+}
+
+func commitHotReloadSupervisionLocked(workDir string, state *runtimesupervision.State, now time.Time) error {
+	if state == nil {
+		return nil
+	}
+	// Reuse the preflight validation proof; do not run another fallible version
+	// probe after the controller has already accepted the material change.
+	if err := verifyHotReloadSupervisionInputs(state); err != nil {
+		return err
+	}
+	state.UpdatedAt = supervisionTimestamp(now)
+	if err := runtimesupervision.Write(workDir, *state); err != nil {
+		return err
+	}
+	appendRuntimeSupervisionEvent(workDir, now, map[string]any{
+		"event": "runtime_supervision_armed", "action": "hot_reload",
+		"pid": state.PID, "core_sha256": state.CoreSHA256, "config_sha256": state.ConfigSHA256,
+	})
+	return nil
 }
 
 func CheckSupervision(ctx context.Context, opts SupervisionCheckOptions) (SupervisionCheckResult, error) {

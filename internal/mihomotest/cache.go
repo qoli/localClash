@@ -193,6 +193,12 @@ func CacheStatus(ctx context.Context, opts ValidationOptions) CacheStatusResult 
 		out.Error = err.Error()
 		return out
 	}
+	if out.Present {
+		if _, err := readValidationCache(opts.CachePath); err != nil {
+			out.Error = "read validation cache: " + err.Error()
+			return out
+		}
+	}
 	metadata, err := buildInputMetadata(ctx, opts)
 	if err != nil {
 		out.Error = err.Error()
@@ -333,6 +339,10 @@ func buildInputMetadata(ctx context.Context, opts ValidationOptions) (validation
 	if err != nil {
 		return validationInputMetadata{}, fmt.Errorf("stat core: %w", err)
 	}
+	version, err := coreVersion(ctx, opts.CorePath)
+	if err != nil {
+		return validationInputMetadata{}, err
+	}
 	return validationInputMetadata{
 		ConfigPath:    opts.ConfigPath,
 		ConfigSize:    configInfo.Size(),
@@ -340,7 +350,7 @@ func buildInputMetadata(ctx context.Context, opts ValidationOptions) (validation
 		CorePath:      opts.CorePath,
 		CoreSize:      coreInfo.Size(),
 		CoreModTime:   coreInfo.ModTime().UTC().Format(time.RFC3339Nano),
-		CoreVersion:   coreVersion(ctx, opts.CorePath),
+		CoreVersion:   version,
 		CoreType:      coreType(opts.CorePath),
 	}, nil
 }
@@ -459,14 +469,21 @@ func sha256File(path string) (string, error) {
 	return hex.EncodeToString(hash.Sum(nil)), nil
 }
 
-func coreVersion(ctx context.Context, corePath string) string {
+func coreVersion(ctx context.Context, corePath string) (string, error) {
 	runCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	output, err := exec.CommandContext(runCtx, corePath, "-v").CombinedOutput()
 	if err != nil {
-		return ""
+		if runCtx.Err() != nil {
+			return "", fmt.Errorf("query core version: %w", runCtx.Err())
+		}
+		return "", fmt.Errorf("query core version: %w", err)
 	}
-	return strings.TrimSpace(string(output))
+	version := strings.TrimSpace(string(output))
+	if version == "" {
+		return "", errors.New("query core version: empty output")
+	}
+	return version, nil
 }
 
 func coreType(path string) string {

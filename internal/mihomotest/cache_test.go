@@ -2,6 +2,7 @@ package mihomotest
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -182,4 +183,57 @@ func readTestFile(t *testing.T, path string) string {
 		t.Fatal(err)
 	}
 	return string(data)
+}
+
+func TestValidationRejectsUnverifiedCoreVersion(t *testing.T) {
+	for _, scenario := range []string{"exec_failure", "empty_output", "deadline"} {
+		t.Run(scenario, func(t *testing.T) {
+			dir := t.TempDir()
+			core := filepath.Join(dir, "lc-mihomo-smart")
+			versionAction := "exit 7"
+			if scenario == "empty_output" {
+				versionAction = "exit 0"
+			}
+			if scenario == "deadline" {
+				versionAction = "exec sleep 30"
+			}
+			writeTestFile(t, core, "#!/bin/sh\nif [ \"$1\" = \"-v\" ]; then "+versionAction+"; fi\necho tested > \"$0.tested\"\n", 0o755)
+			config := filepath.Join(dir, "config.yaml")
+			writeTestFile(t, config, "mode: rule\n", 0o600)
+			cache := filepath.Join(dir, "cache.json")
+			opts := ValidationOptions{CorePath: core, ConfigPath: config, WorkDir: dir, CachePath: cache}
+			ctx := context.Background()
+			if scenario == "deadline" {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithTimeout(ctx, 30*time.Millisecond)
+				defer cancel()
+			}
+			result, err := ValidateCached(ctx, opts)
+			if err == nil || result.Passed || !strings.Contains(result.Error, "query core version") {
+				t.Fatalf("validation = %+v, err = %v", result, err)
+			}
+			if scenario == "deadline" && !errors.Is(err, context.DeadlineExceeded) {
+				t.Fatalf("deadline cause lost: %v", err)
+			}
+			for _, path := range []string{cache, core + ".tested"} {
+				if _, err := os.Stat(path); !os.IsNotExist(err) {
+					t.Fatalf("unexpected artifact %s: %v", path, err)
+				}
+			}
+			status := CacheStatus(ctx, opts)
+			if status.Matched || status.Error == "" {
+				t.Fatalf("status = %+v", status)
+			}
+		})
+	}
+}
+
+func TestCacheStatusReportsMalformedCache(t *testing.T) {
+	dir := t.TempDir()
+	cache := filepath.Join(dir, "cache.json")
+	writeTestFile(t, cache, "not json", 0o600)
+	status := CacheStatus(context.Background(), ValidationOptions{CachePath: cache, CorePath: filepath.Join(dir, "core"), ConfigPath: filepath.Join(dir, "config")})
+	if !status.Present || status.Matched || !strings.Contains(status.Error, "read validation cache") {
+		t.Fatalf("status = %+v", status)
+	}
 }
