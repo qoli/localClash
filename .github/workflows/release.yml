@@ -31,7 +31,8 @@ jobs:
           cache-dependency-path: go.sum
 
       - name: Test
-        run: go test ./...
+        # Runtime tests inspect host-wide /proc; package fixtures must not overlap.
+        run: go test -p 1 ./...
 
   build-release:
     needs: test
