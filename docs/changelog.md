@@ -37,7 +37,8 @@ Release:
 
 Verification:
 
-- 已完成訂閱來源容錯、cache fallback、全來源失敗與 active source 持久化的主機端針對性測試；Core release workflow 會在 tag 上重新執行 release test 與資產建置。
+- 已完成訂閱來源容錯、cache fallback、全來源失敗與 active source 持久化的主機端針對性測試。
+- [Core Release workflow 33814114840](https://github.com/qoli/localClash/actions/runs/33814114840) 成功；7 項公開資產、三份 checksum 與 v0.1.81 manifest 已重新下載校驗通過。
 - 本版是訂閱範圍的限定發布；未宣稱完整 G99、ARM64 runtime 或實體路由器驗收。
 
 ### localclash-luci v0.1.0-75
@@ -54,7 +55,8 @@ Release:
 
 Verification:
 
-- 已完成 LuCI JavaScript、rpcd、訂閱保存／重啟的主機端檢查；公開 Release workflow 會重新執行同一套來源、測試與 13 項資產校驗。
+- 已完成 LuCI JavaScript、rpcd、訂閱保存／重啟的主機端檢查。
+- [Main CI 33814717837](https://github.com/qoli/localclash-luci/actions/runs/33814717837) 與 [Release workflow 33814902288](https://github.com/qoli/localclash-luci/actions/runs/33814902288) 成功；13 項公開資產與全部 checksum 已重新下載校驗通過，兩架構 `.run` 均通過 `--info`、`--list`、`--check`、`--noexec`。
 - 本版驗證聚焦訂閱保存→刷新→render→runtime restart 與逐來源 warning；未宣稱完整 G99、ARM64 runtime 或實體路由器驗收。
 
 ## 2026-09-03
