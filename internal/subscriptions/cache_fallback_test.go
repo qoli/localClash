@@ -83,9 +83,9 @@ func TestRefresh522UsesCacheAndRefreshesHealthySource(t *testing.T) {
 	}
 }
 
-func TestRefreshSkipsSourceWithoutCacheWhenAnotherSourceIsValid(t *testing.T) {
+func TestRefreshSkipsMultipleSourcesWithoutCacheWhenAnotherSourceIsValid(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/invalid" {
+		if strings.HasPrefix(r.URL.Path, "/invalid-") {
 			w.WriteHeader(http.StatusBadGateway)
 			fmt.Fprint(w, "not a subscription")
 			return
@@ -94,7 +94,11 @@ func TestRefreshSkipsSourceWithoutCacheWhenAnotherSourceIsValid(t *testing.T) {
 	}))
 	defer server.Close()
 
-	paths := writeRefreshConfig(t, []Source{{URI: server.URL + "/invalid"}, {URI: server.URL + "/healthy"}})
+	paths := writeRefreshConfig(t, []Source{
+		{URI: server.URL + "/invalid-1"},
+		{URI: server.URL + "/invalid-2"},
+		{URI: server.URL + "/healthy"},
+	})
 	result, err := Refresh(context.Background(), RefreshOptions{
 		ConfigPath: paths.config,
 		RuntimeDir: paths.runtimeDir,
@@ -103,17 +107,60 @@ func TestRefreshSkipsSourceWithoutCacheWhenAnotherSourceIsValid(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !result.Refreshed || result.Merged.ProxiesCount != 1 || len(result.Sources) != 2 {
+	if !result.Refreshed || result.Merged.ProxiesCount != 1 || len(result.Sources) != 3 {
 		t.Fatalf("partial refresh result = %+v", result)
 	}
-	if result.Sources[0].Status != "failed" || result.Sources[1].Status != "ok" {
-		t.Fatalf("source statuses = %+v, want failed/ok", result.Sources)
+	if result.Sources[0].Status != "failed" || result.Sources[1].Status != "failed" || result.Sources[2].Status != "ok" {
+		t.Fatalf("source statuses = %+v, want failed/failed/ok", result.Sources)
 	}
-	if len(result.Warnings) != 1 || !strings.Contains(result.Warnings[0], "source was skipped") || !strings.Contains(result.Warnings[0], "HTTP 502") {
-		t.Fatalf("warnings = %v, want explicit skipped-source warning", result.Warnings)
+	if len(result.Warnings) != 2 {
+		t.Fatalf("warnings = %v, want one warning for each skipped source", result.Warnings)
+	}
+	for _, warning := range result.Warnings {
+		if !strings.Contains(warning, "source was skipped") || !strings.Contains(warning, "HTTP 502") {
+			t.Fatalf("warning = %q, want explicit skipped-source warning", warning)
+		}
 	}
 	if len(result.Artifacts) != 1 || result.Artifacts[0].Proxies[0]["name"] != "healthy" {
 		t.Fatalf("artifacts = %+v, want only healthy source", result.Artifacts)
+	}
+}
+
+func TestRefreshFailsWhenAllMultipleSourcesAreInvalid(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/invalid-1" {
+			w.WriteHeader(http.StatusBadGateway)
+		} else {
+			w.WriteHeader(http.StatusServiceUnavailable)
+		}
+		fmt.Fprint(w, "not a subscription")
+	}))
+	defer server.Close()
+
+	paths := writeRefreshConfig(t, []Source{
+		{URI: server.URL + "/invalid-1"},
+		{URI: server.URL + "/invalid-2"},
+	})
+	previous := subscriptionDoc{Data: map[string]any{"proxies": []any{map[string]any{"name": "previous", "type": "ss"}}}}
+	if err := writeSubscriptionArtifact(paths.merged, previous); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(paths.merged)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = Refresh(context.Background(), RefreshOptions{
+		ConfigPath: paths.config,
+		RuntimeDir: paths.runtimeDir,
+		MergedPath: paths.merged,
+	})
+	if err == nil || !strings.Contains(err.Error(), "all subscription sources are invalid") || !strings.Contains(err.Error(), "HTTP 502") || !strings.Contains(err.Error(), "HTTP 503") {
+		t.Fatalf("error = %v, want all-invalid error with both source causes", err)
+	}
+	after, readErr := os.ReadFile(paths.merged)
+	if readErr != nil || !bytes.Equal(before, after) {
+		t.Fatal("all-invalid refresh changed the prior merged artifact")
 	}
 }
 
