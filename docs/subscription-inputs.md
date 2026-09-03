@@ -34,11 +34,18 @@ through to their product result and may commit only after the remaining render
 and validation steps succeed. A completed refresh does not mean every source
 was freshly downloaded; callers must inspect source statuses and warnings.
 
-Missing, corrupt, empty, or mismatched caches still fail explicitly, preserving
-the original refresh error. Cancellation, invalid source configuration, inline
-proxy input errors, local write failures, and subsequent render or validation
-failures still fail rather than being converted to cache recovery. No
-merged artifact is used as a substitute for a missing source cache.
+When both refresh and source-cache recovery fail, that source is marked
+`status: "failed"`, reported in `warnings`, and excluded from the new merged
+subscription. The refresh succeeds when at least one configured source yields a
+valid freshly downloaded, cached, or existing artifact. It fails explicitly
+when every configured source is invalid, and does not overwrite the prior
+merged artifact in that case. No merged artifact is used as a substitute for a
+missing source cache.
+
+Cancellation, invalid source configuration, local write failures, and
+subsequent render or validation failures remain explicit operation failures.
+Inline proxy URI inputs are one configured source: if that source fails to
+parse, another valid source can still satisfy the refresh.
 
 ## Proxy URI Import Scope
 

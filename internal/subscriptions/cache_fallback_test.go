@@ -83,6 +83,40 @@ func TestRefresh522UsesCacheAndRefreshesHealthySource(t *testing.T) {
 	}
 }
 
+func TestRefreshSkipsSourceWithoutCacheWhenAnotherSourceIsValid(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/invalid" {
+			w.WriteHeader(http.StatusBadGateway)
+			fmt.Fprint(w, "not a subscription")
+			return
+		}
+		fmt.Fprint(w, "proxies:\n  - name: healthy\n    type: ss\n")
+	}))
+	defer server.Close()
+
+	paths := writeRefreshConfig(t, []Source{{URI: server.URL + "/invalid"}, {URI: server.URL + "/healthy"}})
+	result, err := Refresh(context.Background(), RefreshOptions{
+		ConfigPath: paths.config,
+		RuntimeDir: paths.runtimeDir,
+		MergedPath: paths.merged,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Refreshed || result.Merged.ProxiesCount != 1 || len(result.Sources) != 2 {
+		t.Fatalf("partial refresh result = %+v", result)
+	}
+	if result.Sources[0].Status != "failed" || result.Sources[1].Status != "ok" {
+		t.Fatalf("source statuses = %+v, want failed/ok", result.Sources)
+	}
+	if len(result.Warnings) != 1 || !strings.Contains(result.Warnings[0], "source was skipped") || !strings.Contains(result.Warnings[0], "HTTP 502") {
+		t.Fatalf("warnings = %v, want explicit skipped-source warning", result.Warnings)
+	}
+	if len(result.Artifacts) != 1 || result.Artifacts[0].Proxies[0]["name"] != "healthy" {
+		t.Fatalf("artifacts = %+v, want only healthy source", result.Artifacts)
+	}
+}
+
 func TestRefreshCacheFallbackFailureBoundaries(t *testing.T) {
 	for _, tc := range []struct {
 		name   string

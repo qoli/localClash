@@ -396,8 +396,21 @@ func Refresh(ctx context.Context, opts RefreshOptions) (RefreshResult, error) {
 	finish = stage("read_artifacts", nil)
 	result := RefreshResult{Refreshed: true, Warnings: []string{}}
 	diskReads := 0
+	var sourceErrors []error
 	for _, source := range config.Sources {
 		path := artifactPath(opts.RuntimeDir, source.ID)
+		if outcome, ok := outcomes[source.ID]; ok && outcome.err != nil {
+			result.Sources = append(result.Sources, RefreshSourceSummary{
+				ID:          source.ID,
+				DisplayName: sourceDisplayName(source),
+				Artifact:    path,
+				Type:        sourceType(source),
+				Status:      "failed",
+			})
+			result.Warnings = append(result.Warnings, outcome.warning)
+			sourceErrors = append(sourceErrors, outcome.err)
+			continue
+		}
 		doc, ok := docs[source.ID]
 		if !ok {
 			var err error
@@ -444,8 +457,12 @@ func Refresh(ctx context.Context, opts RefreshOptions) (RefreshResult, error) {
 		})
 	}
 	if len(docs) == 0 {
-		finish(fmt.Errorf("no subscription artifacts are available to merge"), nil)
-		return RefreshResult{}, fmt.Errorf("no subscription artifacts are available to merge")
+		err := fmt.Errorf("all subscription sources are invalid; no subscription artifacts are available to merge")
+		if len(sourceErrors) > 0 {
+			err = fmt.Errorf("%w: %w", err, errors.Join(sourceErrors...))
+		}
+		finish(err, nil)
+		return RefreshResult{}, err
 	}
 	finish(nil, map[string]any{"artifact_count": len(docs), "memory_docs": len(docs) - diskReads, "disk_reads": diskReads})
 
@@ -479,6 +496,7 @@ type sourceRefreshOutcome struct {
 	warning   string
 	doc       subscriptionDoc
 	err       error
+	fatal     bool
 }
 
 func refreshSelectedSources(ctx context.Context, sources []Source, selected map[string]bool, opts RefreshOptions, stage func(string, map[string]any) func(error, map[string]any)) (map[string]sourceRefreshOutcome, map[string]subscriptionDoc, error) {
@@ -541,13 +559,13 @@ func refreshSelectedSources(ctx context.Context, sources []Source, selected map[
 		if !ok {
 			return nil, nil, fmt.Errorf("%s was not refreshed", sourceLogLabel(source))
 		}
-		if outcome.err != nil {
+		if outcome.fatal {
 			return nil, nil, outcome.err
 		}
 	}
 	docs := map[string]subscriptionDoc{}
 	for _, source := range sources {
-		if outcome, ok := outcomes[source.ID]; ok {
+		if outcome, ok := outcomes[source.ID]; ok && outcome.err == nil {
 			docs[source.ID] = outcome.doc
 		}
 	}
@@ -559,6 +577,10 @@ func refreshOneSource(ctx context.Context, source Source, opts RefreshOptions, s
 	finish := stage("refresh_source", identity)
 	doc, err := refreshSource(ctx, source, opts.UserAgent, stage)
 	if err != nil {
+		if ctx.Err() != nil {
+			finish(err, nil)
+			return sourceRefreshOutcome{sourceID: source.ID, err: err}
+		}
 		if ctx.Err() == nil && sourceType(source) == sourceTypeRemoteSubscription {
 			artifact := artifactPath(opts.RuntimeDir, source.ID)
 			cached, cacheErr := readSourceFallbackCache(source, artifact)
@@ -583,8 +605,9 @@ func refreshOneSource(ctx context.Context, source Source, opts RefreshOptions, s
 				return sourceRefreshOutcome{sourceID: source.ID, doc: cached, warning: warning}
 			}
 		}
-		finish(err, nil)
-		return sourceRefreshOutcome{sourceID: source.ID, err: err}
+		warning := sourceFailureWarning(source, err)
+		finish(nil, map[string]any{"status": "failed", "warning": warning})
+		return sourceRefreshOutcome{sourceID: source.ID, warning: warning, err: err}
 	}
 	finish(nil, nil)
 
@@ -592,7 +615,7 @@ func refreshOneSource(ctx context.Context, source Source, opts RefreshOptions, s
 	finish = stage("write_source_artifact", mergeStageFields(identity, map[string]any{"artifact_dir": filepath.Dir(artifact)}))
 	if err := writeSubscriptionArtifact(artifact, doc); err != nil {
 		finish(err, nil)
-		return sourceRefreshOutcome{sourceID: source.ID, err: err}
+		return sourceRefreshOutcome{sourceID: source.ID, err: err, fatal: true}
 	}
 	summary := summarizeMap(doc.Data)
 	finish(nil, map[string]any{
@@ -603,6 +626,17 @@ func refreshOneSource(ctx context.Context, source Source, opts RefreshOptions, s
 		"rules":        summary.RulesCount,
 	})
 	return sourceRefreshOutcome{sourceID: source.ID, refreshed: true, doc: doc}
+}
+
+func sourceFailureWarning(source Source, err error) string {
+	cause := safeResponsePreview([]byte(err.Error()), source)
+	var httpErr *subscriptionHTTPError
+	if errors.As(err, &httpErr) {
+		cause = fmt.Sprintf("HTTP %d", httpErr.statusCode)
+	} else if runes := []rune(cause); len(runes) > 320 {
+		cause = string(runes[:320]) + "..."
+	}
+	return fmt.Sprintf("%s refresh failed and no valid source cache is available; source was skipped; cause: %s", sourceLogLabel(source), cause)
 }
 
 // Only reuse the artifact addressed by this source's canonical URI hash.
