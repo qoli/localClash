@@ -16,6 +16,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -929,6 +930,7 @@ func TestApplyTemplateTransactionRestoresPriorIntentAndRegistryWhenCapabilityRef
 }
 
 func TestApplyTemplateTransactionMigratesOldIntentWithoutG204Material(t *testing.T) {
+	var unavailable atomic.Bool
 	dir := t.TempDir()
 	runtimeRoot := filepath.Join(dir, ".runtime")
 	state := appinit.RuntimeState{Paths: appinit.RuntimePaths{
@@ -945,6 +947,10 @@ func TestApplyTemplateTransactionMigratesOldIntentWithoutG204Material(t *testing
 		RuntimeProfilePath:  filepath.Join(dir, "localclash-runtime.json"),
 	}}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if unavailable.Load() {
+			w.WriteHeader(522)
+			return
+		}
 		_, _ = w.Write([]byte(`proxies:
   - name: healthy
     type: ss
@@ -1021,6 +1027,29 @@ func TestApplyTemplateTransactionMigratesOldIntentWithoutG204Material(t *testing
 	}
 	if _, err := os.Stat(mihomotest.DefaultAttestationPath(state.Paths.MihomoRuntimeDir)); err != nil {
 		t.Fatalf("attestation missing: %v", err)
+	}
+
+	// A later policy update must commit using the last good source artifact if
+	// the origin returns HTTP 522, while carrying its warning to the caller.
+	unavailable.Store(true)
+	result, warnings, err = applyTemplateInput(context.Background(), configInput{
+		Version:                1,
+		Template:               policytemplate.TemplateLocalClashDefault,
+		RuntimeProfile:         runtimeprofile.ModeRouter,
+		Core:                   runtimeprofile.CoreMeta,
+		AllowOverwriteModified: true,
+		ResetPatches:           true,
+		RefreshSubscription:    true,
+	}, state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "HTTP 522") || !strings.Contains(warnings[0], "using cached") {
+		t.Fatalf("cache warning not propagated: %v", warnings)
+	}
+	transaction, ok = result["transaction"].(map[string]any)
+	if !ok || transaction["committed"] != true {
+		t.Fatalf("cached subscription transaction did not commit: %#v", result)
 	}
 }
 

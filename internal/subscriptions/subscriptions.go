@@ -388,7 +388,7 @@ func Refresh(ctx context.Context, opts RefreshOptions) (RefreshResult, error) {
 	}
 	finish(nil, nil)
 
-	refreshed, docs, err := refreshSelectedSources(ctx, config.Sources, selected, opts, stage)
+	outcomes, docs, err := refreshSelectedSources(ctx, config.Sources, selected, opts, stage)
 	if err != nil {
 		return RefreshResult{}, err
 	}
@@ -419,8 +419,12 @@ func Refresh(ctx context.Context, opts RefreshOptions) (RefreshResult, error) {
 		}
 		summary := summarizeMap(doc.Data)
 		status := "existing"
-		if refreshed[source.ID] {
+		if outcomes[source.ID].refreshed {
 			status = "ok"
+		}
+		if warning := outcomes[source.ID].warning; warning != "" {
+			status = "cached"
+			result.Warnings = append(result.Warnings, warning)
 		}
 		result.Artifacts = append(result.Artifacts, RefreshArtifact{
 			SourceID:    source.ID,
@@ -472,11 +476,12 @@ func Refresh(ctx context.Context, opts RefreshOptions) (RefreshResult, error) {
 type sourceRefreshOutcome struct {
 	sourceID  string
 	refreshed bool
+	warning   string
 	doc       subscriptionDoc
 	err       error
 }
 
-func refreshSelectedSources(ctx context.Context, sources []Source, selected map[string]bool, opts RefreshOptions, stage func(string, map[string]any) func(error, map[string]any)) (map[string]bool, map[string]subscriptionDoc, error) {
+func refreshSelectedSources(ctx context.Context, sources []Source, selected map[string]bool, opts RefreshOptions, stage func(string, map[string]any) func(error, map[string]any)) (map[string]sourceRefreshOutcome, map[string]subscriptionDoc, error) {
 	selectedCount := 0
 	for _, source := range sources {
 		if selected[source.ID] {
@@ -484,7 +489,7 @@ func refreshSelectedSources(ctx context.Context, sources []Source, selected map[
 		}
 	}
 	if selectedCount == 0 {
-		return map[string]bool{}, map[string]subscriptionDoc{}, nil
+		return map[string]sourceRefreshOutcome{}, map[string]subscriptionDoc{}, nil
 	}
 	workerCount := refreshFetchConcurrency
 	if selectedCount < workerCount {
@@ -540,15 +545,13 @@ func refreshSelectedSources(ctx context.Context, sources []Source, selected map[
 			return nil, nil, outcome.err
 		}
 	}
-	refreshed := map[string]bool{}
 	docs := map[string]subscriptionDoc{}
 	for _, source := range sources {
-		if outcome, ok := outcomes[source.ID]; ok && outcome.refreshed {
-			refreshed[source.ID] = true
+		if outcome, ok := outcomes[source.ID]; ok {
 			docs[source.ID] = outcome.doc
 		}
 	}
-	return refreshed, docs, nil
+	return outcomes, docs, nil
 }
 
 func refreshOneSource(ctx context.Context, source Source, opts RefreshOptions, stage func(string, map[string]any) func(error, map[string]any)) sourceRefreshOutcome {
@@ -556,6 +559,30 @@ func refreshOneSource(ctx context.Context, source Source, opts RefreshOptions, s
 	finish := stage("refresh_source", identity)
 	doc, err := refreshSource(ctx, source, opts.UserAgent, stage)
 	if err != nil {
+		if ctx.Err() == nil && sourceType(source) == sourceTypeRemoteSubscription {
+			artifact := artifactPath(opts.RuntimeDir, source.ID)
+			cached, cacheErr := readSourceFallbackCache(source, artifact)
+			if cacheErr != nil {
+				err = fmt.Errorf("%w; cache fallback unavailable: %v", err, cacheErr)
+			} else {
+				cause := safeResponsePreview([]byte(err.Error()), source)
+				var httpErr *subscriptionHTTPError
+				isHTTPError := errors.As(err, &httpErr)
+				if isHTTPError {
+					// Keep response bodies in the fetch diagnostics, not the task warning.
+					cause = fmt.Sprintf("HTTP %d", httpErr.statusCode)
+				} else if runes := []rune(cause); len(runes) > 320 {
+					cause = string(runes[:320]) + "..."
+				}
+				warning := fmt.Sprintf("%s refresh failed; using cached subscription artifact %s; subscription was not updated; cause: %s", sourceLogLabel(source), artifact, cause)
+				fields := map[string]any{"status": "cached", "artifact": artifact, "warning": warning}
+				if isHTTPError {
+					fields["status_code"] = httpErr.statusCode
+				}
+				finish(nil, fields)
+				return sourceRefreshOutcome{sourceID: source.ID, doc: cached, warning: warning}
+			}
+		}
 		finish(err, nil)
 		return sourceRefreshOutcome{sourceID: source.ID, err: err}
 	}
@@ -576,6 +603,32 @@ func refreshOneSource(ctx context.Context, source Source, opts RefreshOptions, s
 		"rules":        summary.RulesCount,
 	})
 	return sourceRefreshOutcome{sourceID: source.ID, refreshed: true, doc: doc}
+}
+
+// Only reuse the artifact addressed by this source's canonical URI hash.
+// Arbitrary/legacy IDs cannot establish cache identity and must fail explicitly.
+func readSourceFallbackCache(source Source, path string) (subscriptionDoc, error) {
+	canonical, err := canonicalSourceURI(source)
+	if err != nil {
+		return subscriptionDoc{}, err
+	}
+	sum := sha256.Sum256([]byte(canonical))
+	fullID := sourceIDPrefix + hex.EncodeToString(sum[:])
+	if len(source.ID) < len(sourceIDPrefix)+sourceIDHashLength || !strings.HasPrefix(fullID, source.ID) {
+		return subscriptionDoc{}, fmt.Errorf("source ID does not match the subscription URI")
+	}
+	doc, err := readSubscription(path)
+	if err != nil {
+		return subscriptionDoc{}, err
+	}
+	data, err := yaml.Marshal(doc.Data)
+	if err != nil {
+		return subscriptionDoc{}, fmt.Errorf("cached subscription cannot be validated")
+	}
+	if _, err := parseSubscription(sourceLogLabel(source), data); err != nil {
+		return subscriptionDoc{}, fmt.Errorf("invalid cached subscription: %w", err)
+	}
+	return doc, nil
 }
 
 func subscriptionStageEmitter(callback func(StageEvent)) func(string, map[string]any) func(error, map[string]any) {
@@ -602,6 +655,8 @@ func subscriptionStageEmitter(callback func(StageEvent)) func(string, map[string
 			if err != nil {
 				event.Event = "error"
 				event.Error = err.Error()
+			} else if warning, _ := event.Fields["warning"].(string); warning != "" {
+				event.Event = "warning"
 			}
 			emit(event)
 		}
@@ -934,6 +989,13 @@ func refreshSource(ctx context.Context, source Source, userAgent string, stage f
 	}
 }
 
+type subscriptionHTTPError struct {
+	statusCode int
+	message    string
+}
+
+func (e *subscriptionHTTPError) Error() string { return e.message }
+
 func fetchSource(ctx context.Context, source Source, userAgent string, stage func(string, map[string]any) func(error, map[string]any)) (subscriptionDoc, error) {
 	client := subscriptionHTTPClient()
 	defer client.CloseIdleConnections()
@@ -986,7 +1048,7 @@ func fetchSource(ctx context.Context, source Source, userAgent string, stage fun
 		if preview != "" {
 			message += "; response: " + preview
 		}
-		err = errors.New(message)
+		err = &subscriptionHTTPError{statusCode: resp.StatusCode, message: message}
 		finish(err, responseFields)
 		return subscriptionDoc{}, err
 	}
