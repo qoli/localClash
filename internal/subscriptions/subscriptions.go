@@ -174,16 +174,18 @@ type RefreshArtifact struct {
 }
 
 type subscriptionDoc struct {
-	Data   map[string]any
-	Raw    []byte
-	Format string
+	Data      map[string]any
+	Raw       []byte
+	Format    string
+	SourceIDs []string
 }
 
 type subscriptionArtifact struct {
-	Version int
-	Data    map[string]any
-	Raw     []byte
-	Format  string
+	Version   int
+	Data      map[string]any
+	Raw       []byte
+	Format    string
+	SourceIDs []string
 }
 
 var sourceIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
@@ -475,7 +477,13 @@ func Refresh(ctx context.Context, opts RefreshOptions) (RefreshResult, error) {
 	finish(nil, map[string]any{"renamed_proxies": renamed})
 
 	finish = stage("write_merged_subscription", map[string]any{"merged": opts.MergedPath})
-	if err := writeSubscriptionArtifact(opts.MergedPath, subscriptionDoc{Data: merged}); err != nil {
+	activeSourceIDs := make([]string, 0, len(docs))
+	for _, source := range config.Sources {
+		if _, ok := docs[source.ID]; ok {
+			activeSourceIDs = append(activeSourceIDs, source.ID)
+		}
+	}
+	if err := writeSubscriptionArtifact(opts.MergedPath, subscriptionDoc{Data: merged, SourceIDs: activeSourceIDs}); err != nil {
 		finish(err, nil)
 		return RefreshResult{}, err
 	}
@@ -1519,7 +1527,7 @@ func readSubscription(path string) (subscriptionDoc, error) {
 	if len(artifact.Data) == 0 {
 		return subscriptionDoc{}, fmt.Errorf("subscription artifact %q is empty; run localclash subscriptions refresh", path)
 	}
-	return subscriptionDoc{Data: artifact.Data, Raw: artifact.Raw, Format: artifact.Format}, nil
+	return subscriptionDoc{Data: artifact.Data, Raw: artifact.Raw, Format: artifact.Format, SourceIDs: append([]string(nil), artifact.SourceIDs...)}, nil
 }
 
 func writeSubscriptionArtifact(path string, doc subscriptionDoc) error {
@@ -1531,7 +1539,7 @@ func writeSubscriptionArtifact(path string, doc subscriptionDoc) error {
 	if err != nil {
 		return err
 	}
-	encodeErr := gob.NewEncoder(file).Encode(subscriptionArtifact{Version: 1, Data: doc.Data, Raw: doc.Raw, Format: doc.Format})
+	encodeErr := gob.NewEncoder(file).Encode(subscriptionArtifact{Version: 1, Data: doc.Data, Raw: doc.Raw, Format: doc.Format, SourceIDs: append([]string(nil), doc.SourceIDs...)})
 	closeErr := file.Close()
 	if encodeErr != nil {
 		_ = os.Remove(tmp)

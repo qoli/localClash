@@ -190,6 +190,64 @@ func TestLoadSubscriptionNodesDoesNotFallbackWhenConfiguredSourceArtifactIsMissi
 	}
 }
 
+func TestLoadSubscriptionNodesUsesDeclaredActiveSources(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "localclash-subscriptions.json")
+	runtimeDir := filepath.Join(dir, ".runtime", "subscriptions")
+	merged := filepath.Join(dir, "subscription.gob")
+	writeTestFile(t, configPath, `{"sources":[{"id":"failed","display_name":"01"},{"id":"healthy","display_name":"02"}]}`)
+	writeTestSubscriptionArtifact(t, merged, `proxies:
+  - name: Healthy
+    type: ss
+`, []string{"healthy"})
+	writeTestFile(t, filepath.Join(runtimeDir, "healthy.gob"), `proxies:
+  - name: Healthy
+    type: ss
+`)
+	var events []StageEvent
+	nodes, err := LoadSubscriptionNodes(SubscriptionNodeOptions{
+		SubscriptionPath:    merged,
+		SubscriptionConfig:  configPath,
+		SubscriptionRuntime: runtimeDir,
+		OnStage:             func(event StageEvent) { events = append(events, event) },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(nodes) != 1 || nodes[0].Name != "Healthy" || nodes[0].SourceID != "healthy" {
+		t.Fatalf("nodes = %+v, want only declared healthy source", nodes)
+	}
+	foundSkip := false
+	for _, event := range events {
+		if event.Stage == "skip_inactive_subscription_source" && event.Fields["source_id"] == "failed" {
+			foundSkip = true
+		}
+	}
+	if !foundSkip {
+		t.Fatalf("events = %+v, want explicit inactive-source skip evidence", events)
+	}
+}
+
+func TestLoadSubscriptionNodesRejectsUnknownDeclaredActiveSource(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "localclash-subscriptions.json")
+	merged := filepath.Join(dir, "subscription.gob")
+	writeTestFile(t, configPath, `{"sources":[{"id":"healthy","display_name":"01"}]}`)
+	writeTestSubscriptionArtifact(t, merged, `proxies:
+  - name: Unknown
+    type: ss
+`, []string{"unknown"})
+
+	_, err := LoadSubscriptionNodes(SubscriptionNodeOptions{
+		SubscriptionPath:    merged,
+		SubscriptionConfig:  configPath,
+		SubscriptionRuntime: filepath.Join(dir, ".runtime", "subscriptions"),
+	})
+	if err == nil || !strings.Contains(err.Error(), `active source "unknown" is not present`) {
+		t.Fatalf("error = %v, want unknown active-source rejection", err)
+	}
+}
+
 func TestResolveEnabledLocalRulePacks(t *testing.T) {
 	dir := t.TempDir()
 	rulePacksDir := filepath.Join(dir, "rule-packs")
@@ -810,5 +868,28 @@ func writeTestFile(t *testing.T, path, content string) {
 	}
 	if err := os.WriteFile(path, data, 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func writeTestSubscriptionArtifact(t *testing.T, path, content string, sourceIDs []string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var doc map[string]any
+	if err := yaml.Unmarshal([]byte(content), &doc); err != nil {
+		t.Fatal(err)
+	}
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encodeErr := gob.NewEncoder(file).Encode(persistedSubscriptionArtifact{Version: 1, Data: doc, Raw: []byte(content), SourceIDs: sourceIDs})
+	closeErr := file.Close()
+	if encodeErr != nil {
+		t.Fatal(encodeErr)
+	}
+	if closeErr != nil {
+		t.Fatal(closeErr)
 	}
 }

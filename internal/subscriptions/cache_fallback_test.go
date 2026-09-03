@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -123,6 +124,14 @@ func TestRefreshSkipsMultipleSourcesWithoutCacheWhenAnotherSourceIsValid(t *test
 	}
 	if len(result.Artifacts) != 1 || result.Artifacts[0].Proxies[0]["name"] != "healthy" {
 		t.Fatalf("artifacts = %+v, want only healthy source", result.Artifacts)
+	}
+	merged, err := readSubscription(paths.merged)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantActive := []string{mustSourceID(t, server.URL+"/healthy")}
+	if !slices.Equal(merged.SourceIDs, wantActive) {
+		t.Fatalf("merged active source IDs = %v, want %v", merged.SourceIDs, wantActive)
 	}
 }
 

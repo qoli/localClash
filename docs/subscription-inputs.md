@@ -42,6 +42,14 @@ when every configured source is invalid, and does not overwrite the prior
 merged artifact in that case. No merged artifact is used as a substitute for a
 missing source cache.
 
+Each successfully written merged artifact also records the exact source IDs
+included by that refresh. Downstream config rendering uses this declaration to
+skip only sources that the latest successful refresh explicitly excluded. An
+artifact declared active but missing on disk, an unknown or duplicate active
+source ID, and a legacy merged artifact without this declaration remain strict:
+rendering requires the configured source artifacts and fails rather than
+guessing which sources should be active.
+
 Cancellation, invalid source configuration, local write failures, and
 subsequent render or validation failures remain explicit operation failures.
 Inline proxy URI inputs are one configured source: if that source fails to

@@ -3,6 +3,7 @@ package localconfig
 import (
 	"encoding/gob"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -317,6 +318,13 @@ type subscriptionSources struct {
 		ID          string `json:"id"`
 		DisplayName string `json:"display_name"`
 	} `json:"sources"`
+}
+
+type persistedSubscriptionArtifact struct {
+	Version   int
+	Data      map[string]any
+	Raw       []byte
+	SourceIDs []string
 }
 
 func init() {
@@ -861,9 +869,18 @@ func loadSourceSubscriptionNodes(opts SubscriptionNodeOptions) ([]SubscriptionNo
 		return nil, err
 	}
 	finish(nil, map[string]any{"source_count": len(sources.Sources)})
+	activeSourceIDs, activeSourcesDeclared, err := loadActiveSubscriptionSourceIDs(opts.SubscriptionPath, sources, stage)
+	if err != nil {
+		return nil, err
+	}
 	sourceDocs := map[string][]map[string]any{}
 	for _, source := range sources.Sources {
 		if source.ID == "" {
+			continue
+		}
+		if activeSourcesDeclared && !activeSourceIDs[source.ID] {
+			finish := stage("skip_inactive_subscription_source", map[string]any{"source_id": source.ID, "reason": "excluded_by_latest_successful_refresh"})
+			finish(nil, nil)
 			continue
 		}
 		path := filepath.Join(opts.SubscriptionRuntime, source.ID+".gob")
@@ -890,7 +907,66 @@ func loadSourceSubscriptionNodes(opts SubscriptionNodeOptions) ([]SubscriptionNo
 	return nodes, nil
 }
 
+func loadActiveSubscriptionSourceIDs(path string, sources subscriptionSources, stage localConfigStageFunc) (map[string]bool, bool, error) {
+	finish := stage("read_subscription_active_sources", map[string]any{"path": path})
+	if _, err := os.Stat(path); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			finish(nil, map[string]any{"declared": false, "reason": "merged_subscription_unavailable"})
+			return nil, false, nil
+		}
+		finish(err, nil)
+		return nil, false, err
+	}
+	artifact, err := readGobArtifactObserved(path, stage, "merged_subscription_active_sources", nil)
+	if err != nil {
+		finish(err, nil)
+		return nil, false, err
+	}
+	if artifact.SourceIDs == nil {
+		finish(nil, map[string]any{"declared": false, "active_source_count": len(sources.Sources)})
+		return nil, false, nil
+	}
+	configured := make(map[string]bool, len(sources.Sources))
+	for _, source := range sources.Sources {
+		configured[source.ID] = true
+	}
+	active := make(map[string]bool, len(artifact.SourceIDs))
+	for _, sourceID := range artifact.SourceIDs {
+		if strings.TrimSpace(sourceID) == "" {
+			err := fmt.Errorf("merged subscription declares an empty active source ID; run subscriptions_refresh")
+			finish(err, nil)
+			return nil, true, err
+		}
+		if !configured[sourceID] {
+			err := fmt.Errorf("merged subscription active source %q is not present in the current subscription config; run subscriptions_refresh", sourceID)
+			finish(err, map[string]any{"source_id": sourceID})
+			return nil, true, err
+		}
+		if active[sourceID] {
+			err := fmt.Errorf("merged subscription declares duplicate active source %q; run subscriptions_refresh", sourceID)
+			finish(err, map[string]any{"source_id": sourceID})
+			return nil, true, err
+		}
+		active[sourceID] = true
+	}
+	if len(active) == 0 {
+		err := fmt.Errorf("merged subscription declares no active sources; run subscriptions_refresh")
+		finish(err, nil)
+		return nil, true, err
+	}
+	finish(nil, map[string]any{"declared": true, "active_source_count": len(active)})
+	return active, true, nil
+}
+
 func readGobMapObserved(path string, stage localConfigStageFunc, prefix string, fields map[string]any) (map[string]any, error) {
+	artifact, err := readGobArtifactObserved(path, stage, prefix, fields)
+	if err != nil {
+		return nil, err
+	}
+	return artifact.Data, nil
+}
+
+func readGobArtifactObserved(path string, stage localConfigStageFunc, prefix string, fields map[string]any) (persistedSubscriptionArtifact, error) {
 	readFields := map[string]any{"path": path}
 	for key, value := range fields {
 		readFields[key] = value
@@ -899,7 +975,7 @@ func readGobMapObserved(path string, stage localConfigStageFunc, prefix string, 
 	file, err := os.Open(path)
 	if err != nil {
 		finish(err, nil)
-		return nil, err
+		return persistedSubscriptionArtifact{}, err
 	}
 	defer file.Close()
 	finish(nil, nil)
@@ -909,23 +985,18 @@ func readGobMapObserved(path string, stage localConfigStageFunc, prefix string, 
 		parseFields[key] = value
 	}
 	finish = stage(prefix+".decode_gob", parseFields)
-	var artifact struct {
-		Version int
-		Data    map[string]any
-		Raw     []byte
-	}
+	var artifact persistedSubscriptionArtifact
 	if err := gob.NewDecoder(file).Decode(&artifact); err != nil {
 		finish(err, nil)
-		return nil, err
+		return persistedSubscriptionArtifact{}, err
 	}
 	if artifact.Version != 1 {
 		err := fmt.Errorf("subscription artifact schema version mismatch: expected 1, got %d; run localclash subscriptions refresh", artifact.Version)
 		finish(err, nil)
-		return nil, err
+		return persistedSubscriptionArtifact{}, err
 	}
-	doc := artifact.Data
-	finish(nil, map[string]any{"top_level_keys": len(doc)})
-	return doc, nil
+	finish(nil, map[string]any{"top_level_keys": len(artifact.Data), "active_source_count": len(artifact.SourceIDs)})
+	return artifact, nil
 }
 
 func resolveProxyGroup(id string, group ProxyGroup, nodes []SubscriptionNode) ([]string, error) {
