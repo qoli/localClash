@@ -25,7 +25,7 @@ Changes:
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
 | localClash Core | [v0.1.79](https://github.com/qoli/localClash/releases/tag/v0.1.79) | 2026-09-03 UTC+8 |
-| localclash-luci | [v0.1.0-73](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-73) | 2026-09-03 UTC+8 |
+| localclash-luci | [v0.1.0-74](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-74) | 2026-09-03 UTC+8 |
 
 ## 2026-09-03
 
@@ -48,6 +48,25 @@ Verification:
 - [Release workflow 33696199397](https://github.com/qoli/localClash/actions/runs/33696199397) 成功；7 個公開資產與三份 checksum 已重新下載驗證，兩架構二進位來源 commit 一致。
 - v0.1.78 的 Release CI 因跨套件程序替身干擾失敗，未建立公開 Release；保留原 tag，以 v0.1.79 發佈修正後版本。
 - 完整 SOP／G99 尚未通過；既有 QEMU 證據僅覆蓋指定候選的針對性修復及雙核心首次初始化。本次不宣稱完整矩陣、ARM64 或實體路由器驗收完成。
+
+### localclash-luci v0.1.0-74
+
+Changes:
+
+- 修正 Dashboard 重啟超過 rpcd 30 秒期限後中斷的問題；改由背景任務完成 Mihomo 重啟、接管恢復與最終驗證。
+- 刷新或重新開啟頁面可接回同一重啟任務，並可查看最近任務結果；重複請求會明確拒絕。
+- 重啟中禁止取消，收尾時也不會讓取消請求覆蓋真實結果；缺失或無效結果明確失敗。
+- Main CI 與 Release workflow 加入重啟 UI 回歸測試；iStore 離線包沿用 Core v0.1.79。
+
+Release:
+
+- [qoli/localclash-luci v0.1.0-74](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-74)
+
+Verification:
+
+- 針對性 iStoreOS x86_64 Smart 驗收：兩輪重啟分別 48 秒與 40 秒，rpcd 維持 30 秒；第二輪進行中刷新後接回同一任務並完成。每輪 LAN 直連、代理、UDP各 3/3，DNS 及 LAN存取通過。
+- [Main CI 33698566850](https://github.com/qoli/localclash-luci/actions/runs/33698566850) 及 [Release workflow 33699263293](https://github.com/qoli/localclash-luci/actions/runs/33699263293) 成功；13 項公開資產與全部 checksum 下載校驗通過，兩架構 `.run` 通過 `--info`、`--list`、`--check`、`--noexec`。
+- 本版驗收覆蓋此次重啟修正與頁面恢復；未擴大宣稱完整功能矩陣、ARM64 runtime 或實體路由器驗收。
 
 ### localclash-luci v0.1.0-73
 
