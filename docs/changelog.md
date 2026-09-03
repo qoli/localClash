@@ -24,10 +24,29 @@ Changes:
 
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
-| localClash Core | [v0.1.79](https://github.com/qoli/localClash/releases/tag/v0.1.79) | 2026-09-03 UTC+8 |
+| localClash Core | [v0.1.80](https://github.com/qoli/localClash/releases/tag/v0.1.80) | 2026-09-03 UTC+8 |
 | localclash-luci | [v0.1.0-74](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-74) | 2026-09-03 UTC+8 |
 
 ## 2026-09-03
+
+### localClash Core v0.1.80
+
+Changes:
+
+- Smart 核心下載來源改為 `qoli/mihomo-Alpha` 的 `Prerelease-Alpha` Release，跟隨 fork 發布的資產。
+- x86_64 固定選擇 `amd64-v1`，MIPS 保留 `softfloat`；缺少對應架構檔案時明確失敗。
+- 更新下載命令說明，Meta 核心維持原有來源與選擇行為。
+
+Release:
+
+- [qoli/localClash v0.1.80](https://github.com/qoli/localClash/releases/tag/v0.1.80)
+
+Verification:
+
+- [Release workflow 33704539817](https://github.com/qoli/localClash/actions/runs/33704539817) 測試及建置成功；7 個公開資產與三份 checksum 重新下載校驗通過，manifest 與雙架構二進位來源 commit `f90bbf9` 一致。
+- Go 測試與 `go vet` 通過；amd64／arm64 Smart 實際下載、發布者 checksum、API digest 與解壓後 binary 一致性核對通過。
+- iStoreOS x86_64 QEMU 隔離驗證通過：候選下載器、既有配置驗證、Smart 模型載入與群組身分，以及 Smart 群組 HTTPS 請求內容一致性。
+- 本版依使用者確認的下載來源切換範圍放行；未宣稱完整 G99、LuCI 升級／接管、ARM64 runtime 或實體路由器驗收。
 
 ### localClash Core v0.1.79
 
