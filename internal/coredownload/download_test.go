@@ -1,12 +1,69 @@
 package coredownload
 
 import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"reflect"
 	"runtime"
 	"strings"
 	"testing"
 )
+
+func TestSmartDownloadSelectsForkRelease(t *testing.T) {
+	for _, tt := range []struct {
+		arch string
+		want string
+	}{
+		{arch: "x86_64", want: "amd64-v1"},
+		{arch: "aarch64", want: "arm64"},
+		{arch: "mips", want: "mips-softfloat"},
+		{arch: "mipsle", want: "mipsle-softfloat"},
+		{arch: "unsupported"},
+	} {
+		t.Run(tt.arch, func(t *testing.T) {
+			const base = "https://github.com/qoli/mihomo-Alpha/releases/download/Prerelease-Alpha/"
+			rel := release{TagName: "Prerelease-Alpha"}
+			for _, target := range []string{"amd64-v3", "amd64-v1-go123", "amd64-v1", "arm64", "mips-hardfloat", "mips-softfloat", "mipsle-hardfloat", "mipsle-softfloat"} {
+				name := "mihomo-linux-" + target + "-alpha-smart-02c0eaf.gz"
+				rel.Assets = append(rel.Assets, asset{Name: name, BrowserDownloadURL: base + name})
+			}
+			requests := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests++
+				if r.URL.Path != "/repos/qoli/mihomo-Alpha/releases/tags/Prerelease-Alpha" {
+					t.Errorf("unexpected metadata path: %s", r.URL.Path)
+				}
+				json.NewEncoder(w).Encode(rel)
+			}))
+			defer server.Close()
+			t.Setenv("LOCALCLASH_GITHUB_MIRROR", "")
+			t.Setenv("LOCALCLASH_GITHUB_API_MIRRORS", server.URL)
+			results, err := Download(context.Background(), Options{
+				Flavor: FlavorSmart, Target: TargetRouter, TargetArch: tt.arch, DryRun: true,
+				Repo: "example/meta", Version: "v1", SmartBranch: "other",
+			})
+			if requests != 1 {
+				t.Fatalf("metadata requests = %d, want 1", requests)
+			}
+			if tt.want == "" {
+				if err == nil || !strings.Contains(err.Error(), "no matching mihomo release asset") {
+					t.Fatalf("expected missing asset error, got %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			wantName := "mihomo-linux-" + tt.want + "-alpha-smart-02c0eaf.gz"
+			if len(results) != 1 || results[0].DownloadURL != base+wantName || results[0].Version != rel.TagName {
+				t.Fatalf("unexpected Smart result: %+v", results)
+			}
+		})
+	}
+}
 
 func TestSelectAssetPrefersDefaultVariant(t *testing.T) {
 	assets := []asset{

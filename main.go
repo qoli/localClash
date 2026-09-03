@@ -66,7 +66,7 @@ Advanced/internal commands:
   localclash reset [flags]
 
 Flags for core download:
-  --version string   GitHub release tag, or "latest" (default "latest")
+  --version string   Meta core GitHub release tag, or "latest" (default "latest")
   --flavor string    core flavor: all, meta, or smart (default "all")
   --target string    download target: host or router (default "host")
   --os string        target OS (default current OS for host, linux for router)
@@ -76,7 +76,7 @@ Flags for core download:
                      output directory for default flavor paths (default "bin")
   --repo string      Meta core GitHub repo owner/name (default "MetaCubeX/mihomo")
   --smart-branch string
-                     OpenClash core branch for smart core downloads (default "master")
+                     OpenClash branch for router Meta downloads (default "master")
   --force           overwrite output if it exists
   --dry-run         print selected release asset without downloading
 
@@ -276,15 +276,15 @@ func runCoreDownload(args []string) error {
 	fs.SetOutput(os.Stderr)
 
 	opts := coredownload.Options{}
-	fs.StringVar(&opts.Version, "version", "latest", "GitHub release tag, or latest")
+	fs.StringVar(&opts.Version, "version", "latest", "Meta core GitHub release tag, or latest")
 	fs.StringVar(&opts.Flavor, "flavor", coredownload.FlavorAll, "core flavor: all, meta, or smart")
 	fs.StringVar(&opts.Target, "target", coredownload.TargetHost, "download target: host or router")
 	fs.StringVar(&opts.TargetOS, "os", "", "target OS")
 	fs.StringVar(&opts.TargetArch, "arch", runtime.GOARCH, "target arch")
 	fs.StringVar(&opts.OutputPath, "output", "", "output binary path")
 	fs.StringVar(&opts.OutputDir, "output-dir", "bin", "output directory for default flavor paths")
-	fs.StringVar(&opts.Repo, "repo", "MetaCubeX/mihomo", "GitHub repo owner/name")
-	fs.StringVar(&opts.SmartBranch, "smart-branch", "master", "OpenClash core branch for smart core downloads")
+	fs.StringVar(&opts.Repo, "repo", "MetaCubeX/mihomo", "Meta core GitHub repo owner/name")
+	fs.StringVar(&opts.SmartBranch, "smart-branch", "master", "OpenClash branch for router Meta downloads")
 	fs.BoolVar(&opts.Force, "force", false, "overwrite output if it exists")
 	fs.BoolVar(&opts.DryRun, "dry-run", false, "print selected release asset without downloading")
 

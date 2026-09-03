@@ -718,6 +718,13 @@ To download one exact flavor or custom output path:
 go run . core download --target router --flavor smart --arch arm64 --output bin/linux-arm64/lc-mihomo-smart
 ```
 
+Smart cores come from the rolling
+[`Prerelease-Alpha` release of `qoli/mihomo-Alpha`](https://github.com/qoli/mihomo-Alpha/releases/tag/Prerelease-Alpha).
+The downloader selects the matching Linux `.gz` asset, using `amd64-v1` for
+x86_64 and `softfloat` for MIPS. A missing matching asset fails explicitly.
+`--repo` and `--version` apply to Meta only; the existing `--smart-branch` flag
+now only controls the OpenClash branch used for router Meta downloads.
+
 ## Subscription Download
 
 Download a subscription with a Clash-compatible User-Agent:

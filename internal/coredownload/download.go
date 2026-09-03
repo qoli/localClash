@@ -93,9 +93,6 @@ func Download(ctx context.Context, opts Options) ([]Result, error) {
 }
 
 func downloadFlavor(ctx context.Context, opts Options, flavor string) (Result, error) {
-	if flavor == FlavorSmart {
-		return downloadOpenClashCore(ctx, opts, FlavorSmart)
-	}
 	if flavor == FlavorMeta && shouldUseOpenClashMeta(opts) {
 		result, err := downloadOpenClashCore(ctx, opts, FlavorMeta)
 		if err == nil {
@@ -103,12 +100,20 @@ func downloadFlavor(ctx context.Context, opts Options, flavor string) (Result, e
 		}
 		fmt.Fprintf(os.Stderr, "download: openclash meta core failed, falling back to github release: %v\n", err)
 	}
-	rel, err := fetchRelease(ctx, opts.Repo, opts.Version)
+	repo, version, targetArch := opts.Repo, opts.Version, opts.TargetArch
+	if flavor == FlavorSmart {
+		// The fork publishes a rolling prerelease, which /releases/latest excludes.
+		repo, version = "qoli/mihomo-Alpha", "Prerelease-Alpha"
+		if targetArch == "mips" || targetArch == "mipsle" {
+			targetArch += "-softfloat"
+		}
+	}
+	rel, err := fetchRelease(ctx, repo, version)
 	if err != nil {
 		return Result{}, err
 	}
 
-	selected, err := selectAssetForTarget(rel.Assets, opts.TargetOS, opts.TargetArch)
+	selected, err := selectAssetForTarget(rel.Assets, opts.TargetOS, targetArch)
 	if err != nil {
 		return Result{}, fmt.Errorf("%w for %s/%s in %s", err, opts.TargetOS, opts.TargetArch, rel.TagName)
 	}
