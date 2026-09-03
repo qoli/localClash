@@ -33,13 +33,15 @@ Changes:
 
 Changes:
 
-- Smart 核心下載來源改為 `qoli/mihomo-Alpha` 的 `Prerelease-Alpha` Release，跟隨 fork 發布的資產。
-- x86_64 固定選擇 `amd64-v1`，MIPS 保留 `softfloat`；缺少對應架構檔案時明確失敗。
-- 更新下載命令說明，Meta 核心維持原有來源與選擇行為。
+- 自家 Smart 核心：下載來源改為 `qoli/mihomo-Alpha` 的 `Prerelease-Alpha`；更新 Core 與 Smart 核心後即可使用以下優化。
+- 穩定連線與選路：同一目標的並行請求共用選路結果；新連線成功不再連帶關閉既有 TCP／UDP 連線，減少不必要的重連。
+- 減少節點誤判：請求取消、探測根路徑回傳 403／405 不再直接當作節點故障；已送出資料卻無回應時先記錄，不自動斷線。
+- 持續慢速處理：不同連線重複確認慢速後，清除該目標的選路快取、關閉受影響連線，並暫時避開該節點與目標的組合，讓後續請求重新選路。
+- 診斷更清楚：新增 SmartTiming 分段耗時與 SmartMonitor 退化紀錄，方便區分建連、首次讀寫與傳輸階段；這些是傳輸層觀察，並非網頁速度保證。
 
 Release:
 
-- [qoli/localClash v0.1.80](https://github.com/qoli/localClash/releases/tag/v0.1.80)
+[qoli/localClash v0.1.80](https://github.com/qoli/localClash/releases/tag/v0.1.80)
 
 Verification:
 
