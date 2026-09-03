@@ -90,6 +90,14 @@
 
 ```yaml
 task_mode: targeted_repair # Or diagnosis; not a G99 release report.
+execution:
+  coordinator: <primary-agent>
+  workers:
+    - agent_id: <actual-subagent-id>
+      model: gpt-5.6-luna
+      reasoning_effort: high
+      scope: [<assigned-case-ids>]
+      evidence: <worker-results-and-original-output-path>
 issue_ids: [<target-issue>]
 tested_identity: <core-luci-mihomo-commits-and-actual-hashes>
 included_scope: [<original-reproduction-and-affected-regressions>]
@@ -121,6 +129,41 @@ PASS／BLOCKED 不得被此值覆寫。若修復使其證據失效，回寫具�
 - 案例可引用 R6／V 的相關斷言，但須列出實際選測子項，不能把部分驗證寫成
   R6 或 V 整項 PASS。若發現初始化／更新也受影響，按依賴證據增補相關回歸，
   不自動升級為 G00–G99。最後回寫該缺陷及受影響發布紀錄；其他發版缺口另列。
+
+### 1.3 Luna High 子代理執行契約
+
+本專案的代理工作流固定由 **Luna High 執行子代理**承接發佈執行與測試任務：
+建立子代理時明確設定 `model: gpt-5.6-luna`、`reasoning_effort: high`，不得省略
+而繼承主代理設定，也不得把 Luna Max、其他模型或主代理親自執行稱為 Luna High。
+這是代理分工規範，不改寫 GitHub Actions runner，也不表示 CI 已自動建立子代理。
+
+- **主代理**：判定第 1.1 節任務模式、鎖定候選與授權範圍、派發任務、協調資源，
+  審核原始證據、整合現行總報告／修復回寫並向使用者交付。發布時按 G99 作
+  放行審核；主代理可唯讀核對證據，不以子代理一句「通過」代替審核。
+- **Luna High 執行子代理**：在明示授權內執行候選準備、建置／檢查、測試操作、
+  結果登錄與分項回寫。測試包含單元／契約／語法／封裝、QEMU 功能、針對性
+  回歸及發布後驗證；不是只派子代理寫計畫，再由主代理代跑命令。
+  推送、tag、Release 等公開操作另需原任務的發布授權及主代理放行，測試派單
+  本身不授權發布或修復產品；只更新文檔也不觸發完整產品驗收。
+- **派單必填**：任務模式、owning repo、鎖定 ref／產物身分、案例與斷言、基線、
+  VM／端口、允許讀寫的路徑與操作、禁止事項、證據／回寫路徑、完成及停止條件。
+  子代理先讀適用的倉庫指引與本 SOP；不得自行換候選、擴大測試或採取 workaround。
+- **最小數量與單層派發**：預設一個 Luna High 子代理，可順序承接發佈及測試
+  階段。子代理不得再派子代理；需要拆分時由主代理派發。只有案例與資源可
+  獨立隔離才並行，禁止共寫同一 VM overlay、端口、候選目錄或現行總報告。
+  多個子代理各寫分項證據，主代理序列整合，不能以較晚結果覆蓋另一筆失敗。
+- **回報與核驗**：記錄實際 agent ID、派發的模型／effort、案例範圍、命令及
+  退出碼、候選／guest 身分、attempt、原始證據、異常、未完成項及回寫位置。
+  欄位取自派發與執行紀錄，不只相信子代理自稱模型。主代理核對後才接受結果；
+  子代理完成只代表分項交付，不代表 G99 或公開發布已成功。
+- **不可用／中斷**：不能啟動指定模型／effort、工具或環境不可用時，回報具體
+  執行缺口，不悄悄降級模型或由主代理接管測試。可由主代理重新派發 Luna High，
+  先核對前次操作是否仍在進行，保留原 attempt，避免重複操作。需要改變執行者
+  時取得使用者明確決策；只阻擋相關待執行工作，不擴大成無關功能失敗。
+
+這項分工不改變第 1.1–1.2 節的選測範圍；針對性子代理也不必跑整版矩陣。
+既有有效證據仍按候選適用性審核，不因新增分工要求而全部作廢或重跑；標明其
+原執行者及沿用理由，不能事後改填為 Luna High。新增與補驗工作遵守本節。
 
 ## 2. 任務鏈與通過規則
 
@@ -811,7 +854,15 @@ runtime，確認停止成功。
 run_id: <date-and-candidate-id>
 task_mode: release_acceptance
 sop_revision: <core-commit-containing-this-sop>
-operator: <reviewer>
+operator: <primary-agent-coordinator>
+execution:
+  coordinator: <primary-agent>
+  workers:
+    - agent_id: <actual-subagent-id>
+      model: gpt-5.6-luna
+      reasoning_effort: high
+      scope: [<assigned-case-ids-or-release-stage>]
+      evidence: <worker-results-and-original-output-path>
 current_acceptance:
   report: <authoritative-current-report-path>
   matrix: <authoritative-case-matrix-path>
@@ -966,6 +1017,8 @@ reviewed_by: <reviewer>
 9. 第 2.4 節的修復回寫已完成：SOP 現行契約、總報告、案例矩陣、異常／缺陷
    索引與發布就緒紀錄一致，所有歷史阻擋都有保留／解除／取代的處置及證據。
    不使用過時報告重新阻擋已驗證的修復；也不把回寫完成誤當未測關卡已通過。
+10. 新增／補驗執行符合第 1.3 節 Luna High 子代理契約，派單、實際執行者、
+    案例及證據可追溯；主代理已完成審核。沿用的既有證據如實保留原執行者。
 
 ## 16. 文件與工具的唯一入口
 
