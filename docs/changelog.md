@@ -14,18 +14,48 @@ localClash 有兩條獨立的發佈渠道：
 Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package 的路由器，
 可以在 LuCI 頁面裡直接更新 Core。
 
-## Unreleased
-
-Changes:
-
-- 訂閱刷新改為逐來源容錯：沒有可用 cache 的失敗來源會明確標記並跳過；只要至少一個來源能提供有效的新資料、來源 cache 或既有 artifact，便重建合併訂閱。合併 artifact 會持久化本輪實際生效的 source IDs，後續配置生成只跳過由該次成功刷新明確排除的來源；宣告為 active 的 artifact 缺失或來源身份不一致仍明確失敗。只有全部來源均無效時才終止，且不覆寫原有合併結果。
-
 ## 目前最新版本
 
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
-| localClash Core | [v0.1.80](https://github.com/qoli/localClash/releases/tag/v0.1.80) | 2026-09-03 UTC+8 |
-| localclash-luci | [v0.1.0-74](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-74) | 2026-09-03 UTC+8 |
+| localClash Core | [v0.1.81](https://github.com/qoli/localClash/releases/tag/v0.1.81) | 2026-09-04 UTC+8 |
+| localclash-luci | [v0.1.0-75](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-75) | 2026-09-04 UTC+8 |
+
+## 2026-09-04
+
+### localClash Core v0.1.81
+
+Changes:
+
+- 訂閱刷新改為逐來源容錯：失敗來源會保留可診斷的狀態與警告並跳過；只要至少一個來源提供有效資料、來源 cache 或既有 artifact，便重建合併訂閱。
+- 合併 artifact 會持久化本輪實際生效的 source IDs，配置生成只跳過由該次成功刷新明確排除的來源；宣告為 active 的 artifact 缺失或來源身份不一致仍明確失敗。
+- 只有全部來源均無效時才終止刷新，並保留原有合併結果，避免一次失敗清空可用配置。
+
+Release:
+
+[qoli/localClash v0.1.81](https://github.com/qoli/localClash/releases/tag/v0.1.81)
+
+Verification:
+
+- 已完成訂閱來源容錯、cache fallback、全來源失敗與 active source 持久化的主機端針對性測試；Core release workflow 會在 tag 上重新執行 release test 與資產建置。
+- 本版是訂閱範圍的限定發布；未宣稱完整 G99、ARM64 runtime 或實體路由器驗收。
+
+### localclash-luci v0.1.0-75
+
+Changes:
+
+- 訂閱保存流程會在保存成功後串接刷新、配置重建與 runtime restart，完成後回報最終狀態；刷新中的訂閱保存任務不可取消，避免 UI 先回報成功而 runtime 尚未完成。
+- 訂閱刷新產生的逐來源 warning 會保留在一鍵更新結果中；部分來源失敗不會遮蔽後續 render、config-test 或重啟失敗。
+- iStoreOS offline bundle 的 LuCI package release bump 至 `0.1.0-75`，並固定 Core release manifest 版本。
+
+Release:
+
+[qoli/localclash-luci v0.1.0-75](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-75)
+
+Verification:
+
+- 已完成 LuCI JavaScript、rpcd、訂閱保存／重啟的主機端檢查；公開 Release workflow 會重新執行同一套來源、測試與 13 項資產校驗。
+- 本版驗證聚焦訂閱保存→刷新→render→runtime restart 與逐來源 warning；未宣稱完整 G99、ARM64 runtime 或實體路由器驗收。
 
 ## 2026-09-03
 
