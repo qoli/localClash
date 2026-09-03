@@ -1,7 +1,7 @@
 # iStoreOS QEMU 發版前測試 SOP
 
 狀態：現行驗收規範。制定日期：2026-09-03。
-核心覆蓋：Meta、Smart 及兩個方向的核心切換均為獨立必驗結果。
+完整發版驗收的核心覆蓋：Meta、Smart 及兩個方向的核心切換均為獨立必驗結果。
 
 本文件是 localClash Core 與 localclash-luci **唯一的發版功能驗收 SOP**。
 每次發布任一專案，都要鎖定配對版本，在真正的 iStoreOS QEMU 韌體中完成
@@ -12,10 +12,14 @@
 升級起點。兩者的錯誤都要報告，但不得混成同一版本的驗收結果。
 所有異常都要記錄；「請求失敗」「已確認產品缺陷」「阻擋發版」是三個獨立判定。
 本 SOP 驗證 localClash／LuCI 的功能與所選核心整合，不保證公共網際網路品質。
+修復任務的交付包含程式／規範修正、重驗及文件回寫；只有 commit 或聊天中的
+「已修好」不算完成。發布任務必須讀取回寫後的現行驗收結論，不能永久沿用舊阻擋。
+**先依第 1.1 節選定任務模式。定位問題、針對性修復不等於執行完整發版驗收；
+不得把整版尚未通過當成單項任務不能完成的理由。**
 
 ## 1. 範圍、責任與安全界線
 
-- 唯一功能驗收環境：x86_64 iStoreOS QEMU。Docker OpenWrt、Docker 模擬
+- 唯一發版功能驗收環境：x86_64 iStoreOS QEMU。Docker OpenWrt、Docker 模擬
   opkg 安裝及 UTM 效能 VM 不再是本專案發版驗收入口。
 - ARM64 實機不是本 SOP 的發版門檻。雙架構封裝／checksum 檢查仍保留，
   但不得把 x86_64 QEMU 結果宣稱為 ARM64 或實體路由器網路驗收。
@@ -35,7 +39,92 @@
 - 訂閱 URL、token、密碼、WireGuard 私鑰、完整配置不得入版控或公開證據。
   原始證據置於受限本機目錄；分享前脫敏。不要任意 export 容器／整個 workdir。
 
+### 1.1 先判定任務模式，不把單項問題升級為全套驗收
+
+| 模式 | 使用者要求與本次交付 | 不自動要求 |
+| --- | --- | --- |
+| `diagnosis` 定位 | 「先定位／解釋原因」：核對故障版本、入口、時序、分層狀態及直接證據；交付已證實原因或明確的未定位邊界與下一步 | 修改產品、修復所有發現、建置完整候選、G00–G99 |
+| `targeted_repair` 針對性修復／重驗 | 「修復這個問題／驗證這個修復」：列出受影響契約、重現與回歸斷言，完成所選案例及第 2.4 節回寫 | 無關的全新安裝、舊版升級、雙核心全矩陣、全部網路／重置關卡及 G99 |
+| `release_acceptance` 完整發版驗收 | 「發佈版本／完成 SOP 驗收」：鎖定候選、覆蓋本文件完整必要矩陣、完成 G99；已有證據須核對適用性後沿用 | 以單項修復 PASS 代替整版 PASS，或重做仍有效且可追溯的證據 |
+
+模式依使用者當次要求判定，不因工作目錄、引用本文件、使用 QEMU、出現 Bug 或
+產生新 commit 自動變成 `release_acceptance`。單說「測試這個修復」仍是針對性重驗。
+發版工作中的分項修復也有自己的完成條件；分項完成與上層發布仍 BLOCKED 可以並存。
+只授權定位時，不得自行實作修復；無法定位就交代缺口，不冒充根因已確認。
+
+第 2 節完整任務鏈、第 3–14 節全量關卡與第 15 節 G99 是 `release_acceptance`
+的要求；其他模式只引用所選案例的相關斷言，未選案例列於 `excluded_scope`，
+**不是該單項任務的 BLOCKED，也不冒用案例 N/A 或 PASS**。第 1 節安全界線、
+實際版本取證、第 2.1–2.3 節異常／歸屬規則及適用的回寫責任仍須遵守。
+「報告每一個功能缺陷」指不漏報已執行／已觀察到的異常，不是要求每次定位都
+掃描全部產品功能。新發現的範圍外問題另行登錄及交接，不自動納入本次修復。
+
+### 1.2 針對性任務的選測與完成條件
+
+1. 執行前記錄 `task_mode`、目標問題、實際受測版本、可操作環境、包含／排除範圍、
+   各項斷言、選測理由及完成條件。定位可先觀察故障版本；修復重驗預設使用包含
+   修復的鎖定 HEAD 候選，不能用已發布舊包代替，也不能把觀察舊版算作新候選重驗。
+2. 依「改動 → 受影響入口／共用契約 → 必要回歸」選最小充分集合，包含原始症狀、
+   正常路徑及相關失敗／拒絕邊界。只修改文件，檢查契約、引用及報告一致性；
+   不因此啟動產品全測。單元／契約檢查仍遵守各 owning repo 的要求。
+3. iStoreOS 上的 runtime／接管修復須在指定 QEMU 從正式入口重驗相關狀態；
+   若影響 LAN 轉送，補受控 LAN 網路斷言。不是每項 UI／RPC 問題都先要求
+   建立完整 WAN 測試設施，亦不能拿單元測試代替已選定的 QEMU 實際操作證據。
+4. 核心專屬改動驗該核心；跨核心共用 runtime／渲染契約則驗 Meta、Smart 的
+   受影響路徑。涉及切換才加入相關切換方向；涉及模型才加入相關模型斷言。
+   「驗兩個核心的重啟」不等於「雙核心 A–E、K1–K8 全部重跑」。
+5. 只有因果／程式依賴證據顯示範圍更大，才補選相關案例，記錄觸發原因與新增
+   完成條件；不能只因修改了共用檔案就要求全部初始化／更新矩陣。若發現新問題
+   使原定完成條件無法驗證，登錄真正依賴它的缺口；實質擴大修改或操作授權時
+   先取得使用者決策。完整發版的補驗需求另記於交接，不強塞入單項任務。
+6. 修復任務完成須同時具備：修復身分可核對、所選必要斷言通過、觀察到的異常
+   已對帳、受影響文件已回寫。缺少所選必要證據時只能報「已修正、待重驗」；
+   無關關卡尚未執行不影響單項完成。定位任務按定位交付判定，不以原故障仍
+   FAIL 阻止交付診斷結論，更不要求先修好再報告原因。
+
+針對性修復可在授權的測試 VM 部署受影響檔案，保留原檔、來源 commit／patch、
+部署清單及實際載入 SHA；報告明寫「分檔部署重驗」，不得宣稱已驗整包安裝／更新。
+完整發版的 G02/G03 仍走正式候選供應及安裝流程；分檔重驗不能替代這些關卡。
+
+針對性報告可以是同一驗收目錄內的一份短紀錄，不需建立空白全量矩陣：
+
+```yaml
+task_mode: targeted_repair # Or diagnosis; not a G99 release report.
+issue_ids: [<target-issue>]
+tested_identity: <core-luci-mihomo-commits-and-actual-hashes>
+included_scope: [<original-reproduction-and-affected-regressions>]
+excluded_scope: [<unrelated-release-cases-with-selection-reasons>]
+completion_criteria: [<required-assertions-or-diagnosis-deliverables>]
+attempts: <results-evidence-and-anomaly-index-path>
+writeback: <affected-current-records-and-superseded-conclusions-or-not-applicable>
+release_handoff: <affected-release-cases-and-evidence-validity-or-not-assessed>
+task_status: <complete-or-incomplete>
+release_decision: not-assessed # This task does not issue release approval.
+```
+
+`not-assessed` 只表示本次不作整版放行判定，不是豁免發版關卡；已有發布報告的
+PASS／BLOCKED 不得被此值覆寫。若修復使其證據失效，回寫具體失效項及待重驗狀態，
+不得保留已不成立的放行結論。跨候選沿用證據須比較程式、依賴、配置及環境的
+相關差異，記錄未受影響的依據；僅日期較新、commit 相近或同版本號都不充分。
+
+**選測範例：Dashboard 重啟超時（不是本輪實測結論）**
+
+- 定位：在指定故障環境核對 Dashboard 的實際重啟入口，關聯請求、產品任務與
+  runtime 時序，區分前端等待超時、RPC 失敗、Mihomo 未就緒與接管未恢復。
+  保留錯誤並讀回實際狀態；不因新 PID 就判成功，也不先重做全新安裝／舊版升級。
+- 修復／重驗：從可追溯的既有運行基線走同一正式入口，驗原始症狀及改動涉及的
+  終態、重複重啟和失敗回報；共用生命週期改動驗兩核心的相關路徑。若影響接管，
+  補接管及受控 LAN 流量證據；若僅修改顯示層，不因此加入全部網路關卡。
+  若原問題是正常重啟超過 RPC 存活期限，須取得跨過該期限仍能完成自身交易的
+  證據；新增背景任務／頁面恢復時，驗刷新後追蹤同一 task、無重複提交，不能
+  用另一個恢復 worker 後來成功代替原交易完成。尚缺的另一核心只列相關重啟缺口。
+- 案例可引用 R6／V 的相關斷言，但須列出實際選測子項，不能把部分驗證寫成
+  R6 或 V 整項 PASS。若發現初始化／更新也受影響，按依賴證據增補相關回歸，
+  不自動升級為 G00–G99。最後回寫該缺陷及受影響發布紀錄；其他發版缺口另列。
+
 ## 2. 任務鏈與通過規則
+
+以下全量任務鏈及重驗範圍用於完整發版驗收；單項任務按第 1.1–1.2 節選測。
 
 ```text
 G00 候選版本與前置檢查
@@ -58,7 +147,8 @@ G00 候選版本與前置檢查
 不得因外部觀察 FAIL，就將已獨立驗證的產品功能或整個核心結果改為 FAIL。
 
 - 預期拒絕的負向案例，在明確拒絕且狀態保護正確時才是 PASS。
-- 未執行、環境不具備、只有模擬結果或缺少證據，一律 BLOCKED，不是 PASS。
+- 已納入本次範圍的必要案例未執行、環境不具備、只有模擬結果或缺少證據，
+  一律 BLOCKED，不是 PASS；完整發版不得任意排除下列必測案例。
 - A–E、K、V、IPv4 的 N、R、X、Z 不得因時間或既有故障而標 N/A。
   只有本文明列的條件分支（F8 最佳化成功、N5 IPv6、X7 不相容舊策略）可 N/A，
   且必須附不適用證據。
@@ -66,16 +156,19 @@ G00 候選版本與前置檢查
   不要求全部成功。報告漏列異常仍阻擋 G99，已完整記錄的非阻擋異常則不等於漏測。
 - 必要功能關卡失敗時停止依賴該成功前提的下游，標為 BLOCKED 並引用異常／缺陷 ID；
   可以在另一合格的獨立基線採集其他案例，但不能沖銷失敗或將補救副本當正常 S2。
-- 測試中修正程式或替換候選資產，產生新的候選識別並重跑受影響的情境、V、
+- 完整發版驗收中修正程式或替換候選資產，產生新的候選識別並重跑受影響的情境、V、
   N 及相關 R/X；若變更初始化、更新或共用材料交易，重跑雙核心 A–E。
   任一 Mihomo binary、Smart 模型或核心選擇／渲染契約改變，也重跑受影響核心的
   K、V/N 及兩方向 K8；成對更新邏輯改變時 K7 必須在兩種活躍核心下重跑。
+  這是新候選取得整版放行所需的補驗，不是每個分項修復的交付範圍；分項可先
+  按第 1.2 節完成並回寫，發布任務再接續缺口。只有文件／紀錄更動且經核對未
+  改變建置輸入或功能契約時，不因 commit 改變就自動推翻全部既有功能證據。
 - 發布責任人審核 G99 前，不推送會觸發公開發布的 tag、不發布或廣播正式 Release。
   現有 CI **沒有自動執行／強制核驗 QEMU 報告**；這是人工放行關卡，不能稱為自動門禁。
 
 ### 2.1 每個功能的失敗必須立即登錄
 
-1. 每個功能及其子案例都要有獨立 ID、每次嘗試的 attempt ID、預期與結果。
+1. 本次選測的每個功能及其子案例都要有獨立 ID、每次嘗試的 attempt ID、預期與結果。
    範圍包含候選功能、歷史基線建立、安裝／交接、恢復及測試工具；不得只列最終
    成功的主線。父項或整輪已 FAIL／BLOCKED，也不能省略後來發現的另一項缺陷。
 2. 發生非預期失敗，先保留原始 task／錯誤碼、完整錯誤訊息、時間、版本身分及
@@ -146,6 +239,52 @@ G00 候選版本與前置檢查
 降級範圍或換較容易的網站取代原結果。若發現測試設計把外部品質錯當產品功能，
 明列設計缺陷、調整理由與新案例對應，保留舊結果，經審核再以合格副本補驗必要
 斷言。這是修正測試設計，不是補救產品或把舊 FAIL 改成 PASS。
+
+### 2.4 修復任務必須回寫文件並完成驗收交接
+
+**執行修復的任務擁有回寫責任，不得留待使用者或下一個發布任務重新拼湊。**
+適用於產品 Bug、SOP／產品契約衝突、測試工具缺陷及異常重新分類。回寫是修復
+交付的一部分，無須另等一次「更新文檔」指令；不因此擴大產品修改或發布授權。
+
+1. 開始修復時列出任務模式、缺陷 ID、受影響 SOP 章節／案例、修復 owning repo、
+   已有的現行驗收總報告／矩陣與發布預檢路徑。若已有相關總報告，必須回寫
+   受影響項；不能只新增分項報告而讓總報告仍宣稱該缺陷未修。不存在的全量
+   報告記為「尚未建立」，不要求為單項任務建立或填完全部發布矩陣。
+2. 修復後先記「已修正、待重驗」，附 commit／候選 SHA；按所選任務模式從
+   合格基線重驗。通過後才改為「已在指定候選驗證」，並連到實際 attempt、
+   原始終態、版本及功能證據。根因未定位但已判定非阻擋的外部觀察，回寫其
+   分類、證據及理由，不偽稱修復，也不繼續要求不存在的修復 commit。
+3. 同一修復交付必須同步下列文件的受影響部分；不適用的項目說明原因。
+   回寫義務不等於取得全量重驗責任，也不要求無改動的 SOP 為每個 Bug 增加條款：
+
+   | 文件／紀錄 | 必須回寫的內容 |
+   | --- | --- |
+   | 本 SOP 及相關現行契約文檔 | 已核准的操作入口、支援範圍、預期及案例對應；刪除或更正已證實錯誤的現行描述，保留變更理由與依據 |
+   | 現行驗收總報告、案例矩陣 | 新候選／重驗結果、沿用證據的適用範圍、被取代的舊結論及尚未覆蓋項目；不能只更新分項報告 |
+   | 異常／缺陷索引 | 修復 commit、重驗 attempt、狀態、是否仍阻擋及理由；每個解除項可追溯 |
+   | 發布就緒／預檢紀錄 | 分項修復更新相關缺陷、失效證據與剩餘補驗，不判定整版 PASS；完整發版任務才依現行 SOP 與整份矩陣重算 release_decision。附更新時間及現行證據入口 |
+
+4. 若 SOP 與產品契約衝突，必須形成並回寫明確處置：補產品能力，或經授權
+   校正錯誤規範。同步修改所有受影響的案例、覆蓋矩陣、N/A 條件及 G99 規則，
+   不能只在修復報告註記「SOP 有問題」而保留相同現行必測條款。未取得必要
+   決策時標明「待決策」及具體選項，不把尚未處理的衝突宣稱為已修復。
+5. 原始 log、失敗 attempt 與舊候選的 FAIL 不覆寫。回寫現行總結時，增加
+   「此結論已由哪份新候選證據取代」的連結／更新節，區分歷史結果與現行狀態；
+   若舊報告為凍結紀錄，就在現行總報告明列其被取代關係，不刪除原件。
+   「保留歷史失敗」不代表「讓歷史缺陷永遠保持為當前阻擋」。
+6. 收尾做一致性核對：同一缺陷不得一份文件寫已驗證、另一份現行文件仍寫未修；
+   本次受影響項的剩餘阻擋都要有尚未成立的必要斷言、目前證據缺口與下一步。即使整輪仍
+   BLOCKED，也要從當前阻擋清單移除已驗證解除的項目，只保留真正未完成項。
+7. 修復任務最後回報修改的程式／文檔、commit、重驗範圍、回寫路徑、已解除項
+   和剩餘項。文件未同步就只能報「程式修正／分項測試完成，交付未完成」。
+   不得在回寫前把修復任務標成全部完成，也不得只用完成的修復數量判定發版 PASS。
+   無關的發布缺口只需保持原紀錄與交接；不能用它們阻止已符合第 1.2 節的單項結案。
+
+**發布任務的接續規則：**先讀現行總報告、後續修復回寫與候選身分，再對照
+現行 SOP 重算 G99；不能找到一份歷史 `release_decision: BLOCKED` 就直接拒絕。
+若新證據已存在但彙整落後，先依可核實證據完成文檔對帳並重算，不要求使用者
+重做已有效完成的測試。只有聊天宣稱、缺少原始證據、候選不匹配或尚未覆蓋的
+必要案例仍不得放行。這些是收尾責任，並非已實作的自動同步工具。
 
 ## 3. G00：鎖定候選、舊版與前置檢查
 
@@ -338,6 +477,8 @@ Core-only 可用現有 LuCI 安裝路徑測新 Core，不把未包含新 Core �
 後改記成功。安裝中斷案例在 X 中處理，不假定整個 installer 具有全域原子回滾。
 
 ## 7. A–E：五條必跑路徑
+
+本節完整矩陣是整版放行要求；針對性任務僅取第 1.2 節選定的相關路徑／斷言。
 
 完整預設策略為主線；不可用 minimal 或取消預設策略同步替代。**A–E 每條都必須
 在 Meta、Smart 獨立基線執行**，包括 C/D 的舊版升級初始化，不再允許單核心代測。
@@ -654,6 +795,9 @@ runtime，確認停止成功。
 
 ## 15. G99：證據模板與發版放行
 
+本節只對 `release_acceptance` 作整版判定；定位／針對性修復使用第 1.2 節的
+短紀錄及第 2.4 節回寫，不要求填滿以下全量模板或通過 G99 才能交付。
+
 每輪在 `.runtime/istoreos-acceptance/<run-id>/` 保存一份執行紀錄及脫敏證據。
 `run-id` 包含日期和候選識別；不要把歷史目錄中的 success.json 當作本輪結果。
 報告必須同時包含逐功能／子案例結果、異常索引、已確認缺陷清單、補救操作、未執行項及
@@ -665,8 +809,15 @@ runtime，確認停止成功。
 
 ```yaml
 run_id: <date-and-candidate-id>
+task_mode: release_acceptance
 sop_revision: <core-commit-containing-this-sop>
 operator: <reviewer>
+current_acceptance:
+  report: <authoritative-current-report-path>
+  matrix: <authoritative-case-matrix-path>
+  issue_index: <current-anomaly-and-defect-index-path>
+  release_readiness: <current-release-preflight-path>
+  updated_at: <timestamp-with-timezone>
 candidate:
   core: {commit: <sha>, version: <version>, artifact_sha256: <sha256>}
   luci: {commit: <sha>, version: <version>, artifact_sha256: <sha256>}
@@ -754,6 +905,22 @@ error_reconciliation:
   unmapped_event_count: <must-be-zero-for-report-completeness>
   executed_attempts_without_result: <must-be-zero-for-report-completeness>
   completeness: <complete-or-incomplete>
+repair_writeback:
+  - issue_id: <anomaly-defect-or-sop-conflict-id>
+    owner: <repair-task-or-responsible-person>
+    fix: {repository: <owning-repo>, commit: <sha-or-not-applicable>}
+    candidate_id: <verified-candidate-id>
+    sop_sections: [<affected-sections-or-none-with-reason>]
+    spec_decision: <unchanged-approved-correction-approved-feature-or-pending-decision>
+    decision_evidence: <authorization-and-contract-evidence-or-not-applicable>
+    retest_attempt_ids: [<new-evidence-attempts>]
+    reused_evidence: <paths-and-candidate-applicability-review-or-none>
+    supersedes: [<old-conclusions-not-original-raw-evidence>]
+    documents_updated: [<sop-report-matrix-issue-index-readiness-paths>]
+    disposition: <verified-cleared-nonblocking-fixed-pending-retest-or-unresolved>
+    remaining_gaps: [<specific-required-assertions-or-empty>]
+    updated_at: <timestamp-with-timezone>
+    consistency_review: <complete-or-incomplete-with-reason>
 core_results:
   meta: <PASS-FAIL-BLOCKED>
   smart: <PASS-FAIL-BLOCKED>
@@ -761,6 +928,7 @@ core_results:
   smart_to_meta: <PASS-FAIL-BLOCKED>
 release_assessment:
   required_case_ids: [<all-required-function-cases>]
+  cleared_blocker_ids: [<items-cleared-by-linked-candidate-evidence-or-empty>]
   blocking_anomaly_or_defect_ids: [<unresolved-blocking-items-or-empty>]
   nonblocking_observation_ids: [<retained-external-observations-or-empty>]
   rationale: <functional-evidence-completeness-and-scope-limits>
@@ -795,10 +963,16 @@ reviewed_by: <reviewer>
 8. 每個阻擋項指出尚未成立的必要斷言；每個非阻擋外部異常有功能驗證證據、
    歸屬信心及未確認範圍。不以「外網一定正常」作放行前提，不要求外部異常
    都有修復 commit；也不以「可能是外網」豁免候選整合故障或缺失的功能證據。
+9. 第 2.4 節的修復回寫已完成：SOP 現行契約、總報告、案例矩陣、異常／缺陷
+   索引與發布就緒紀錄一致，所有歷史阻擋都有保留／解除／取代的處置及證據。
+   不使用過時報告重新阻擋已驗證的修復；也不把回寫完成誤當未測關卡已通過。
 
 ## 16. 文件與工具的唯一入口
 
 - 本文件擁有環境、測試任務、證據及放行規則；不另維護 Docker／真機測試 SOP。
+- 每輪在驗收總報告標明現行總報告／矩陣、缺陷索引、後續修復及發布就緒紀錄
+  的確切路徑、適用候選與最後更新時間。跨任務交接必須提供此入口；修復子報告
+  不能成為另一套互相矛盾的放行結論，僅有較新檔名／日期也不構成取代證據。
 - [QEMU 腳本](../scripts/istoreos-test-env.sh)只管理 VM，不是自動全測 runner。
 - [Release Manifest](release-manifest.md)與
   [LuCI release runbook](https://github.com/qoli/localclash-luci/blob/main/docs/github-release-runbook.md)
