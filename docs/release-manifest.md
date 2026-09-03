@@ -78,8 +78,21 @@ first and testing the public release afterward does not satisfy this gate.
 
 ### Agent execution responsibilities
 
-For agent-driven releases, the primary agent coordinates scope, candidate
-identity, authorization, evidence review, and the G99 release decision. Delegate
+An independent Pi CLI reviewer using provider `kimi-coding`, model `k3-256k`
+(Kimi K3 256K), thinking `max`, decides change impact, required tests, prerequisites, execution
+order, and evidence reuse from a frozen factual review packet. Follow
+[SOP section 1.4](istoreos-release-test-sop.md#14-獨立-pi-clikimi-影響面審查與測試依賴計畫):
+fresh isolated runtime, no implementation conversation, no project/user config,
+all tools/resources disabled, no sharing. Use the CLI directly with streamed JSON,
+not a pi-ai SDK integration; safely reuse only the Kimi credential from Pi login.
+Preserve partial output on failure and validate terminal events before accepting a plan.
+Neither the primary agent nor Luna may replace
+this review or silently modify its test selection; missing data goes back to
+the reviewer, and changed inputs require an updated impact decision.
+
+For agent-driven releases, the primary agent coordinates the user-authorized
+scope, candidate identity, review packet, authorization, evidence review, and
+the G99 release decision; it does not decide test impact itself. Delegate
 release execution and test tasks to **Luna High** subagents with explicit
 `model: gpt-5.6-luna` and `reasoning_effort: high`. Tests are executed by the
 subagent, not merely planned by it and then run by the primary agent.
@@ -97,6 +110,8 @@ user's release authorization and require the primary agent's gate review before
 the execution worker proceeds. Targeted repair/testing still uses the SOP's
 targeted scope, not the full release matrix. These are agent responsibilities,
 not a claim that GitHub Actions automatically delegates to Luna High.
+Reviewer readiness authorizes test dispatch only, not publication. Retain the
+review ID, input hash, raw response, dependency plan, and execution results.
 
 The release workflow is `.github/workflows/release.yml`. It runs the Go test
 suite first, then builds linux `amd64` and `arm64` binaries with:
