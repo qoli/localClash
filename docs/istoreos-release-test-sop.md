@@ -1,6 +1,7 @@
 # iStoreOS QEMU 發版前測試 SOP
 
 狀態：現行驗收規範。制定日期：2026-09-03；現行產品入口校正：2026-09-04。
+一致性修訂：2026-09-05；修訂依據與待辦見[維護紀錄](istoreos-sop-maintenance.md)。
 完整發版驗收的核心覆蓋：Meta、Smart 均為獨立必驗結果。現行 LuCI 只在初始化
 入口選擇核心，沒有健康 S2 的運行中核心切換入口；不存在的切換流程不列發版門檻。
 
@@ -792,7 +793,8 @@ CPU/RSS、啟動及請求耗時在相同 QEMU 資源／輸入下比較；退化�
 
 ## 9. F：一般功能性可用範圍
 
-每項由可工作的 S2 副本開始；改動後檢查 task、材料、runtime 讀回與對應真實請求，
+除 F3 明列由獨立 S1 初始化外，其餘項目由可工作的 S2 副本開始；
+改動後檢查 task、材料、runtime 讀回與對應真實請求，
 結束後恢復基線，避免一項的設定影響下一項。按第 7 節矩陣展開雙核心，
 不得因 helper 相同就共用 runtime／網路證據。
 每項列出的各個操作與負向分支都須個別留結果；任何非預期錯誤立即按第 2.1 節
@@ -1106,8 +1108,6 @@ repair_writeback:
 core_results:
   meta: <PASS-FAIL-BLOCKED>
   smart: <PASS-FAIL-BLOCKED>
-  meta_to_smart: <PASS-FAIL-BLOCKED>
-  smart_to_meta: <PASS-FAIL-BLOCKED>
 release_assessment:
   required_case_ids: [<all-required-function-cases>]
   cleared_blocker_ids: [<items-cleared-by-linked-candidate-evidence-or-empty>]
@@ -1120,16 +1120,18 @@ reviewed_by: <reviewer>
 
 放行者逐項確認：
 
-1. G00–G03、雙核心 A–E（含每個選定舊版配對）、K、V、F、N、R、X、Z 都有
-   第 7 節矩陣要求的必要功能結果。Meta、Smart、Meta → Smart、Smart → Meta
-   四個必要功能分項全部 PASS 才能放行；不得 N/A 或以其中一項代替另一項。
+1. G00–G03、雙核心 A–E（含每個選定舊版配對）、K1–K7、V、F、N、R、X、Z 都有
+   第 7 節矩陣要求的必要功能結果。Meta、Smart 兩個核心分項全部 PASS 才能
+   放行；不得 N/A 或以其中一項代替另一項。核心分項依各自適用的必要案例
+   彙總，不新增運行中核心切換案例。
    案例級 N/A 僅限本文已允許的條件分支，shared 只限明列子項，沒有未解的
-   必要功能 FAIL／BLOCKED。外部觀察結果不直接併入這四個分項。
+   必要功能 FAIL／BLOCKED。外部觀察結果不直接併入這兩個核心分項。
 2. 訂閱／配置內容、task、PID、controller、接管與 LAN 請求證據屬於同輪候選；
    不以 CI、封裝結果、舊事故紀錄或後來的手動修復頂替。
 3. 大訂閱沒有縮小、預設策略同步未被主線關閉、失敗請求沒有被成功重試抹掉；
-   Smart 模型已載入、冷暖態分開，Meta 沒有依賴 Smart 殘留，兩向切換與成對更新
-   都有實際程序／配置／流量證據，不只有 UI 選項或磁碟檔名。
+   Smart 模型已載入、冷暖態分開，Meta 沒有依賴 Smart 殘留；兩核心的獨立
+   初始化、同核心升級及 K7 成對更新都有實際程序／配置／流量證據，
+   不只有 UI 選項或磁碟檔名。
 4. 發布 tag 必須指向受測 commit。若 Release workflow 重建資產，下載後對照
    已驗收的 hash；不一致不得沿用通過紀錄或繼續廣播，須調查／重驗。
    要求「公開前逐位元相同」時，管線必須先具備候選資產直接提升的能力；

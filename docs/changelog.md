@@ -18,8 +18,27 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
-| localClash Core | [v0.1.81](https://github.com/qoli/localClash/releases/tag/v0.1.81) | 2026-09-04 UTC+8 |
+| localClash Core | [v0.1.82](https://github.com/qoli/localClash/releases/tag/v0.1.82) | 2026-09-06 UTC+8 |
 | localclash-luci | [v0.1.0-75](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-75) | 2026-09-04 UTC+8 |
+
+## 2026-09-06
+
+### localClash Core v0.1.82
+
+Changes:
+
+- 預設策略新增獨立的 `🪙 Binance` 業務群組，使用 `blackmatrix7 / Binance` 規則包涵蓋 `binance.com` 及相關 Binance 網域。
+- Binance 策略出口依序提供台灣、美國、日本、自動選擇與手動選擇；這是 Dashboard 選項及初始選擇順序，不是自動故障切換或帳戶地區資格判定。
+- Binance 規則置於泛用娛樂、電商、非中國網站與中國直連分類之前，減少被廣泛分類提前接走的情況。
+
+Release:
+
+[qoli/localClash v0.1.82](https://github.com/qoli/localClash/releases/tag/v0.1.82)
+
+Verification:
+
+- 完整 Go 測試與預設模板、patch 固定排序回歸測試通過。
+- 本版驗證範圍是 Repo 預設策略生成；未宣稱 Binance 登入、交易、帳戶地區資格、所有代理節點可用性或實體路由器驗收。
 
 ## 2026-09-04
 
