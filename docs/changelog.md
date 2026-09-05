@@ -38,6 +38,7 @@ Release:
 Verification:
 
 - 完整 Go 測試與預設模板、patch 固定排序回歸測試通過。
+- [Core Release workflow 33994527246](https://github.com/qoli/localClash/actions/runs/33994527246) 成功；7 項公開資產、三份 checksum 與 v0.1.82 manifest 已重新下載校驗，base assets 內的 Binance 策略與出口順序核對通過。
 - 本版驗證範圍是 Repo 預設策略生成；未宣稱 Binance 登入、交易、帳戶地區資格、所有代理節點可用性或實體路由器驗收。
 
 ## 2026-09-04
