@@ -210,8 +210,27 @@ func TestRealLocalClashDefaultTemplateIsLayered(t *testing.T) {
 	if summary.ID != TemplateLocalClashDefault || config.Version != localconfig.ConfigSchemaVersion {
 		t.Fatalf("template = %+v config version = %d, want current localclash default", summary, config.Version)
 	}
-	if len(config.ProxyGroups) != 9 || len(config.PolicyGroups) != 31 || len(config.Packs) != 35 || len(config.TransportRules) != 1 || len(config.CustomRules) != 3 {
-		t.Fatalf("default template counts: proxy_groups=%d policy_groups=%d packs=%d transport_rules=%d custom_rules=%d, want 9/31/35/1/3", len(config.ProxyGroups), len(config.PolicyGroups), len(config.Packs), len(config.TransportRules), len(config.CustomRules))
+	if len(config.ProxyGroups) != 9 || len(config.PolicyGroups) != 32 || len(config.Packs) != 36 || len(config.TransportRules) != 1 || len(config.CustomRules) != 3 {
+		t.Fatalf("default template counts: proxy_groups=%d policy_groups=%d packs=%d transport_rules=%d custom_rules=%d, want 9/32/36/1/3", len(config.ProxyGroups), len(config.PolicyGroups), len(config.Packs), len(config.TransportRules), len(config.CustomRules))
+	}
+	if hasPack(config.Packs, "blackmatrix7", "Crypto") {
+		t.Fatal("default template must not include the broad Crypto pack")
+	}
+	if _, exists := config.PolicyGroups["🪙 Crypto"]; exists {
+		t.Fatal("default template must not include the withdrawn Crypto group")
+	}
+	wantBinanceExits := []string{"🇹🇼 台湾节点", "🇺🇸 美国节点", "🇯🇵 日本节点", "⚡ 自动选择", "🎯 手动选择"}
+	if group := config.PolicyGroups["🪙 Binance"]; group.Mode != "manual" || !reflect.DeepEqual(group.Exits, wantBinanceExits) {
+		t.Fatalf("Binance group = %+v, want manual selector with exits %#v", group, wantBinanceExits)
+	}
+	if got := packTarget(config.Packs, "blackmatrix7", "Binance"); got != "🪙 Binance" {
+		t.Fatalf("Binance target = %q, want 🪙 Binance", got)
+	}
+	binanceIndex := packIndex(config.Packs, "blackmatrix7", "Binance")
+	for _, pack := range []string{"category-entertainment", "category-ecommerce", "geolocation-!cn", "cn"} {
+		if index := packIndex(config.Packs, "v2fly-dlc", pack); binanceIndex < 0 || index <= binanceIndex {
+			t.Fatalf("Binance index=%d, %s index=%d, want Binance before broad tail packs", binanceIndex, pack, index)
+		}
 	}
 	if got := packTarget(config.Packs, "v2fly-dlc", "category-pt"); got != "🧲 BT/PT 下载" {
 		t.Fatalf("default template category-pt target = %q, want 🧲 BT/PT 下载", got)

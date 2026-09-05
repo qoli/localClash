@@ -50,6 +50,11 @@
       "description": "Add Syncnext app-maintenance rules before broad China-domain direct routing."
     },
     {
+      "id": "default.binance.v1",
+      "path": "localclash-default.d/66-binance.json",
+      "description": "Add Binance routing with Taiwan-first exit selection."
+    },
+    {
       "id": "default.cloudflare-geoip.v1",
       "path": "localclash-default.d/67-cloudflare-geoip.json",
       "description": "Route known Cloudflare IP space through a Dashboard policy before terminal direct fallback."

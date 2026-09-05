@@ -25,7 +25,7 @@ behavior must appear as explicit patch files in the selected template manifest.
   `policy-templates/localclash-default.json`. Each ordered file under
   `policy-templates/localclash-default.d/` contributes one stable default patch,
   such as region exits, communication/social routing, Steam, media groups, games,
-  Syncnext app-maintenance routing, Cloudflare GeoIP routing, and tail routing. Syncnext-maintained app
+  Syncnext app-maintenance routing, Binance, Cloudflare GeoIP routing, and tail routing. Syncnext-maintained app
   domains are evaluated before the broad `GEOSITE,cn,DIRECT` tail rule, while
   `SyncnextUnbreak` remains explicitly direct.
 
@@ -177,3 +177,25 @@ The default selection therefore leaves unknown traffic direct for game accelerat
 compatibility. Users can explicitly switch `🌐 全球直连` to automatic or a regional
 exit when they need a broader proxy strategy; explicit rules targeting `DIRECT`
 remain direct.
+
+## Binance Default Policy
+
+`default.binance.v1` adds the manual `🪙 Binance` selector and the
+`blackmatrix7 / Binance` rule-provider pack. Its exits are ordered as
+`🇹🇼 台湾节点`, `🇺🇸 美国节点`, `🇯🇵 日本节点`, `⚡ 自动选择`, and
+`🎯 手动选择`. This is the configured selector order, not automatic failover
+or a measured availability ranking. The broad Crypto pack is not included in
+the default template.
+
+The Binance pack includes `DOMAIN-SUFFIX,binance.com` and related Binance
+domains, rather than routing unrelated exchanges and DeFi services together.
+
+The patch has stable order `0760.000000`, after Syncnext maintenance and before
+the Cloudflare GeoIP patch and broad tail packs in the template registry.
+The renderer emits custom rules before catalog packs, so the existing Cloudflare
+GEOIP custom rule still precedes Binance in the rendered rules; patch order does
+not override that cross-type ordering. Binance precedes the broad tail packs.
+
+Updating the repository template alone does not change an existing running
+configuration; the normal template import and configuration deployment workflow
+applies.

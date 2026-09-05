@@ -62,11 +62,13 @@ func TestDefaultCloudflareGeoIPPatchPrecedesTailFallback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var syncnext, cloudflare, tail policytemplate.PatchSource
+	var syncnext, binance, cloudflare, tail policytemplate.PatchSource
 	for _, source := range sources {
 		switch source.ID {
 		case "default.syncnext-app-maintenance.v1":
 			syncnext = source
+		case "default.binance.v1":
+			binance = source
 		case "default.cloudflare-geoip.v1":
 			cloudflare = source
 		case "default.tail-fallback.v1":
@@ -77,6 +79,10 @@ func TestDefaultCloudflareGeoIPPatchPrecedesTailFallback(t *testing.T) {
 		t.Fatalf("template sources = %+v, want Syncnext maintenance, Cloudflare GEOIP, and tail fallback patches", sources)
 	}
 	syncnextPatch := patchFromTemplateSource(policytemplate.TemplateLocalClashDefault, syncnext)
+	binancePatch := patchFromTemplateSource(policytemplate.TemplateLocalClashDefault, binance)
+	if binance.ID == "" || binancePatch.OrderID != "0760.000000" || binance.Index >= cloudflare.Index || binance.Index <= syncnext.Index {
+		t.Fatalf("Binance source=%+v order=%q, want Binance between Syncnext and Cloudflare", binance, binancePatch.OrderID)
+	}
 	cloudflarePatch := patchFromTemplateSource(policytemplate.TemplateLocalClashDefault, cloudflare)
 	tailPatch := patchFromTemplateSource(policytemplate.TemplateLocalClashDefault, tail)
 	if syncnextPatch.OrderID != "0750.000000" || cloudflarePatch.OrderID != "0775.000000" || tailPatch.OrderID != "0800.000000" {

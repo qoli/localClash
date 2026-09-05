@@ -1,0 +1,30 @@
+{
+  "id": "default.binance.v1",
+  "description": "Add Binance routing with Taiwan-first exit selection.",
+  "config": {
+    "version": 4,
+    "policy_groups": {
+      "🪙 Binance": {
+        "mode": "manual",
+        "exits": [
+          "🇹🇼 台湾节点",
+          "🇺🇸 美国节点",
+          "🇯🇵 日本节点",
+          "⚡ 自动选择",
+          "🎯 手动选择"
+        ],
+        "reason": "Binance 出口依序提供台灣、美國、日本、自動選擇及手動選擇；選項順序不代表自動故障切換。",
+        "boundary": "business_to_exit_layer"
+      }
+    },
+    "packs": [
+      {
+        "source": "blackmatrix7",
+        "pack": "Binance",
+        "type": "rule_provider",
+        "target": "🪙 Binance",
+        "reason": "Route Binance domains through the dedicated Binance selector."
+      }
+    ]
+  }
+}
