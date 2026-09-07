@@ -69,49 +69,37 @@ Manifest shape:
 }
 ```
 
-Before pushing a release tag or dispatching a release, complete the
-[iStoreOS QEMU release test SOP](istoreos-release-test-sop.md) for the exact
-Core/LuCI candidate pair and review its evidence record. This is a manual
-functional gate: the current workflow does not run QEMU or verify that report.
-If candidate distribution is unavailable, acceptance is blocked; publishing
-first and testing the public release afterward does not satisfy this gate.
+Before pushing a release tag or dispatching a release, follow the
+[iStoreOS feature-based test SOP](istoreos-release-test-sop.md). Maintain each
+feature's last actual tested version, result, and evidence in the
+[feature table](istoreos-test-features.md). For the candidate Core/LuCI pair,
+execute affected tests and review the applicability of historical evidence for
+unchanged features. A release does not require every feature to be retested on
+the newest version. Missing evidence is resolved for the affected feature,
+not by automatically restarting the full suite.
+
+G99 reviews that combined coverage and remaining failures before publication.
+It remains a manual gate: the current workflow does not run QEMU or validate
+the feature table. When a selected test needs unpublished candidate assets,
+verify that distribution works through the real product entry point; publishing
+first does not substitute for that evidence.
 
 ### Agent execution responsibilities
 
-An independent Pi CLI reviewer using provider `kimi-coding`, model `k3-256k`
-(Kimi K3 256K), thinking `max`, decides change impact, required tests, prerequisites, execution
-order, and evidence reuse from a frozen factual review packet. Follow
-[SOP section 1.4](istoreos-release-test-sop.md#14-獨立-pi-clikimi-影響面審查與測試依賴計畫):
-fresh isolated runtime, no implementation conversation, no project/user config,
-all tools/resources disabled, no sharing. Use the CLI directly with streamed JSON,
-not a pi-ai SDK integration; safely reuse only the Kimi credential from Pi login.
-Preserve partial output on failure and validate terminal events before accepting a plan.
-Neither the primary agent nor Luna may replace
-this review or silently modify its test selection; missing data goes back to
-the reviewer, and changed inputs require an updated impact decision.
+Follow the [agent workflow](istoreos-test-agent-workflow.md): an isolated Pi CLI
+reviewer (`kimi-coding`, `k3-256k`, thinking `max`) selects tests, actual
+dependencies, and evidence reuse from the factual changes and feature history.
+The primary agent coordinates, audits raw evidence, and reviews G99; test and
+release execution is delegated to explicitly configured **Luna High** workers
+(`gpt-5.6-luna`, reasoning effort `high`). Reviewer readiness only permits test
+dispatch, not release approval. Preserve the review ID, packet hash, original
+response, execution identity, and evidence.
 
-For agent-driven releases, the primary agent coordinates the user-authorized
-scope, candidate identity, review packet, authorization, evidence review, and
-the G99 release decision; it does not decide test impact itself. Delegate
-release execution and test tasks to **Luna High** subagents with explicit
-`model: gpt-5.6-luna` and `reasoning_effort: high`. Tests are executed by the
-subagent, not merely planned by it and then run by the primary agent.
-
-Follow the canonical [SOP section 1.3](istoreos-release-test-sop.md#13-luna-high-子代理執行契約)
-for assignments, isolated resources, executor identity, evidence, and writeback.
-Use one worker by default; the primary agent may split independent work, but
-workers must not delegate recursively or concurrently mutate shared test state.
-If Luna High cannot run, report the execution gap; do not silently substitute
-another model or run the tests in the primary agent. Existing valid evidence
-can be reused after applicability review, with its original executor preserved.
-
-Tag pushes, release dispatches, and other public writes remain limited to the
-user's release authorization and require the primary agent's gate review before
-the execution worker proceeds. Targeted repair/testing still uses the SOP's
-targeted scope, not the full release matrix. These are agent responsibilities,
-not a claim that GitHub Actions automatically delegates to Luna High.
-Reviewer readiness authorizes test dispatch only, not publication. Retain the
-review ID, input hash, raw response, dependency plan, and execution results.
+Keep valid evidence under its original tested version and executor. Do not
+silently change reviewers/executors or convert a dependency failure into a
+requirement to run every feature. Tag pushes, release dispatches, and public
+announcements remain subject to the user's authorization and final gate review.
+These are agent responsibilities, not automatic GitHub Actions delegation.
 
 The release workflow is `.github/workflows/release.yml`. It runs the Go test
 suite first, then builds linux `amd64` and `arm64` binaries with:

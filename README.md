@@ -58,10 +58,13 @@ pull a newer localClash core through the LuCI "install/update core" flow.
 
 See [更新日誌](docs/changelog.md) for user-facing Core and LuCI release notes.
 
-Before publishing either channel, complete the single
-[iStoreOS QEMU release test SOP](docs/istoreos-release-test-sop.md) and review
-the candidate-bound evidence record. CI and package checks do not replace this
-functional gate; Docker OpenWrt acceptance is retired.
+Track each feature's last tested version, result, and evidence in the
+[feature test table](docs/istoreos-test-features.md). Follow the
+[iStoreOS test SOP](docs/istoreos-release-test-sop.md) to test affected features
+and reuse applicable historical evidence; releasing does not require rerunning
+the whole table. Review coverage for the candidate before publishing either
+channel. CI/package checks do not replace selected QEMU functional assertions;
+Docker OpenWrt acceptance is retired.
 
 ## Main Bootstrap
 

@@ -38,3 +38,8 @@ Recent commits use short imperative subjects such as `Add MCP config plan render
 ## Agent-Specific Instructions
 
 Use commands available directly in the current shell. For debugging, inspect logs, config state, diagnostics, or MCP responses before changing code. For browser automation, prefer the existing ARC CDP endpoint at `http://localhost:9222` after a quick availability check.
+
+For iStoreOS test planning or release acceptance, start with
+`docs/istoreos-test-features.md` and `docs/istoreos-release-test-sop.md`.
+Track each feature's last tested version and select tests by change impact;
+do not treat a release as an instruction to rerun the full feature table.
