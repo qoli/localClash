@@ -18,8 +18,26 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
-| localClash Core | [v0.1.82](https://github.com/qoli/localClash/releases/tag/v0.1.82) | 2026-09-06 UTC+8 |
+| localClash Core | [v0.1.83](https://github.com/qoli/localClash/releases/tag/v0.1.83) | 2026-09-08 UTC+8 |
 | localclash-luci | [v0.1.0-75](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-75) | 2026-09-04 UTC+8 |
+
+## 2026-09-08
+
+### localClash Core v0.1.83
+
+Changes:
+
+- 修正普通自訂網站已生成並載入 `DOMAIN-SUFFIX`，但 hot reload read-back 仍錯誤期待 `DOMAIN`，導致等待 10 秒後把成功載入誤判為失敗並回滾的問題。
+- read-back 現在與既有自訂網站契約一致：普通域名驗證 `DOMAIN-SUFFIX`，含 `*` 或 `?` 的規則仍驗證 `DOMAIN-WILDCARD`；真正的類型、順序或目標不一致仍會明確失敗。
+
+Release:
+
+[qoli/localClash v0.1.83](https://github.com/qoli/localClash/releases/tag/v0.1.83)
+
+Verification:
+
+- 完整 uncached Go 測試與自訂網站生成、read-back、重試及回滾契約測試通過；回歸測試另確認舊 `Domain` 類型不會被靜默接受。
+- 本版是針對 read-back 契約分裂的限定修復；未宣稱完整 iStoreOS 測試 SOP、QEMU、ARM64 runtime 或實體路由器驗收。
 
 ## 2026-09-06
 
