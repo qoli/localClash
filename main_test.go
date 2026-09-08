@@ -177,12 +177,18 @@ func TestVerifyCustomSitesRuntimeReadBackRequiresSemanticOrderAndGroups(t *testi
 	}}}
 	rules := mihomoapi.Response{JSON: map[string]any{"rules": []any{
 		map[string]any{"type": "DomainWildcard", "payload": "abc.*cdn.com", "proxy": customsites.ProxyPolicyGroup},
-		map[string]any{"type": "Domain", "payload": "abc.com", "proxy": customsites.DirectPolicyGroup},
+		map[string]any{"type": "DomainSuffix", "payload": "abc.com", "proxy": customsites.DirectPolicyGroup},
 	}}}
 	if err := verifyCustomSitesRuntimeReadBack(pair, rules, proxies); err != nil {
 		t.Fatal(err)
 	}
 	raw := rules.JSON.(map[string]any)["rules"].([]any)
+	plainRule := raw[1].(map[string]any)
+	plainRule["type"] = "Domain"
+	if err := verifyCustomSitesRuntimeReadBack(pair, rules, proxies); err == nil || !strings.Contains(err.Error(), "rule 2 mismatch") {
+		t.Fatalf("error = %v, want stale exact-domain type mismatch", err)
+	}
+	plainRule["type"] = "DomainSuffix"
 	raw[0], raw[1] = raw[1], raw[0]
 	if err := verifyCustomSitesRuntimeReadBack(pair, rules, proxies); err == nil || !strings.Contains(err.Error(), "rule 1 mismatch") {
 		t.Fatalf("error = %v, want semantic order mismatch", err)
@@ -206,7 +212,7 @@ func TestWaitForCustomSitesRuntimeReadBackRetriesStaleControllerState(t *testing
 	pair := customsites.EmptyPair()
 	pair.Direct.Entries = []customsites.Entry{{ID: "direct", Match: customsites.MatchFull, Pattern: "priority.test.invalid", Sequence: 1, AddedAt: "2026-08-29T00:00:00Z"}}
 	rules := mihomoapi.Response{JSON: map[string]any{"rules": []any{
-		map[string]any{"type": "Domain", "payload": "priority.test.invalid", "proxy": customsites.DirectPolicyGroup},
+		map[string]any{"type": "DomainSuffix", "payload": "priority.test.invalid", "proxy": customsites.DirectPolicyGroup},
 	}}}
 	staleProxies := mihomoapi.Response{JSON: map[string]any{"proxies": map[string]any{}}}
 	loadedProxies := mihomoapi.Response{JSON: map[string]any{"proxies": map[string]any{

@@ -819,7 +819,7 @@ func verifyCustomSitesRuntimeReadBack(pair customsites.Pair, rulesResponse, prox
 		return fmt.Errorf("Mihomo /rules custom site count %d does not match durable count %d", len(actual), len(expected))
 	}
 	for index, entry := range expected {
-		wantType := "Domain"
+		wantType := "DomainSuffix"
 		if entry.Match == customsites.MatchWildcard {
 			wantType = "DomainWildcard"
 		}
