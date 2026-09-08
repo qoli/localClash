@@ -37,6 +37,7 @@ Release:
 Verification:
 
 - 完整 uncached Go 測試與自訂網站生成、read-back、重試及回滾契約測試通過；回歸測試另確認舊 `Domain` 類型不會被靜默接受。
+- [Core Release workflow 34174877931](https://github.com/qoli/localClash/actions/runs/34174877931) 成功；7 項公開資產與三份 checksum 已重新下載校驗，manifest 及雙架構二進位版本均為 `v0.1.83`，binary 來源 revision 與 tag commit `811c44d` 一致。
 - 本版是針對 read-back 契約分裂的限定修復；未宣稱完整 iStoreOS 測試 SOP、QEMU、ARM64 runtime 或實體路由器驗收。
 
 ## 2026-09-06
