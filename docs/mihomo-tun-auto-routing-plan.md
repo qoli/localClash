@@ -419,8 +419,8 @@ advance.
 - [Mihomo API Hot Reload Development Plan](mihomo-api-hot-reload-plan.md)
   defines config-test and reload semantics. This plan overrides hot reload for
   takeover-owner transitions by requiring process restart.
-- [iStoreOS QEMU Release Test SOP](istoreos-release-test-sop.md) is the only
-  current functional release gate; this retired proposal does not override it.
+- [iStoreOS QEMU Release Test SOP](istoreos-release-test-sop.md) describes current
+  feature-based testing; this retired proposal does not override it.
 - [Router Incident Register](router-incident-register.md) records the fw4
   reload and local DNS regressions that this mode must not reintroduce.
 - [OpenWrt LuCI Support](openwrt-luci.md) defines the core/LuCI ownership

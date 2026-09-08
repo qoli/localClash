@@ -1,127 +1,145 @@
-# iStoreOS 功能測試追蹤表
+# iStoreOS 功能測試表
 
-這是持續維護的功能與歷史證據帳本。先找出變更影響的功能，再按
-[測試 SOP](istoreos-release-test-sop.md) 決定本輪實測、沿用或補讀證據。
-本表不是每輪排程，也不要求每個功能的最後實測版本與本輪候選相同。
+本表枚舉 **LocalClash 自己實作的完整產品能力**，用於按變更選測及追蹤最後實測版本。
+新增、修改、刪除、保存、套用是功能內的操作，不各建一列；CLI、MCP、LuCI 是入口，
+不因入口不同重複計算功能。測試目的是發布前找出功能串接問題，完成必要驗證與修復，不要求每次重跑全表。
 
-## 記錄與更新方式
+## 功能導航
 
-- 穩定 ID 表示功能契約；舊 A/B/K/F 等代號只索引
-  [案例參考](istoreos-test-cases.md)，不表示執行先後或阻擋關係。
-- 每個核心各自追蹤。欄內順序是「最後已核對實測 Core／LuCI 配對；結果；
-  已覆蓋範圍與證據」。`shared` 只用於未選核心的套件或純靜態 UI 檢查。
-- 一列可以列出同契約的 `variant`，例如策略同步開／關、元件種類或故障時機。
-  本輪計畫要寫明所選 variant 和斷言；結果不同時在欄內分列，或把穩定且常用的
-  子功能拆成新 ID。不能用某一子項的 PASS 表示整列所有變體均通過。
-- 實測才更新最後測試版本；`reuse` 只寫入本輪計畫及採納證據，不把舊版 PASS
-  改成本版 PASS。版本配對還須透過證據找到 commit 或產物 SHA、Mihomo
-  flavor/version/hash、環境、輸入、實際入口與時間。未發布版本可用 commit。
-- `PASS`、`FAIL`、`ERROR`、`NOT_RUN` 等 attempt 結果依 SOP 定義。
-  **「待核對」是歷史匯入狀態，不是測試結果，也不等於未測或必須重測。**
-  先補讀既有紀錄；只有變更影響或必要證據缺口才安排補測。
-- 最近實測失敗不能被較舊 PASS 遮蔽；保留兩者及 failure 的處置紀錄。環境
-  ERROR 或未執行的 attempt 不假造新的產品測試版本，也不刪除先前產品結果。
-  修復後的 PASS 必須連回失敗與修復身分，原始報告不可覆寫。
-- V1–V6 的 task、版本、材料、runtime、接管及網路是相關功能的取證要求，
-  不另建立六個「產品功能」。同一次操作可證明多個明確斷言，無須為填表重跑。
+| 找什麼 | 分區 | 功能 ID |
+| --- | --- | --- |
+| 來源、刷新、節點 | [訂閱管理](#subscriptions) | SUB-* |
+| 網站、規則包、群組 | [網站與路由設定](#sites) | SITE-*、RULE-*、PROXY-*、POLICY-* |
+| 模板、補丁、生成與套用 | [配置管理](#config) | CONFIG-* |
+| 核心選用、啟停 | [核心管理](#cores) | CORE-*、RUNTIME-* |
+| 核心及資源更新 | [元件更新](#updates) | COMPONENT-* |
+| 狀態、診斷、MCP | [狀態與診斷](#access) | STATUS-*、DIAG-*、MCP-* |
+| 初始化、資料與重置 | [工作區管理](#workspace) | WORKSPACE-* |
+| OpenWrt 安裝、任務與接管 | [LuCI 整合能力](#luci) | LUCI-* |
 
-## 安裝與純靜態介面
+<a id="scope"></a>
+## 責任與選測範圍
 
-| 功能 ID | 功能／可獨立選測斷言 | 核心範圍 | 案例索引 | 最後實測 Core／LuCI；結果；證據 |
-| --- | --- | --- | --- | --- |
-| PKG-INSTALL | iStore 真正斷 WAN 離線安裝；安裝後為未初始化狀態；同包重裝保留額外檔案、無半套檔案。variant：初裝／重裝 | shared | [G03](istoreos-test-cases.md) | 待核對 |
-| PKG-ARCH-REJECT | 不符架構的 bundle 明確拒絕，正式檔案摘要不變 | shared | [G03](istoreos-test-cases.md) | 待核對 |
-| PKG-INTEGRITY-REJECT | bundle 內部 checksum 不符時拒絕，正式檔案摘要不變 | shared | [G03](istoreos-test-cases.md) | 待核對 |
-| UI-STATIC | 現行頁面、文字、入口、狀態排版與錯誤展示可用；不含 runtime／長任務結果 | shared | [F10](istoreos-test-cases.md) | 待核對 |
+- **Core**：LocalClash 的資料、規則、配置及核心管理能力。對 Mihomo 保證正確核心、
+  配置生成與交付、驗證及正常啟動；不測其模型、選路演算法、協定實作或效能。
+- **LuCI**：另列 OpenWrt 包裝、UI 任務、更新編排、DNS 最佳化整合及網路接管。
+  接管可用受控請求證明整合生效，不展開為 TCP／UDP／IPv6 傳輸能力矩陣。
+- **共用**：選代表核心驗功能的完整操作。需要另一核心時，只補受影響配置／啟動介面；
+  不為每項預設 Meta／Smart 兩份結果。配置差異是 CONFIG-RENDER 的測試情境。
+- **按核心差異**：變更涉及 flavor、binary、配置驗證／啟動參數時，驗相應核心；
+  兩邊都受影響才測兩邊。表中實際測過哪個核心仍如實記錄。
 
-## 初始化、更新與資料保留
+## 記錄規則
 
-| 功能 ID | 功能／可獨立選測斷言 | 案例索引 | Meta：最後實測 Core／LuCI；結果；證據 | Smart：最後實測 Core／LuCI；結果；證據 |
-| --- | --- | --- | --- | --- |
-| INIT-POLICY | S1 從「开始初始化」完成選定核心、訂閱、策略、配置、runtime 與接管。variant：完整預設／minimal；乾淨安裝主線使用完整預設 | [A、F3、V/N](istoreos-test-cases.md) | v0.1.81／0.1.0-76；待核對（[E01](#e01) 有 A/Meta 延續證據，原始 UI 初始化鏈未完整匯入） | v0.1.81／0.1.0-76；待核對（[E02](#e02) 有 A/Smart 延續證據，原始 UI 初始化鏈未完整匯入） |
-| UPGRADE-EMPTY | 舊版未配置 S1 先升級 LuCI，再從新版 UI 初始化；不假造既有配置。variant：受支援舊版配對 | [C](istoreos-test-cases.md) | 待核對 | 待核對 |
-| UPDATE-REPEAT | 候選 S2 從 UI 一鍵更新並重跑同版本；軟體／材料檢查點可讀回，無降級、重複 runtime 或任務鎖 | [B、V](istoreos-test-cases.md) | v0.1.81／0.1.0-76；待核對（[E03](#e03) 兩次 rpcd/ubus 交易終態 PASS；UI 與完整斷言待核對） | v0.1.81／0.1.0-76；待核對（[E04](#e04) 兩次 rpcd/ubus 交易終態 PASS；有來源 warning，UI 與完整斷言待核對） |
-| UPGRADE-CONFIGURED | 舊版已配置 S2 升級候選 LuCI，再由新版 UI 一鍵更新；保留原核心及指定資料。variant：舊版配對／正常或已知故障起點 | [D](istoreos-test-cases.md) | 待核對 | 待核對 |
-| UPGRADE-HANDOFF | 從舊版 UI 升級，實際 helper/re-exec、Core/MCP 身分及兩個檢查點正確。variant：支援的直接／兩步升級、舊版配對 | [E](istoreos-test-cases.md) | 待核對 | 待核對 |
-| UPDATE-UNINITIALIZED | S1 一鍵更新只處理適用元件；無訂閱時材料明確跳過，不自行初始化／接管，之後可正式初始化 | [A–E 的 S1 更新分支](istoreos-test-cases.md) | 待核對 | 待核對 |
-| UPDATE-STOPPED | 已配置且使用者停止 runtime／接管後更新，不擅自重新開啟；明確手動恢復後正常 | [A–E 的 stopped-S2 分支](istoreos-test-cases.md) | 待核對 | 待核對 |
-| UPDATE-PRESERVATION | 更新保留訂閱、網站列表／順序、同步偏好、開機意圖、額外檔案與核心選擇；策略補丁依明示契約處理。variant：同步開／關、B/D/E | [資料保留矩陣](istoreos-test-cases.md) | 待核對 | 待核對 |
+最後版本依序為 **localClash Core／LuCI**；CLI／MCP 測試不涉及 LuCI 時記不適用。
+連結證據保留實際入口、核心版本／SHA、環境、時間、操作及結果。只驗了某個操作，
+就記具體範圍，不把局部成功擴成整項能力 PASS。沿用不更新最後實測版本。
+「待核對」表示歷史尚未完成匯入，不代表從未測試或必須立即重測。
 
-## 核心行為
+發現問題後修復並回驗即可；不要求每個 Bug 新增功能、建立認領任務或專用追蹤制度。
+自訂域名無法套用，應在「自訂網站分流」正常功能驗證中發現。
+下列內容是功能的驗證範圍；實際操作前核對受測版本的正式入口與契約。
 
-| 功能 ID | 功能／可獨立選測斷言 | 案例索引 | Meta：最後實測 Core／LuCI；結果；證據 | Smart：最後實測 Core／LuCI；結果；證據 |
-| --- | --- | --- | --- | --- |
-| CORE-CONFIG | 所選 flavor 與 profile、binary、PID executable、controller 相符；Meta `url-test`／Smart `smart` 及專用參數符合 intent | [K1、K2、F3](istoreos-test-cases.md) | 待核對 | 待核對 |
-| CORE-STARTUP | 首次與正常停止後啟動可完成 runtime／controller／接管及首個 LAN 請求；記錄耗時、CPU/RSS。variant：冷／暖，Smart 模型與統計起點 | [K3](istoreos-test-cases.md) | 待核對 | 待核對 |
-| CORE-STATE | 刷新、hot reload、process restart、同核心版本升級後狀態符合持久化／遷移契約；Smart 模型、統計、排名可重新載入 | [K5](istoreos-test-cases.md) | 待核對 | 待核對 |
-| CORE-VALIDATION | 活躍 runtime 期間由產品入口使用目標核心隔離驗證；不爭用 live DB、不破壞運行狀態 | [K5、V4](istoreos-test-cases.md) | 待核對 | 待核對 |
-| CORE-SELECTION | 兩個可識別節點下自動組實際選路正確；節點失敗與恢復有連線鏈／出口證據。variant：TCP／UDP、健康／故障／恢復 | [K6](istoreos-test-cases.md) | 待核對 | 待核對 |
-| CORE-PAIR-UPDATE | Meta/Smart binary 成對更新並保留活躍核心；候選驗證或第二檔替換失敗時按交易恢復，不能半新半舊假成功。variant：成功／Meta 候選失敗／Smart 候選失敗／第二檔替換失敗 | [K7](istoreos-test-cases.md) | 待核對 | 待核對 |
+<a id="subscriptions"></a>
+## 訂閱管理
 
-| 功能 ID | Smart 專屬功能／可獨立選測斷言 | 案例索引 | 最後實測 Core／LuCI；結果；證據 |
+| 功能 ID | 功能／驗證內容 | 責任／核心範圍 | 最後實測版本；結果；證據 |
 | --- | --- | --- | --- |
-| SMART-MODEL-LOAD | 有效模型有 SHA、正式 runtime 載入及可用證據；檔案存在或配置 `type: smart` 不足以通過 | [K4](istoreos-test-cases.md) | 待核對 |
-| SMART-MODEL-FAILURE | 模型缺失、損壞、下載失敗各有可定位終態；恢復來源後從正式入口重新載入。variant 分別記錄 | [K4](istoreos-test-cases.md) | 待核對 |
-| SMART-MODEL-UPDATE | 有效模型更新可載入；無效更新候選不得覆蓋有效模型。variant：有效／無效候選 | [K4](istoreos-test-cases.md) | 待核對 |
+| SUB-MANAGEMENT | **訂閱來源管理**：設定、修改及移除來源後能重新讀取；支援訂閱 URL 與節點 URI，非法／空白輸入按入口契約拒絕，原有效來源不被誤清空。[實作入口](../product_cli.go) | Core／共用 | 待核對 |
+| SUB-REFRESH | **訂閱取得與刷新**：取得並解析多來源、合併節點及重建已配置的服務能力篩選材料（如 ChatGPT 可用節點）；來源失敗如實呈現，有有效來源與全部無效的結果不同；失敗保留合法材料。保存來源與刷新生效分別讀回。[實作入口](../product_cli.go) | Core／共用 | 待核對 |
+| SUB-NODES | **節點查詢**：列出與搜尋已取得節點，名稱／類型與來源一致，不洩漏連線憑證；查詢結果不冒充節點品質或出口地理驗證。[實作入口](../internal/mcp/registry.go) | Core／共用 | 待核對 |
 
-## 訂閱、網站分流與一般入口
+<a id="sites"></a>
+## 網站與路由設定
 
-| 功能 ID | 功能／可獨立選測斷言 | 案例索引 | Meta：最後實測 Core／LuCI；結果；證據 | Smart：最後實測 Core／LuCI；結果；證據 |
-| --- | --- | --- | --- | --- |
-| SUB-EDIT | 多來源及單節點 URI 新增／修改／刪除、保存並應用及刷新後，來源歸屬、合併材料、重新開頁讀回正確 | [F1](istoreos-test-cases.md) | 待核對 | 待核對 |
-| SUB-INVALID | 空白／結構非法訂閱明確拒絕，原合法保存狀態不被清空 | [F1](istoreos-test-cases.md) | 待核對 | 待核對 |
-| SUB-PARTIAL-FAILURE | 已配置來源抓取／解析及來源 cache 均失敗，但另有有效來源時，failed/warning 可見並跳過，只提交健康來源材料。variant：保存刷新／更新材料階段 | [F1、X2 partial-success](istoreos-test-cases.md) | 待核對 | 待核對 |
-| SUB-ALL-FAILURE | 全部來源無效則明確失敗、保留 joined causes 與舊合併材料；不破壞已完成軟體檢查點，修正後重試可成功 | [F1、X2 all-invalid](istoreos-test-cases.md) | 待核對 | 待核對 |
-| SUB-LARGE | 完整大樣本超過歷史 240 秒邊界時進度／heartbeat 持續，正常完成；無進度時可觀測且有界處置 | [F2](istoreos-test-cases.md) | 待核對 | 待核對 |
-| SITE-ROUTING | 新增／刪除直連與代理域名、子域及 wildcard；同域衝突依最新成功規則，刪除後恢復前項，實際命中與出口正確 | [F4](istoreos-test-cases.md) | 待核對 | 待核對 |
-| SITE-INVALID | 非法 pattern 明確拒絕，既有網站分流資料及已載入規則不被破壞 | [F4](istoreos-test-cases.md) | 待核對 | 待核對 |
-| RUNTIME-LIFECYCLE | 從現行入口啟動／重啟／停止；狀態及實際 PID／服務相符，停止不留 runtime 或 owned 接管殘留 | [F5](istoreos-test-cases.md) | 待核對 | 待核對 |
-| TAKEOVER-INDEPENDENT | runtime 運行時獨立停止／套用接管；UI 分開表達 runtime 與接管，僅處理 localClash owned 資產 | [F5](istoreos-test-cases.md) | 待核對 | 待核對 |
-| DASHBOARD-USE | LuCI 打開 Dashboard，認證／資源／API 可用；專用測試組選擇生效，實際請求及出口符合選擇 | [F6](istoreos-test-cases.md) | 待核對 | 待核對 |
-| MCP-CONNECT | 從頁面接入資訊完成 initialize、tools/list、environment_inspect 與路由唯讀查詢，guest 身分與 LuCI/controller 一致 | [F7](istoreos-test-cases.md) | 待核對 | 待核對 |
-| DNS-OPTIMIZATION | dnsqualify 狀態與量測如實顯示；合格環境套用及明確重啟後正常，刪除回加密 DNS 基線，LAN 名稱仍可用 | [F8](istoreos-test-cases.md) | 待核對 | 待核對 |
-| DNS-IDENTITY-REJECT | 量測期間 WAN device identity 改變時明確拒絕提交，保留既有有效配置 | [F8](istoreos-test-cases.md) | 待核對 | 待核對 |
-| DNS-HEALTH-LEASE | DNS 接管初始保留 WAN/dnsmasq 基線，TCP/UDP 探測健康才續租；探測失敗或 guard／Mihomo 退出後租約自行到期恢復基線，舊 generation／已停止接管不得再續租。variant：健康／探測失敗／程序退出／generation 更換／明確停止 | [F5、N3、R4/R5；現行 DNS guard 契約](istoreos-test-cases.md) | 待核對（既有報告有 lease_active；未匯入失效／自行恢復實測） | 待核對（既有報告有 lease_active；未匯入失效／自行恢復實測） |
-| COMPONENT-MAINTENANCE | 從可見維護入口更新並核對實際版本／SHA，之後仍可初始化／更新。variant：LuCI／Core／Mihomo／Dashboard | [F9](istoreos-test-cases.md) | 待核對 | 待核對 |
-| MCP-SERVICE | MCP 服務停止／啟動與實際 procd、listener、協定連線一致，無孤兒服務或假健康 | [F9](istoreos-test-cases.md) | 待核對 | 待核對 |
-| UI-TASK | 長任務日誌、互斥寫入／重複點擊、重新載入後找回原任務及終態，無無限 busy 或未處理錯誤 | [F10](istoreos-test-cases.md) | 待核對 | 待核對 |
+| 功能 ID | 功能／驗證內容 | 責任／核心範圍 | 最後實測版本；結果；證據 |
+| --- | --- | --- | --- |
+| SITE-ROUTING | **自訂網站分流**：新增、刪除普通域名與萬用字元，設定直連／代理並重新開頁；保存、生成規則、熱載入及 controller 讀回一致；合法 DomainSuffix 不被誤判回滾。另驗衝突順序及非法輸入不破壞既有設定。[實作入口](../internal/customsitesapply/transaction.go) | Core；LuCI 提供頁面／共用 | 待核對 |
+| RULE-PACKS | **規則包查詢與材料取得**：搜尋目錄、查看指定規則包、預取及查詢其規則；來源／類型／快取缺口如實顯示，目錄建議出口不當成已啟用設定。[實作入口](../internal/mcp/registry.go) | Core／共用 | 待核對 |
+| RULE-CUSTOM | **自訂規則與外部規則來源**：建立域名、CIDR、GEOIP 規則及外部 rule-provider 設定，經配置補丁保存並生成；拒絕非法值或無效引用，順序與目標正確。[實作入口](../internal/mcp/registry.go) | Core／共用 | 待核對 |
+| PROXY-GROUPS | **代理群組設定**：由精確節點或 selector 建立群組，經補丁保存／修改／移除；查詢解析結果及生成成員正確，builder 預覽不冒充已保存或已載入。[實作入口](../internal/mcp/registry.go) | Core／共用 | 待核對 |
+| POLICY-GROUPS | **業務策略群組設定**：把網站／應用／規則包對應到現有出口，經補丁保存及生成；引用與優先順序正確，不意外改動其他群組；不驗 Mihomo 自動選路品質。[實作入口](../internal/mcp/registry.go) | Core／共用 | 待核對 |
 
-## 網路功能
+<a id="config"></a>
+## 配置管理
 
-| 功能 ID | 功能／可獨立選測斷言 | 案例索引 | Meta：最後實測 Core／LuCI；結果；證據 | Smart：最後實測 Core／LuCI；結果；證據 |
-| --- | --- | --- | --- | --- |
-| NET-DIRECT | 真實 LAN client 經受測轉送路徑到受控 DIRECT 端點，身分及 payload 正確。variant：HTTP／TCP echo | [N1](istoreos-test-cases.md) | v0.1.81／0.1.0-76；待核對（[E03](#e03) 更新後 HTTP 3 次 200／72 bytes，完整路徑與 payload 斷言待核對） | v0.1.81／0.1.0-76；待核對（[E04](#e04) 第二次更新後 HTTP 3 次 72 bytes，完整路徑與 payload 斷言待核對） |
-| NET-PROXY | 真實 LAN client 由 localClash 規則選到可識別代理鏈，代理／端點能辨別出口；不以顯式 HTTP_PROXY 直連代理代替透明接管 | [N2](istoreos-test-cases.md) | v0.1.81／0.1.0-76；待核對（[E03](#e03) 顯式 CONNECT A/B 子項通過；透明策略選路證據待核對） | v0.1.81／0.1.0-76；待核對（[E04](#e04) 報告有 CONNECT A/B 子項；透明策略選路證據待核對） |
-| NET-DNS-LAN | router／受控 DNS 查詢與答案、正向本地域名／DHCP 名稱與 LAN 服務符合設定；接管與 local bypass 分別正確 | [N3](istoreos-test-cases.md) | v0.1.81／0.1.0-76；待核對（[E03](#e03) 有公網解析、未宣告名稱 NXDOMAIN；正向本地解析／bypass 待核對） | v0.1.81／0.1.0-76；待核對（[E04](#e04) 有公網解析與 NXDOMAIN；正向本地解析／bypass 待核對） |
-| NET-UDP-DIRECT | IPv4 LAN client 向受控 WAN UDP 端點發唯一 payload，應用層回應完全符合預先指定格式與 payload，路由/TUN、出入封包及 DIRECT 意圖相符 | [N4 DIRECT](istoreos-test-cases.md) | v0.1.81／0.1.0-76；PASS（2026-09-08，更新後 DIRECT echo；[E03](#e03)，controller 保存為計數，非完整 connection object） | v0.1.81／0.1.0-76；PASS（2026-09-08，第二次更新後 DIRECT echo；[E04](#e04)，controller 保存為計數，非完整 connection object） |
-| NET-UDP-PROXY | 具 UDP 代理能力的節點下，唯一 LAN UDP payload 經預期代理鏈並有應用層回應；不沿用 DIRECT 或 TCP 結果 | [N4 代理意圖、K6](istoreos-test-cases.md) | 待核對 | 待核對 |
-| NET-IPV6 | 宣稱支援且有已驗證 IPv6 路徑時，直連／代理／DNS／UDP 的捕獲與出口正確。variant 明列協定；不適用須附環境／契約理由 | [N5](istoreos-test-cases.md) | 待核對 | 待核對 |
-| NET-CONTINUITY | 初始化、兩個更新檢查點、重啟／停止／恢復期間持續探測；準備不提前破壞舊鏈、切換後無持續黑洞，中斷有量測 | [N6](istoreos-test-cases.md) | 待核對 | 待核對 |
+| 功能 ID | 功能／驗證內容 | 責任／核心範圍 | 最後實測版本；結果；證據 |
+| --- | --- | --- | --- |
+| CONFIG-TEMPLATE | **策略模板設定**：選取完整預設或 minimal 模板、配置 profile，產生相應補丁及 intent；重設模板只依明示選項處理既有補丁，不默默覆蓋自訂設定。[實作入口](../product_cli.go) | Core／共用 | 待核對 |
+| CONFIG-PATCHES | **配置補丁管理**：讀取、預覽、套用、移除、啟停及排序補丁；預覽不落盤，套用後 registry／intent 一致，失效草稿或非法引用明確拒絕。[實作入口](../product_cli.go) | Core／共用 | 待核對 |
+| CONFIG-RENDER | **Mihomo 配置生成**：由訂閱、模板、補丁與 profile 生成正確配置。Meta 自動組為 url-test，Smart 為 smart 並移除 tolerance；Smart 參數、群組 priority 與 defaults 按 intent 傳遞且不覆蓋既有值；生成不等於已載入。[實作入口](../product_cli.go) | Core／按核心差異 | 待核對 |
+| CONFIG-VALIDATION | **配置驗證**：用所選核心驗證生成配置，記錄對應 hash；非法配置不取得通過證明；驗證與活躍程序隔離，不爭用工作目錄。[實作入口](../product_cli.go) | Core／按核心差異 | 待核對 |
+| CONFIG-APPLY | **配置套用**：按所選入口核對候選檔提交或 runtime 載入；config-promote 是其中一個檔案提交入口，不是所有流程的前置。驗證 hash、實際載入規則／組及失敗結果符合契約，提交檔案不當成已熱載入，生成檔存在不當成已生效。[實作入口](../product_cli.go) | Core／按核心差異 | 待核對 |
 
-## 開機、事件與恢復
+<a id="cores"></a>
+## 核心管理
 
-| 功能 ID | 功能／可獨立選測斷言 | 案例索引 | Meta：最後實測 Core／LuCI；結果；證據 | Smart：最後實測 Core／LuCI；結果；證據 |
-| --- | --- | --- | --- | --- |
-| RESTORE-BOOT | UI 開機恢復意圖在真正 reboot 後生效，boot ID 改變；關閉時不自啟，手動啟動可恢復。variant：開／關 | [R1、R2](istoreos-test-cases.md) | 待核對 | 待核對 |
-| RESTORE-WAN | 測試 guest WAN ifdown/ifup／ifupdate 後按 same-boot 接管意圖恢復，真實網路可用 | [R3](istoreos-test-cases.md) | 待核對 | 待核對 |
-| RESTORE-EXPLICIT-STOP | 使用者明確停止接管後，WAN 事件與背景恢復窗口不能擅自重開；手動恢復成功 | [R4](istoreos-test-cases.md) | 待核對 | 待核對 |
-| RESTORE-CRASH | managed 程序非預期退出後 watchdog／任務／接管狀態如實；支援恢復路徑成功。variant：空閒／更新期間 | [R5](istoreos-test-cases.md) | 待核對 | 待核對 |
-| RESTORE-REPEAT | 三輪 runtime／接管開始、重啟、停止、恢復後無規則、路由、PID、鎖、暫存資產累積，最後網路正常 | [R6](istoreos-test-cases.md) | 待核對 | 待核對 |
+| 功能 ID | 功能／驗證內容 | 責任／核心範圍 | 最後實測版本；結果；證據 |
+| --- | --- | --- | --- |
+| CORE-PROFILE | **核心與運行 profile 設定**：選用正確 flavor、binary、profile 及啟動參數；設定與實際程序／controller 身分一致。LuCI 的核心選擇由初始化入口提供，不虛構運行中切換按鈕。[實作入口](../product_cli.go) | Core／按核心差異 | 待核對 |
+| RUNTIME-MANAGEMENT | **核心生命週期管理**：啟動、停止、程序重啟及必要的重複操作結果正確；配置路徑、workdir、PID／controller 與狀態一致，啟動失敗有終態，不影響非受管程序。[實作入口](../product_cli.go) | Core／按核心差異 | 待核對 |
 
-## 故障、取消與重置
+<a id="updates"></a>
+## 元件更新
 
-| 功能 ID | 功能／可獨立選測斷言 | 案例索引 | Meta：最後實測 Core／LuCI；結果；證據 | Smart：最後實測 Core／LuCI；結果；證據 |
-| --- | --- | --- | --- | --- |
-| FAULT-DOWNLOAD-RETRY | 來源短暫失聯按既有次數／逾時恢復；持續失聯明確失敗，恢復來源後正常更新。variant：短暫／持續 | [X1](istoreos-test-cases.md) | 待核對 | 待核對 |
-| FAULT-DOWNLOAD-INTEGRITY | 空檔或 checksum 錯誤不得安裝、不得假成功；保留既有有效檔案，修正來源後重試成功。variant：空檔／checksum | [X1](istoreos-test-cases.md) | 待核對 | 待核對 |
-| FAULT-CONFIG-REJECT | 非法材料由目標核心驗證拒絕，不提交半套配置；前後材料摘要／載入狀態可核對，修正後成功 | [X3 配置驗證](istoreos-test-cases.md) | 待核對 | 待核對 |
-| FAULT-RELOAD | 驗證後 controller 不可達時 hot reload 明確失敗，不假報已載入；合法檢查點及恢復重試正確 | [X3 熱載入](istoreos-test-cases.md) | 待核對 | 待核對 |
-| FAULT-INSTALL-START | 資源不足／listener 占用等安裝或啟動失敗可定位，不盲目重啟；解除注入後正式修復路徑成功。variant：安裝／啟動 | [X4](istoreos-test-cases.md) | 待核對 | 待核對 |
-| TASK-CANCEL | 初始化／一鍵更新的準備／材料階段取消，有終態、釋放鎖、停止子程序，合法檢查點保留，無延遲 worker 覆寫；再啟可成功 | [X5](istoreos-test-cases.md) | 待核對 | 待核對 |
-| TASK-INTERRUPTION | UI/RPC 連線中斷或套件 re-exec 後仍可找回同一任務終態，不重複交易；helper/MCP 身分正確 | [X6](istoreos-test-cases.md) | 待核對 | 待核對 |
-| UPGRADE-POLICY-REJECT | 支援遷移範圍內的已移除／不相容舊策略，在關同步更新時明確拒絕且資料可恢復；開同步後升級成功 | [X7](istoreos-test-cases.md) | 待核對 | 待核對 |
-| RESET-WORKSPACE | 先停止 runtime／接管，再由完整 workspace reset 確認範圍並刪除；不接受任意路徑、不刪 workspace 外的 Core／LuCI，不留 owned 接管 | [Z](istoreos-test-cases.md) | 待核對 | 待核對 |
-| RESET-REINITIALIZE | reset 後 UI 真實未初始化，可按原核心重新初始化並恢復網路；Smart 應刪除的模型／統計以冷態重驗 | [Z、K3/K4](istoreos-test-cases.md) | 待核對 | 待核對 |
+| 功能 ID | 功能／驗證內容 | 責任／核心範圍 | 最後實測版本；結果；證據 |
+| --- | --- | --- | --- |
+| COMPONENT-MIHOMO | **Mihomo 核心取得與更新**：依平台／架構取得選定來源的兩份核心，核對版本／SHA；成對更新與失敗恢復一致，preflight 使用活躍核心，更新後保留選擇並正常啟動。[實作入口](../product_mihomo_update.go) | Core／共用交易，按核心差異驗啟動 | 待核對 |
+| COMPONENT-ASSETS | **基礎資源更新**：取得並安裝基礎資源，版本／完整性正確；更新失敗不假報完成，之後配置生成可使用實際安裝的資源。[實作入口](../product_cli.go) | Core／共用 | 待核對 |
+| COMPONENT-DASHBOARD | **Dashboard 資源管理**：取得、更新及提供面板資源，檔案／入口與 controller 連接設定一致；能開啟面板，不驗 Dashboard 自身全部功能。[實作入口](../product_cli.go) | Core；LuCI 提供連結／共用 | 待核對 |
+
+<a id="access"></a>
+## 狀態與診斷
+
+| 功能 ID | 功能／驗證內容 | 責任／核心範圍 | 最後實測版本；結果；證據 |
+| --- | --- | --- | --- |
+| STATUS-INSPECT | **產品狀態查詢**：查配置、元件、訂閱及 runtime facts，未初始化／停止／運行／錯誤狀態與實際資料一致；唯讀不改狀態，版本化 facts 不把宿主接管當 Core 所有。[實作入口](../internal/mcp/registry.go) | Core／共用 | 待核對 |
+| DIAG-ROUTING | **路由設定解釋**：按域名、服務或出口查詢編譯 intent 的規則、群組及來源；能對照自訂網站及補丁變更，不把 intent 解釋當活躍流量證據。[實作入口](../internal/mcp/registry.go) | Core／共用 | 待核對 |
+| DIAG-HEALTH | **診斷與日誌取得**：執行 doctor／環境檢查、收集產品日誌及讀取受限 controller 日誌／連線；診斷可定位問題、讀取有界且不洩漏秘密，不由缺少連線推論未來路由。[實作入口](../internal/mcp/registry.go) | Core／共用 | 待核對 |
+| MCP-SERVICE | **MCP 服務與工具存取**：連接正確服務並完成協定初始化、工具發現與呼叫；工具結果／錯誤／權限符合入口契約。檔案讀改與 controller 存取受限定，不把 MCP 當任意路徑或任意 URL 代理。[實作入口](../internal/mcp/registry.go) | Core；LuCI 管理 procd／共用 | 待核對 |
+
+<a id="workspace"></a>
+## 工作區管理
+
+| 功能 ID | 功能／驗證內容 | 責任／核心範圍 | 最後實測版本；結果；證據 |
+| --- | --- | --- | --- |
+| WORKSPACE-INIT | **工作區初始化**：由配置／apply 正式入口建立所需來源、profile、策略及材料；已有狀態按宣告操作，不擅自清空。LuCI 引導與接管編排另列 LUCI-INIT。[實作入口](../product_cli.go) | Core／共用，涉及核心時按差異 | 待核對 |
+| WORKSPACE-RESET | **工作區重置**：預覽及正式重置的範圍一致，普通／完整重置依契約清理；不刪除範圍外檔案或非受管程序，之後可重新初始化。[實作入口](../product_cli.go) | Core／共用 | 待核對 |
+
+<a id="luci"></a>
+## LuCI 整合能力（另列歸屬）
+
+| 功能 ID | 功能／驗證內容 | 責任／核心範圍 | 最後實測版本；結果；證據 |
+| --- | --- | --- | --- |
+| LUCI-INSTALL | **OpenWrt 安裝與版本管理**：離線包安裝、重裝、LuCI／Core 安裝更新及支援的舊版交接正常；架構／完整性錯誤拒絕，應保留資料不丟失。Core 自我更新未實作，實際由 helper 管理。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI／共用 | 待核對 |
+| LUCI-INIT | **初始化引導**：由頁面提供訂閱、模板及核心，完成 Core 呼叫、配置、啟動及接管；重新開頁顯示真實狀態，失敗可定位。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI 編排＋Core／按影響 | v0.1.81／0.1.0-76；部分證據、完整交互待核對；Meta [E01](#e01)／Smart [E02](#e02) |
+| LUCI-UPDATE | **一鍵更新與資料保留**：從頁面更新，兩個檢查點、來源版本及結果可讀回；重跑／舊版升級保持訂閱、網站順序、偏好及核心選擇；原本停止或未初始化的狀態不擅自啟動。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI 編排＋Core／按影響 | v0.1.81／0.1.0-76；更新交易部分證據、完整交互待核對；Meta [E03](#e03)／Smart [E04](#e04) |
+| LUCI-TASKS | **介面與長任務交互**：訂閱、網站、初始化及更新頁面操作與後端一致；日誌、取消、互斥、重新連接與終態可用，無重複交易／無限 busy；依各操作是否支援取消驗證。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI／共用 | 待核對 |
+| LUCI-DNS | **DNS 最佳化設定整合**：查詢、量測、套用及移除 dnsqualify 結果；資格／WAN 身分不符明確拒絕，傳入配置正確，移除後恢復基線。不評比外部解析器或驗 dnsqualify 演算法。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI 編排＋Core 配置／共用 | 待核對 |
+| LUCI-TAKEOVER | **OpenWrt 網路接管**：套用及停止本產品的防火牆、策略路由、DNS 接管，保留非本產品規則；使用受控請求驗設定／接管整合，停止後恢復基線。不是傳輸協定能力矩陣。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI／共用 | 待核對 |
+| LUCI-RESTORE | **接管及服務恢復**：開機恢復偏好、WAN 事件、受管程序退出與 DNS 健康租約，按意圖恢復或撤回接管；明確停止後不自行重開。只驗 LuCI 恢復與 Core 正常啟動。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI＋Core 生命週期／共用 | 待核對 |
+
+## 舊記錄的保留方式
+
+舊表中的操作／故障子項歸入相應完整能力，其證據只能支持原本測過的部分。
+
+| 舊條目 | 現行功能／處理 |
+| --- | --- |
+| SUB-EDIT、SUB-INVALID | SUB-MANAGEMENT |
+| SUB-PARTIAL-FAILURE、SUB-ALL-FAILURE、SUB-LARGE | SUB-REFRESH |
+| SITE-ROUTING、SITE-INVALID | SITE-ROUTING；一般域名操作是正常功能內容，不新增逐 Bug 任務 |
+| INIT-POLICY、UPDATE-REPEAT | LUCI-INIT、LUCI-UPDATE；只保留原版本與部分證據 |
+| CORE-CONFIG | CORE-PROFILE、CONFIG-RENDER、CONFIG-VALIDATION、CONFIG-APPLY 的相關情境 |
+| CORE-STARTUP、RUNTIME-LIFECYCLE、CORE-VALIDATION、CORE-PAIR-UPDATE | RUNTIME-MANAGEMENT、CONFIG-VALIDATION、COMPONENT-MIHOMO |
+| NET-DIRECT、NET-PROXY、NET-DNS-LAN、NET-UDP-DIRECT | 保留 E03／E04 的原始觀測；不把局部網路結果改成 LUCI-TAKEOVER 整項 PASS |
+| NET-UDP-PROXY、NET-IPV6、NET-CONTINUITY | 需要時作 LUCI-TAKEOVER／UPDATE 的整合取證，不再列核心傳輸能力功能 |
+| 其他安裝、更新、任務、恢復及故障條目 | 按本輪變更選擇相應完整能力中的正常／失敗操作；舊 ID 與結果在原報告保留，不直接轉移整項 PASS |
+| 舊 CORE-SELECTION、CORE-STATE 及 Mihomo 模型／演算法／內部狀態條目 | 退出產品驗收範圍，歷史報告保留 |
+
+歷史 NET-UDP-DIRECT：2026-09-08、Core v0.1.81／LuCI 0.1.0-76，
+Meta [E03](#e03)／Smart [E04](#e04) 的 IPv4 DIRECT echo 子項 PASS；controller 只有計數而非完整 connection object。
+這項結果僅證明該次子項；
+整理功能表不會把它改成新版本測試或另一功能的完整通過。
 
 ## 首次匯入的證據範圍（2026-09-08）
 

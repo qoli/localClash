@@ -12,8 +12,8 @@ facts. The LuCI repository owns the OpenWrt package and the complete router
 takeover module, including fw4/nft/policy-routing/DNS-hijack state, ownership
 markers, boot/hotplug reconciliation, and runtime/takeover transactions.
 
-The single functional release gate for both repositories is the
-[iStoreOS QEMU release test SOP](istoreos-release-test-sop.md). It owns the
-environment, clean/upgrade baselines, task chain, evidence, and release decision.
-Docker OpenWrt acceptance is retired; physical-router testing is not required
-by this gate and must not be inferred from QEMU results.
+Use the [feature table](istoreos-test-features.md) to select affected functions
+and retain tested-version evidence. The [test SOP](istoreos-release-test-sop.md)
+describes the shared execution steps and release-risk summary. QEMU interaction
+tests cover the selected functions; Docker acceptance is retired, and QEMU
+results do not imply physical-router acceptance.
