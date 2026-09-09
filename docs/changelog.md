@@ -18,8 +18,28 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
-| localClash Core | [v0.1.83](https://github.com/qoli/localClash/releases/tag/v0.1.83) | 2026-09-08 UTC+8 |
+| localClash Core | [v0.1.84](https://github.com/qoli/localClash/releases/tag/v0.1.84) | 2026-09-09 UTC+8 |
 | localclash-luci | [v0.1.0-75](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-75) | 2026-09-04 UTC+8 |
+
+## 2026-09-09
+
+### localClash Core v0.1.84
+
+Changes:
+
+- Dashboard 更新最多嘗試 5 個下載來源；全部失敗時把 Dashboard 視為可選元件，回傳明確的 skip／warning，desired-state 流程可繼續處理核心配置。
+- 新 Dashboard archive 先在 staging 目錄解壓及驗證，再原子替換現有資源；下載、解壓或完整性失敗不再清空可用的 zashboard。
+- 取消或無效 archive 等非「上游暫時不可用」錯誤仍會明確失敗，不會被 optional skip 隱藏。
+
+Release:
+
+[qoli/localClash v0.1.84](https://github.com/qoli/localClash/releases/tag/v0.1.84)
+
+Verification:
+
+- `go test ./...`、`go vet ./...` 與 Dashboard 原子替換、失敗保留、5 次上限及可見 skip 回歸測試通過。
+- iStoreOS `24.10.8-2026073111` x86_64 QEMU 重新驗證有效 archive 更新、component status、`external-ui`、controller `/ui/`，以及 5 次下載失敗後原 index hash 保留；證據記錄於功能表 E07。
+- 受控 Dashboard archive 只驗證產品下載／更新編排；不代表本輪驗證上游公開 Release 可用性。未執行 ARM64 runtime 或正式路由器驗收。
 
 ## 2026-09-08
 
