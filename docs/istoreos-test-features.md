@@ -117,8 +117,8 @@
 | LUCI-UPDATE | **一鍵更新與資料保留**：從頁面更新，兩個檢查點、來源版本及結果可讀回；重跑／舊版升級保持訂閱、網站順序、偏好及核心選擇；原本停止或未初始化的狀態不擅自啟動。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI 編排＋Core／按影響 | v0.1.83／0.1.0-76；PASS；UI／受控 76→77、重跑、software／material checkpoints、資料／選擇保留、停止／未初始化不自啟及 76 恢復 [E05](#e05) |
 | LUCI-TASKS | **介面與長任務交互**：訂閱、網站、初始化及更新頁面操作與後端一致；日誌、取消、互斥、重新連接與終態可用，無重複交易／無限 busy；依各操作是否支援取消驗證。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI／共用 | v0.1.83／0.1.0-76；PASS；訂閱／網站／初始化／更新頁、日誌、代表性取消／互斥、同 task id reload／reopen 及終態恢復 [E05](#e05) |
 | LUCI-DNS | **DNS 最佳化設定整合**：從正式入口完成查詢、真實量測、合格結果套用及移除；資格／WAN 身分不符明確拒絕，套用後由獨立 client 驗證實際 DNS 行為，移除後恢復基線。不評比外部解析器或驗 dnsqualify 演算法。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI 編排＋Core 配置／共用 | v0.1.83／0.1.0-76；PARTIAL；真實量測只取得無合格結果；正向套用使用受控 producer 且沒有 client DNS oracle；WAN eth0→eth9 拒絕及 hash rollback 通過 [E05](#e05) [E09](#e09) |
-| LUCI-TAKEOVER | **OpenWrt 網路接管**：從正式入口套用及停止防火牆、策略路由與 DNS 接管；獨立 LAN client 的實際 TCP／UDP／DNS 請求按配置到達受控 WAN endpoint，停止後恢復原資料面，且非本產品規則保留。內部 effective、規則或 lease 只能解釋結果。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI／共用 | localClash fixture `43204c3`／LuCI v0.1.0-78 source `51b323b`（QEMU 候選 IPK `e52abad`）；PASS（影響範圍回驗）；沿用 E05 非 DNS 資料面，新增正式 v77 apply、`noresolv` 明確 WAN baseline、真 LAN UDP／TCP DNS、生命週期續租及 stop [E05](#e05) [E10](#e10) |
-| LUCI-RESTORE | **接管及服務恢復**：開機、WAN 事件、受管程序退出及依賴故障後，按使用者意圖恢復或撤回接管；每次轉移後由獨立 client 重跑相同資料面 oracle，明確停止後不自行重開。內部狀態與 lease 不代表服務可用。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI＋Core 生命週期／共用 | localClash fixture `43204c3`／LuCI v0.1.0-78 source `51b323b`（QEMU 候選 IPK `e52abad`）；PARTIAL；進程退出由 supervision 以新 PID 恢復、lease 重續，明確 stop 撤回接管且 WAN DNS 可用；未把進程保持退出至 lease 到期後的 LAN oracle 補成 PASS [E05](#e05) [E10](#e10) |
+| LUCI-TAKEOVER | **OpenWrt 網路接管**：從正式入口套用及停止防火牆、策略路由與 DNS 接管；獨立 LAN client 的實際 TCP／UDP／DNS 請求按配置到達受控 WAN endpoint，停止後恢復原資料面，且非本產品規則保留。內部 effective、規則或 lease 只能解釋結果。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI／共用 | Core `8d573f3`／LuCI v0.1.0-79 source `005f59e`（QEMU 候選 IPK `a150ece`）；PASS（影響範圍回驗）；沿用 E05 非 DNS 資料面，新增 ingress lease active／到期後 router 與獨立 LAN UDP／TCP DNS、router-DNS bypass、狀態及 stop [E05](#e05) [E11](#e11) |
+| LUCI-RESTORE | **接管及服務恢復**：開機、WAN 事件、受管程序退出及依賴故障後，按使用者意圖恢復或撤回接管；每次轉移後由獨立 client 重跑相同資料面 oracle，明確停止後不自行重開。內部狀態與 lease 不代表服務可用。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI＋Core 生命週期／共用 | Core `8d573f3`／LuCI v0.1.0-79 source `005f59e`（QEMU 候選 IPK `a150ece`）；PASS（影響範圍回驗）；沿用 E05 開機／WAN 轉移，新增 guard 或 Mihomo 停止後無 userspace cleanup 的 lease 到期、獨立 LAN UDP／TCP dnsmasq fallback、重新授租及明確 stop [E05](#e05) [E11](#e11) |
 
 ## 舊記錄的保留方式
 
@@ -359,3 +359,26 @@ x86_64 QEMU 重現及界定 DNS 問題，再以 base commit `66d6cc8` 加本輪�
   公開發佈；Main CI `34348679841` 與 Release workflow `34348964548` 成功，13 項公開資產、
   六份 checksum 與兩架構 `.run` 靜態／完整性／解包檢查通過。公開 v78 IPK 未另行安裝到
   QEMU 或正式路由器，因此不把資產驗證寫成新增的 runtime 功能證據。
+
+<a id="e11"></a>
+### E11
+
+2026-09-09 以 Core `8d573f3`、LuCI v0.1.0-79 source `005f59e` 建立候選 IPK
+`a150ece03b7ae7b94b88b1661c60370c9a2c02cc83330ce9cc12074fcb14964d`，在可拋棄
+iStoreOS `24.10.8-2026073111` x86_64 QEMU 對 ingress dead-man DNS lease 做影響範圍回驗。
+完整報告見 [ingress dead-man DNS 回驗](../.runtime/istoreos-acceptance/20260909-ingress-deadman-210514/report.md)。
+
+- dnsmasq 使用 `noresolv=1` 與明確 catch-all WAN server；隔離 WAN namespace 先獨立證明
+  UDP／TCP DNS 都可回答。lease active 時，router localhost 與獨立 LAN client 的硬編碼外部
+  DNS UDP／TCP 查詢均取得 Mihomo 回應並命中 `:7874` counter；對 router DNS 地址的 LAN 查詢
+  保持 dnsmasq bypass。狀態如實顯示 `mode=ingress_deadman`、`fallback=dnsmasq` 及 `path=mihomo`。
+- 不執行 takeover cleanup，只停止 dns-guard 並等待超過 15 秒。active sets 自動清空後，以新
+  query name／TCP connection 建立的新 router 與 LAN UDP／TCP flow 均由 dnsmasq 取得 WAN fixture
+  答案 `1.2.3.4`；`:7874` counter 不再增加，LAN permanent `:53` redirect counter 增加。此結果
+  接受 nft NAT／conntrack 對既有 flow 的限制，不把舊映射當恢復 oracle。
+- kill 受管 Mihomo 並等待 lease 到期後，新 UDP flow 亦保持 dnsmasq fallback；status 顯示
+  runtime／effective false、DNS path `dnsmasq`。stop→apply→重新授租及最終 stop 通過；localClash
+  nft／policy route 清除，UCI 與 generated dnsmasq config hash 前後相同。
+- QEMU slirp `10.0.2.3` 沒有可用的 TCP DNS baseline，因此該早期觀測不列入功能結論；最終
+  UDP／TCP oracle 使用隔離 WAN namespace。測試後 runtime、guard、fixture、namespace、QEMU
+  均已停止，qcow2 通過 `qemu-img check`。未操作正式路由器，亦未宣稱 ARM64 runtime 驗收。

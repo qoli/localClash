@@ -19,9 +19,42 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
 | localClash Core | [v0.1.85](https://github.com/qoli/localClash/releases/tag/v0.1.85) | 2026-09-09 UTC+8 |
-| localclash-luci | [v0.1.0-78](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-78) | 2026-09-09 UTC+8 |
+| localclash-luci | [v0.1.0-79](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-79) | 2026-09-09 UTC+8 |
 
 ## 2026-09-09
+
+### localclash-luci v0.1.0-79
+
+Changes:
+
+- DNS 接管重構為 ingress dead-man lease；短效 nft token 只控制 router localhost 與 LAN 外部
+  DNS 是否進 Mihomo，dnsmasq 始終保留 WAN upstream。
+- guard 或 Mihomo 停止後，token 到期即讓新 DNS flow 回到 dnsmasq，不需 userspace cleanup；
+  既有 NAT／conntrack flow 的限制不變。
+- 狀態明示 `mode=ingress_deadman`、`fallback=dnsmasq` 及實際 `path`；套用會拒絕沒有 WAN
+  baseline 的 dnsmasq 配置。
+- 新增 dead-man lease host contract check，並納入 main 與 tag Release workflow。
+
+Release:
+
+[qoli/localclash-luci v0.1.0-79](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-79)
+
+Verification:
+
+- 全部 JavaScript、Python、dnsqualify test/vet、rpcd／hotplug host checks、shell syntax、diff
+  check 與本地 13 項候選資產建置通過；新增測試確認 renewer 原子更新 IPv4／IPv6 `/0`
+  timeout token，runtime inactive 時不續租。
+- iStoreOS `24.10.8-2026073111` x86_64 QEMU 安裝 source `005f59e` 的 v79 候選 IPK
+  `a150ece…`。隔離 WAN DNS fixture 先證明 UDP／TCP baseline；active lease 下 router localhost
+  與獨立 LAN client 的 UDP／TCP query 均進 Mihomo，停止 guard 並等待超過 15 秒後，四條新
+  flow 均由 dnsmasq 取得 fixture 答案。kill Mihomo、stop→apply→重新授租、最終 cleanup 與
+  dnsmasq 配置 hash 保留亦通過；證據見功能表 E11。
+- [Main CI 34355315559](https://github.com/qoli/localclash-luci/actions/runs/34355315559) 與
+  [Release workflow 34359554202](https://github.com/qoli/localclash-luci/actions/runs/34359554202)
+  成功；Release 非 draft／prerelease，遠端 tag 指向 `005f59e`。13 項公開資產與六份 sidecar
+  checksum 已重新下載校驗，兩架構 `.run` 均通過 `--info`、`--list`、`--check`、`--noexec`。
+- QEMU 功能驗收為 x86_64；aarch64 只完成 bundle 靜態／完整性及解包校驗，未操作正式路由器，
+  不宣稱 ARM64 runtime 或正式路由器已驗收。
 
 ### localClash Core v0.1.85
 
