@@ -67,7 +67,7 @@ Changes:
 - 修正 `dnsmasq noresolv=1` 被無條件當成沒有 WAN DNS baseline、令 takeover 永遠拒絕套用的回歸；明確設定且與目前 WAN resolver 一致的 catch-all server 現在可使用既有 fail-open 健康租約。
 - 若 dnsmasq 唯一指向受管 Mihomo DNS endpoint，takeover 會明確記錄為 `fail_closed`／`mihomo`，guard 不建立 WAN lease；混合、外部 servers-file 或無法驗證的上游仍會明確拒絕，不會偷偷改寫 dnsmasq。
 - DNS preflight 改在清理既有接管狀態前完成；配置衝突不再先撤掉原有 takeover。狀態查詢會按實際 policy 回報，缺少 policy state 時不再假報為有效 WAN fallback。
-- main CI 與 Release workflow 現在直接執行 takeover manager、DNS health lease 及真 `takeover-apply` DNS policy harness。
+- 發版時加入了三個 host harness；後續審核確認它們以替身取代 dns-probe、nft、UCI 或 takeover apply／stop，不能驗證產品能力，現已從 CI 移除。
 
 Release:
 
@@ -76,7 +76,7 @@ Release:
 Verification:
 
 - 對正式路由器做唯讀現場取證：LuCI `v0.1.0-76`、`noresolv=1`、兩個明確 WAN server 與 `resolv.conf.auto` 一致；runtime/controller 正常但 takeover 已被失敗 apply 清空，確認原 gate 是錯誤拒絕。沒有在路由器執行重試、重啟或配置修改。
-- 全部 JavaScript、Python、dnsqualify test/vet、rpcd/hotplug，以及新增的 fail-open、fail-closed、外部／混合 upstream、preflight 保留狀態回歸測試通過；本地完整 13 項候選資產亦通過 allow-list 與完整性校驗。
+- JavaScript、Python、dnsqualify test/vet、host-only rpcd/hotplug checks 及本地 13 項候選資產校驗通過。原先列出的 fail-open／fail-closed DNS harness 是替身測試，不能作 QEMU 或正式路由器功能證據。
 - [Main CI 34339015739](https://github.com/qoli/localclash-luci/actions/runs/34339015739) 與 [Release workflow 34339295601](https://github.com/qoli/localclash-luci/actions/runs/34339295601) 成功；13 項公開資產與六份 checksum 已核對，兩架構 `.run` 均通過 `--info`、`--list`、`--check`、`--noexec`，遠端 tag 對應 commit `69d0742`。
 - 本次依發布決定跳過 iStoreOS QEMU，亦未把 v0.1.0-77 安裝到正式路由器；因此本版只確認現場根因、源碼／CI 回歸及發布資產，不宣稱正向真機 takeover 驗收。
 
@@ -96,7 +96,7 @@ Release:
 Verification:
 
 - JavaScript UI、shell syntax／helper、IPK preflight、Python release resolver 與 dnsqualify source 邊界回歸測試通過。
-- iStoreOS `24.10.8-2026073111` x86_64 QEMU 的完整功能表 E05 加上修復後 E07 回驗，確認 Dashboard、完整重置與 LuCI 安裝三個剩餘項目均為 PASS；E07 包含真 RPC checkbox 流程、錯誤 arm64 IPK 預檢拒絕與安裝資料保留。
+- iStoreOS `24.10.8-2026073111` x86_64 QEMU 的 E05 加上 E07 曾關閉 Dashboard、完整重置與 LuCI 安裝三個已知缺口；後續 E09 審核撤回 E05 對 DNS 接管／恢復的完整 PASS，因此不能再描述為完整功能表通過。
 - [Main CI 34302643168](https://github.com/qoli/localclash-luci/actions/runs/34302643168) 與 [Release workflow 34302884177](https://github.com/qoli/localclash-luci/actions/runs/34302884177) 成功；13 項公開資產與六份 checksum 已重新下載校驗，兩架構 `.run` 均通過 `--info`、`--list`、`--check`、`--noexec`，遠端 tag 對應 commit `65a21bd`。
 - QEMU 功能驗收為 x86_64；ARM64 bundle 已做靜態／完整性及解包校驗，但未宣稱 ARM64 runtime 或正式路由器驗收。
 
