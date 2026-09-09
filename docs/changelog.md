@@ -18,10 +18,27 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
-| localClash Core | [v0.1.84](https://github.com/qoli/localClash/releases/tag/v0.1.84) | 2026-09-09 UTC+8 |
+| localClash Core | [v0.1.85](https://github.com/qoli/localClash/releases/tag/v0.1.85) | 2026-09-09 UTC+8 |
 | localclash-luci | [v0.1.0-76](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-76) | 2026-09-09 UTC+8 |
 
 ## 2026-09-09
+
+### localClash Core v0.1.85
+
+Changes:
+
+- Router 預設 profile 的 TLS sniffer 端口由 `443/8443` 擴至 `443/465/993/8443`，讓 SMTPS 465 與 IMAPS 993 的初始 TLS ClientHello 可進入既有域名嗅探流程。
+- 保留原有 HTTP、QUIC、DNS mapping、純 IP 解析及 destination override 行為；本版沒有加入 SMTP／IMAP 協議解析，也沒有改動共享策略組或規則順序。
+
+Release:
+
+[qoli/localClash v0.1.85](https://github.com/qoli/localClash/releases/tag/v0.1.85)
+
+Verification:
+
+- `go test ./...`、`go vet ./...`、runtime-profile／config-render 定向測試及 diff 檢查通過。
+- Meta 與 Smart 的可拋棄 CLI render 均生成精確 TLS sniffer 端口 `[443,465,993,8443]`；證據記錄於功能表 E08。
+- 未執行 Linux Mihomo binary、iStoreOS QEMU、ARM64 runtime 或正式路由器驗收；生成配置成功不代表 Mail.app 已命中 Google 代理，該結果保留給發佈後真機驗收。
 
 ### localClash Core v0.1.84
 

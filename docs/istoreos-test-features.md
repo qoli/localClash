@@ -65,9 +65,9 @@
 
 | 功能 ID | 功能／驗證內容 | 責任／核心範圍 | 最後實測版本；結果；證據 |
 | --- | --- | --- | --- |
-| CONFIG-TEMPLATE | **策略模板設定**：選取完整預設或 minimal 模板、配置 profile，產生相應補丁及 intent；重設模板只依明示選項處理既有補丁，不默默覆蓋自訂設定。[實作入口](../product_cli.go) | Core／共用 | v0.1.83／不適用；PASS；default／minimal、normal／router、Meta／Smart 及 normal reset 保留自訂 patch [E05](#e05) |
+| CONFIG-TEMPLATE | **策略模板設定**：選取完整預設或 minimal 模板、配置 profile，產生相應補丁及 intent；重設模板只依明示選項處理既有補丁，不默默覆蓋自訂設定。[實作入口](../product_cli.go) | Core／共用 | v0.1.85／不適用；PASS；router 預設 TLS sniffer 端口及精確回歸斷言 [E08](#e08)；其餘範圍沿用 v0.1.83 [E05](#e05) |
 | CONFIG-PATCHES | **配置補丁管理**：讀取、預覽、套用、移除、啟停及排序補丁；預覽不落盤，套用後 registry／intent 一致，失效草稿或非法引用明確拒絕。[實作入口](../product_cli.go) | Core／共用 | v0.1.83／不適用；PASS；預覽／套用／移除／啟停／排序／tombstone、registry 恢復及非法／過期草稿拒絕 [E05](#e05) |
-| CONFIG-RENDER | **Mihomo 配置生成**：由訂閱、模板、補丁與 profile 生成正確配置。Meta 自動組為 url-test，Smart 為 smart 並移除 tolerance；Smart 參數、群組 priority 與 defaults 按 intent 傳遞且不覆蓋既有值；生成不等於已載入。[實作入口](../product_cli.go) | Core／按核心差異 | v0.1.83／不適用；PASS；Meta url-test、Smart smart／參數／priority／defaults 及生成未載入界線 [E05](#e05) |
+| CONFIG-RENDER | **Mihomo 配置生成**：由訂閱、模板、補丁與 profile 生成正確配置。Meta 自動組為 url-test，Smart 為 smart 並移除 tolerance；Smart 參數、群組 priority 與 defaults 按 intent 傳遞且不覆蓋既有值；生成不等於已載入。[實作入口](../product_cli.go) | Core／按核心差異 | v0.1.85／不適用；PASS；Meta／Smart router render 均保留 TLS `[443,465,993,8443]` [E08](#e08)；其餘範圍沿用 v0.1.83 [E05](#e05) |
 | CONFIG-VALIDATION | **配置驗證**：用所選核心驗證生成配置，記錄對應 hash；非法配置不取得通過證明；驗證與活躍程序隔離，不爭用工作目錄。[實作入口](../product_cli.go) | Core／按核心差異 | v0.1.83／不適用；PASS；Meta／Smart hash 證明、非法 YAML 不改 attestation、活躍程序隔離 [E05](#e05) |
 | CONFIG-APPLY | **配置套用**：按所選入口核對候選檔提交或 runtime 載入；config-promote 是其中一個檔案提交入口，不是所有流程的前置。驗證 hash、實際載入規則／組及失敗結果符合契約，提交檔案不當成已熱載入，生成檔存在不當成已生效。[實作入口](../product_cli.go) | Core／按核心差異 | v0.1.83／不適用；PASS；非法候選拒絕、合法原子提交、hash／controller 讀回及 restart 前後載入界線 [E05](#e05) |
 
@@ -297,3 +297,16 @@ Dashboard archive 與 LuCI 77 更新均為受控本地 fixture，只驗產品下
 最終受測 overlay `/tmp/lc-three-r1/istoreos-test.qcow2` SHA-256 為
 `abf42f2839ecb35341bed5bf7d2026ecd4b975eff291a2139dbab1fcef696021`，
 `qemu-img check` 無錯誤。本輪不評估其餘 28 項功能或正式路由器。
+
+<a id="e08"></a>
+### E08
+
+2026-09-09 對 Core `030a7a2` 的 router 預設 TLS sniffer 端口變更執行限定回驗。
+`go test ./...`、`go vet ./...`、runtime-profile／config-render 定向測試及 diff 檢查均通過；
+獨立測試以可拋棄工作區經正式 CLI render，確認 Meta 與 Smart 的生成配置都精確保留
+`[443,465,993,8443]`。完整證據見
+[router TLS sniffer 報告](../.runtime/istoreos-acceptance/20260909-router-tls-sniffer-v0185/report.md)。
+
+本輪未使用 Linux Mihomo binary 驗證或 iStoreOS QEMU，記為 NOT_RUN 而非 PASS；
+`CONFIG-VALIDATION` 保留 E05 的最後完整實測版本。生成結果不證明正式路由器已載入，
+也不證明 macOS Mail.app 的 Gmail 流量會呈現可嗅探 SNI 或命中 Google 代理；這部分保留給發佈後真機驗收。
