@@ -19,7 +19,7 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
 | localClash Core | [v0.1.85](https://github.com/qoli/localClash/releases/tag/v0.1.85) | 2026-09-09 UTC+8 |
-| localclash-luci | [v0.1.0-76](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-76) | 2026-09-09 UTC+8 |
+| localclash-luci | [v0.1.0-77](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-77) | 2026-09-09 UTC+8 |
 
 ## 2026-09-09
 
@@ -59,6 +59,26 @@ Verification:
 - iStoreOS `24.10.8-2026073111` x86_64 QEMU 重新驗證有效 archive 更新、component status、`external-ui`、controller `/ui/`，以及 5 次下載失敗後原 index hash 保留；證據記錄於功能表 E07。
 - [Core Release workflow 34302343500](https://github.com/qoli/localClash/actions/runs/34302343500) 成功；7 項公開資產與三份 checksum 已重新下載校驗，manifest 版本及遠端 tag 均對應 commit `bcce59c`。
 - 受控 Dashboard archive 只驗證產品下載／更新編排；不代表本輪驗證上游公開 Release 可用性。未執行 ARM64 runtime 或正式路由器驗收。
+
+### localclash-luci v0.1.0-77
+
+Changes:
+
+- 修正 `dnsmasq noresolv=1` 被無條件當成沒有 WAN DNS baseline、令 takeover 永遠拒絕套用的回歸；明確設定且與目前 WAN resolver 一致的 catch-all server 現在可使用既有 fail-open 健康租約。
+- 若 dnsmasq 唯一指向受管 Mihomo DNS endpoint，takeover 會明確記錄為 `fail_closed`／`mihomo`，guard 不建立 WAN lease；混合、外部 servers-file 或無法驗證的上游仍會明確拒絕，不會偷偷改寫 dnsmasq。
+- DNS preflight 改在清理既有接管狀態前完成；配置衝突不再先撤掉原有 takeover。狀態查詢會按實際 policy 回報，缺少 policy state 時不再假報為有效 WAN fallback。
+- main CI 與 Release workflow 現在直接執行 takeover manager、DNS health lease 及真 `takeover-apply` DNS policy harness。
+
+Release:
+
+[qoli/localclash-luci v0.1.0-77](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-77)
+
+Verification:
+
+- 對正式路由器做唯讀現場取證：LuCI `v0.1.0-76`、`noresolv=1`、兩個明確 WAN server 與 `resolv.conf.auto` 一致；runtime/controller 正常但 takeover 已被失敗 apply 清空，確認原 gate 是錯誤拒絕。沒有在路由器執行重試、重啟或配置修改。
+- 全部 JavaScript、Python、dnsqualify test/vet、rpcd/hotplug，以及新增的 fail-open、fail-closed、外部／混合 upstream、preflight 保留狀態回歸測試通過；本地完整 13 項候選資產亦通過 allow-list 與完整性校驗。
+- [Main CI 34339015739](https://github.com/qoli/localclash-luci/actions/runs/34339015739) 與 [Release workflow 34339295601](https://github.com/qoli/localclash-luci/actions/runs/34339295601) 成功；13 項公開資產與六份 checksum 已核對，兩架構 `.run` 均通過 `--info`、`--list`、`--check`、`--noexec`，遠端 tag 對應 commit `69d0742`。
+- 本次依發布決定跳過 iStoreOS QEMU，亦未把 v0.1.0-77 安裝到正式路由器；因此本版只確認現場根因、源碼／CI 回歸及發布資產，不宣稱正向真機 takeover 驗收。
 
 ### localclash-luci v0.1.0-76
 
