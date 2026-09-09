@@ -86,7 +86,7 @@
 | --- | --- | --- | --- |
 | COMPONENT-MIHOMO | **Mihomo 核心取得與更新**：依平台／架構取得選定來源的兩份核心，核對版本／SHA；成對更新與失敗恢復一致，preflight 使用活躍核心，更新後保留選擇並正常啟動。[實作入口](../product_mihomo_update.go) | Core／共用交易，按核心差異驗啟動 | v0.1.83／不適用；PASS；精確 Meta／Smart 成對更新、SHA、活躍核心 preflight、殘留 rollback 拒絕與 hash 保留 [E05](#e05) |
 | COMPONENT-ASSETS | **基礎資源更新**：取得並安裝基礎資源，版本／完整性正確；更新失敗不假報完成，之後配置生成可使用實際安裝的資源。[實作入口](../product_cli.go) | Core／共用 | v0.1.83／不適用；PASS；正式安裝、配置使用、錯誤 manifest／損壞 archive 拒絕及原 hash 保留 [E05](#e05) |
-| COMPONENT-DASHBOARD | **Dashboard 資源管理**：取得、更新及提供面板資源，檔案／入口與 controller 連接設定一致；能開啟面板，不驗 Dashboard 自身全部功能。[實作入口](../product_cli.go) | Core；LuCI 提供連結／共用 | v0.1.83 工作樹候選／0.1.0-76；PASS（失敗路徑）；5 次下載失敗後明確跳過，既有資源 hash 保留且未洩漏簽名 URL；未重驗成功下載／完整 Dashboard UI [E06](#e06) |
+| COMPONENT-DASHBOARD | **Dashboard 資源管理**：取得、更新及提供面板資源，檔案／入口與 controller 連接設定一致；能開啟面板，不驗 Dashboard 自身全部功能。[實作入口](../product_cli.go) | Core；LuCI 提供連結／共用 | Core `11ee263`／LuCI `2ac337f`；PASS；有效 archive 更新、component status、`external-ui`、controller `/ui/`，以及 5 次失敗後 optional skip／原 hash 保留 [E07](#e07) |
 
 <a id="access"></a>
 ## 狀態與診斷
@@ -104,14 +104,14 @@
 | 功能 ID | 功能／驗證內容 | 責任／核心範圍 | 最後實測版本；結果；證據 |
 | --- | --- | --- | --- |
 | WORKSPACE-INIT | **工作區初始化**：由配置／apply 正式入口建立所需來源、profile、策略及材料；已有狀態按宣告操作，不擅自清空。LuCI 引導與接管編排另列 LUCI-INIT。[實作入口](../product_cli.go) | Core／共用，涉及核心時按差異 | v0.1.83／0.1.0-76；PASS；normal／full reset 後由空工作區重建 assets／subscription／profile／config-test，既有狀態不誤清 [E05](#e05) |
-| WORKSPACE-RESET | **工作區重置**：預覽及正式重置的範圍一致，普通／完整重置依契約清理；不刪除範圍外檔案或非受管程序，之後可重新初始化。[實作入口](../product_cli.go) | Core／共用 | v0.1.83／0.1.0-76 工作樹候選；PASS；Arc 真頁面未勾選時禁用，勾選後建立進度／結果 modal 並讀回 `full_reset_completed`，無原生 confirm [E06](#e06) |
+| WORKSPACE-RESET | **工作區重置**：預覽及正式重置的範圍一致，普通／完整重置依契約清理；不刪除範圍外檔案或非受管程序，之後可重新初始化。[實作入口](../product_cli.go) | Core／共用 | Core `11ee263`／LuCI `2ac337f`；PASS；normal／full preview 與 execute、範圍外資料／非受管程序保留、重建，以及 Arc checkbox／真 RPC／結果 modal [E07](#e07) |
 
 <a id="luci"></a>
 ## LuCI 整合能力（另列歸屬）
 
 | 功能 ID | 功能／驗證內容 | 責任／核心範圍 | 最後實測版本；結果；證據 |
 | --- | --- | --- | --- |
-| LUCI-INSTALL | **OpenWrt 安裝與版本管理**：離線包安裝、重裝、LuCI／Core 安裝更新及支援的舊版交接正常；架構／完整性錯誤拒絕，應保留資料不丟失。Core 自我更新未實作，實際由 helper 管理。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI／共用 | v0.1.83／0.1.0-76 工作樹候選；PASS；`Architecture: all` 通過，篡改為 arm64 的 IPK 在 `opkg` 前明確拒絕，既有狀態 hash 不變 [E06](#e06) |
+| LUCI-INSTALL | **OpenWrt 安裝與版本管理**：離線包安裝、重裝、LuCI／Core 安裝更新及支援的舊版交接正常；架構／完整性錯誤拒絕，應保留資料不丟失。Core 自我更新未實作，實際由 helper 管理。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI／共用 | Core `11ee263`／LuCI `2ac337f`；PASS；離線安裝／重裝、受控 76→77 helper 更新、舊版本拒絕、checksum／套件名／arm64 預檢及資料保留 [E07](#e07) |
 | LUCI-INIT | **初始化引導**：由頁面提供訂閱、模板及核心，完成 Core 呼叫、配置、啟動及接管；重新開頁顯示真實狀態，失敗可定位。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI 編排＋Core／按影響 | v0.1.83／0.1.0-76；PASS；空工作區 Meta／Smart 初始化、訂閱／模板／Core、UI 啟動並接管、重開讀回及可定位失敗後恢復 [E05](#e05) |
 | LUCI-UPDATE | **一鍵更新與資料保留**：從頁面更新，兩個檢查點、來源版本及結果可讀回；重跑／舊版升級保持訂閱、網站順序、偏好及核心選擇；原本停止或未初始化的狀態不擅自啟動。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI 編排＋Core／按影響 | v0.1.83／0.1.0-76；PASS；UI／受控 76→77、重跑、software／material checkpoints、資料／選擇保留、停止／未初始化不自啟及 76 恢復 [E05](#e05) |
 | LUCI-TASKS | **介面與長任務交互**：訂閱、網站、初始化及更新頁面操作與後端一致；日誌、取消、互斥、重新連接與終態可用，無重複交易／無限 busy；依各操作是否支援取消驗證。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI／共用 | v0.1.83／0.1.0-76；PASS；訂閱／網站／初始化／更新頁、日誌、代表性取消／互斥、同 task id reload／reopen 及終態恢復 [E05](#e05) |
@@ -275,3 +275,25 @@ base commit `4d5218d9d48abd3b34c8fe0a641ef06c40cc8e98` 與 LuCI base commit
 
 回驗完成後已停止 QEMU 與 fixture，確認轉發 port、PID、monitor 及 serial socket 均消失；
 保留的 guest image 經 `qemu-img check` 通過。本輪沒有擴展到完整 31 項重測或正式路由器驗收。
+
+<a id="e07"></a>
+### E07
+
+2026-09-09 對 `COMPONENT-DASHBOARD`、`WORKSPACE-RESET`、`LUCI-INSTALL` 三個完整功能列重新測試，
+不沿用 E06 結論；完整矩陣與原始證據見
+[三功能重新測試矩陣](../.runtime/istoreos-acceptance/20260909-three-feature-retest-r1/matrix.md)。
+候選為 Core commit `11ee2634c70e9a105b019d940be3aa119a84131d`、LuCI commit
+`2ac337ff22d21f0bd2d75d965f13b7dd744a6c2e`；Linux Core SHA-256 為
+`3832c19ec4de45e5fca3117bd735028e2471191407b74d30c7cfc9a1e39dd602`，LuCI 0.1.0-76 IPK
+SHA-256 為 `ad87e939c7cc442b6121107d0718726e186591c3f4c9169e89140212b83b0498`。
+
+- `COMPONENT-DASHBOARD`：正式 Core component 入口以有效受控 archive 完成更新，讀回安裝狀態、`external-ui: ui/zashboard`、controller `/configs` 與 `/ui/` 頁面；另重新執行 5 次下載失敗，確認 typed optional skip、`changed=false`、無假變更及原 index hash 保留。
+- `WORKSPACE-RESET`：normal／full 的 dry-run 與 execute 範圍一致，範圍外檔案及非受管程序保留，full reset 後可重新套用模板建立 intent／runtime profile。Arc 真頁面重新驗證 checkbox 初始禁用、勾選啟用、真實 click busy 狀態、HTTP 200 `localclash.reset` RPC、`full_reset_completed` 結果 modal 及無 native confirm。測試中先遇到另一個候選 Mihomo 尚在運行而被安全拒絕；停止該 runtime 後重跑通過，此項保留為前置條件證據而非產品失敗。
+- `LUCI-INSTALL`：fresh guest 的離線安裝／重裝讀回 package 與 Core SHA；受控 helper 76→77 更新完成，對舊 76 正確回報 `target_older`。離線安裝器的損壞 checksum、錯誤套件名及 arm64 metadata 均在 `opkg` 前拒絕；helper 對受控 arm64 0.1.0-78 亦回傳 typed `luci_package_metadata_invalid`。`opkg` sentinel 證明兩條 arm64 路徑都沒有 install invocation，訂閱／策略 hash 保留。
+
+Dashboard archive 與 LuCI 77 更新均為受控本地 fixture，只驗產品下載／更新編排，不代表本輪驗證公網 Release 可用性。
+初始 serial 長命令及一次不受支援的 BusyBox `find -printf` 只作環境診斷，已以 bounded SSH 與相容讀回重跑，不納入 PASS。
+測試完成後已停止 guest 服務、QEMU 與 fixture，確認所有轉發 port、PID、monitor／serial socket 消失；
+最終受測 overlay `/tmp/lc-three-r1/istoreos-test.qcow2` SHA-256 為
+`abf42f2839ecb35341bed5bf7d2026ecd4b975eff291a2139dbab1fcef696021`，
+`qemu-img check` 無錯誤。本輪不評估其餘 28 項功能或正式路由器。
