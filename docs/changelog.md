@@ -19,7 +19,7 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
 | localClash Core | [v0.1.85](https://github.com/qoli/localClash/releases/tag/v0.1.85) | 2026-09-09 UTC+8 |
-| localclash-luci | [v0.1.0-77](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-77) | 2026-09-09 UTC+8 |
+| localclash-luci | [v0.1.0-78](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-78) | 2026-09-09 UTC+8 |
 
 ## 2026-09-09
 
@@ -59,6 +59,36 @@ Verification:
 - iStoreOS `24.10.8-2026073111` x86_64 QEMU 重新驗證有效 archive 更新、component status、`external-ui`、controller `/ui/`，以及 5 次下載失敗後原 index hash 保留；證據記錄於功能表 E07。
 - [Core Release workflow 34302343500](https://github.com/qoli/localClash/actions/runs/34302343500) 成功；7 項公開資產與三份 checksum 已重新下載校驗，manifest 版本及遠端 tag 均對應 commit `bcce59c`。
 - 受控 Dashboard archive 只驗證產品下載／更新編排；不代表本輪驗證上游公開 Release 可用性。未執行 ARM64 runtime 或正式路由器驗收。
+
+### localclash-luci v0.1.0-78
+
+Changes:
+
+- DNS lease 改為只跟隨受管 Mihomo 的 runtime lifecycle：核對 supervision running state、
+  boot identity、PID 與 executable identity 後續租，不再每 5 秒向 7874 發出 UDP／TCP
+  DNS probe。
+- takeover 狀態新增 `guard_basis=runtime_lifecycle`，續租／失效原因改為
+  `runtime_lease_refreshed`／`mihomo_runtime_inactive`；代理出口切換期間的 DNS 暫時錯誤
+  不再被 guard 當成生命週期失效。
+
+Release:
+
+[qoli/localclash-luci v0.1.0-78](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-78)
+
+Verification:
+
+- 全部現有 host-only rpcd／hotplug contract checks、三個修改腳本的 POSIX shell syntax、
+  diff check 及 IPK 重複建置通過。
+- iStoreOS `24.10.8-2026073111` x86_64 QEMU 的 20 秒 capture 跨至少三個續租週期，
+  loopback 7874 為 0 packet；真 VDE LAN client 對 router DNS 的 UDP／TCP 查詢均成功。
+  外部終止 Mihomo 時曾觀察 `mihomo_runtime_inactive`，supervision 以新 PID 恢復後 lease
+  重新續上；明確 runtime stop 仍撤回 takeover 並保留 WAN DNS。證據見功能表 E10。
+- [Main CI 34348679841](https://github.com/qoli/localclash-luci/actions/runs/34348679841) 與
+  [Release workflow 34348964548](https://github.com/qoli/localclash-luci/actions/runs/34348964548)
+  成功；13 項公開資產與六份 checksum 已重新下載校驗，兩架構 `.run` 均通過
+  `--info`、`--list`、`--check`、`--noexec`，遠端 tag 對應 commit `51b323b`。
+- QEMU 驗收使用版本 bump 前、相同三個腳本改動的候選 IPK，未把公開 v78 安裝到正式路由器；
+  ARM64 只完成 bundle 靜態／完整性及解包校驗，不宣稱 ARM64 runtime 驗收。
 
 ### localclash-luci v0.1.0-77
 

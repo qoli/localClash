@@ -117,8 +117,8 @@
 | LUCI-UPDATE | **一鍵更新與資料保留**：從頁面更新，兩個檢查點、來源版本及結果可讀回；重跑／舊版升級保持訂閱、網站順序、偏好及核心選擇；原本停止或未初始化的狀態不擅自啟動。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI 編排＋Core／按影響 | v0.1.83／0.1.0-76；PASS；UI／受控 76→77、重跑、software／material checkpoints、資料／選擇保留、停止／未初始化不自啟及 76 恢復 [E05](#e05) |
 | LUCI-TASKS | **介面與長任務交互**：訂閱、網站、初始化及更新頁面操作與後端一致；日誌、取消、互斥、重新連接與終態可用，無重複交易／無限 busy；依各操作是否支援取消驗證。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI／共用 | v0.1.83／0.1.0-76；PASS；訂閱／網站／初始化／更新頁、日誌、代表性取消／互斥、同 task id reload／reopen 及終態恢復 [E05](#e05) |
 | LUCI-DNS | **DNS 最佳化設定整合**：從正式入口完成查詢、真實量測、合格結果套用及移除；資格／WAN 身分不符明確拒絕，套用後由獨立 client 驗證實際 DNS 行為，移除後恢復基線。不評比外部解析器或驗 dnsqualify 演算法。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI 編排＋Core 配置／共用 | v0.1.83／0.1.0-76；PARTIAL；真實量測只取得無合格結果；正向套用使用受控 producer 且沒有 client DNS oracle；WAN eth0→eth9 拒絕及 hash rollback 通過 [E05](#e05) [E09](#e09) |
-| LUCI-TAKEOVER | **OpenWrt 網路接管**：從正式入口套用及停止防火牆、策略路由與 DNS 接管；獨立 LAN client 的實際 TCP／UDP／DNS 請求按配置到達受控 WAN endpoint，停止後恢復原資料面，且非本產品規則保留。內部 effective、規則或 lease 只能解釋結果。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI／共用 | v0.1.83／0.1.0-76；FAIL；VDE 一般 client→endpoint 請求及 apply／stop 通過，但 LAN DNS 資料面未執行；後續正式使用配置證明 v76 `noresolv=1` gate 錯誤拒絕並先撤掉既有接管 [E05](#e05) [E09](#e09) |
-| LUCI-RESTORE | **接管及服務恢復**：開機、WAN 事件、受管程序退出及依賴故障後，按使用者意圖恢復或撤回接管；每次轉移後由獨立 client 重跑相同資料面 oracle，明確停止後不自行重開。內部狀態與 lease 不代表服務可用。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI＋Core 生命週期／共用 | v0.1.83／0.1.0-76；PARTIAL；system_reset、WAN／TUN 事件、程序退出／恢復及明確停止取得狀態證據；DNS lease 只有 grant／retract 狀態，沒有真實 client DNS oracle [E05](#e05) [E09](#e09) |
+| LUCI-TAKEOVER | **OpenWrt 網路接管**：從正式入口套用及停止防火牆、策略路由與 DNS 接管；獨立 LAN client 的實際 TCP／UDP／DNS 請求按配置到達受控 WAN endpoint，停止後恢復原資料面，且非本產品規則保留。內部 effective、規則或 lease 只能解釋結果。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI／共用 | localClash fixture `43204c3`／LuCI v0.1.0-78 source `51b323b`（QEMU 候選 IPK `e52abad`）；PASS（影響範圍回驗）；沿用 E05 非 DNS 資料面，新增正式 v77 apply、`noresolv` 明確 WAN baseline、真 LAN UDP／TCP DNS、生命週期續租及 stop [E05](#e05) [E10](#e10) |
+| LUCI-RESTORE | **接管及服務恢復**：開機、WAN 事件、受管程序退出及依賴故障後，按使用者意圖恢復或撤回接管；每次轉移後由獨立 client 重跑相同資料面 oracle，明確停止後不自行重開。內部狀態與 lease 不代表服務可用。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI＋Core 生命週期／共用 | localClash fixture `43204c3`／LuCI v0.1.0-78 source `51b323b`（QEMU 候選 IPK `e52abad`）；PARTIAL；進程退出由 supervision 以新 PID 恢復、lease 重續，明確 stop 撤回接管且 WAN DNS 可用；未把進程保持退出至 lease 到期後的 LAN oracle 補成 PASS [E05](#e05) [E10](#e10) |
 
 ## 舊記錄的保留方式
 
@@ -253,9 +253,10 @@ takeover 操作，`subscription.js` 的 `subscription_setup_async`，以及維�
 E05 已按候選版本核對這些正式入口及真實 UI；目前不新增健康 S2 運行中跨核心切換、
 配置單獨 reset、DNS 資格到期自動處理等不存在的 UI 功能。
 
-DNS health lease 是已落地的接管機制，但 E05 只觀察 lease grant／retract、受管程序退出
-及開機／事件後的內部狀態；沒有從獨立 LAN client 驗證 DNS UDP／TCP 在各狀態仍可解析，
-因此不能證明該能力可用。host mock 亦不得用來補齊功能證據。
+DNS lease 現在只跟隨受管 Mihomo 的 supervision state、boot identity、PID 及 executable
+identity，不再輪詢 DNS；它不能也不應宣稱代理出口切換期間的 DNS 始終健康。E10 已補
+獨立 LAN client 的正向 UDP／TCP oracle 及無 probe capture；進程保持退出至 lease 到期後
+的 LAN oracle 仍未執行。host mock 亦不得用來補齊功能證據。
 
 E01–E04 首次匯入仍未窮舉所有歷史目錄或舊版配對；E05 已取代目前 31 項功能的
 「待核對」狀態，但不把功能表以外的 UDP 代理、IPv6、效能或全傳輸協定矩陣
@@ -328,3 +329,33 @@ Dashboard archive 與 LuCI 77 更新均為受控本地 fixture，只驗產品下
 的三個腳本已移除；其他 host-only contract checks 只能作開發檢查。後續要恢復 PASS，必須在
 可拋棄 iStoreOS QEMU 透過正式入口操作，並在已打通的非透明代理 WAN 拓撲中，以獨立 LAN
 client 的實際資料面結果作 oracle；不得以新增針對性 mock 或內部 readiness 代替。
+
+<a id="e10"></a>
+### E10
+
+2026-09-09 先以公開 LuCI `v0.1.0-77` 在可拋棄 iStoreOS `24.10.8-2026073111`
+x86_64 QEMU 重現及界定 DNS 問題，再以 base commit `66d6cc8` 加本輪三個腳本改動所建的
+版本 bump 前的候選 IPK `e52abad6be632eec15771148f3149d1693783c2df50ec5d5804cdc72677d72df`
+做影響範圍回驗。完整報告見
+[v77 DNS 調查](../.runtime/istoreos-acceptance/20260909-v077-dns-dead-r1/report.md)及
+[生命週期 lease 回驗](../.runtime/istoreos-acceptance/20260909-v077-dns-lifecycle-r2/report.md)。
+
+- 公開 v77 在原始配置中，Mihomo `127.0.0.1:7874` 的 DNS upstream 在 takeover 前已不可用；
+  fail-open lease 沒有授予，dnsmasq 明確 WAN baseline 仍可回答。換成受控可達的普通 DNS
+  upstream 後，Mihomo、dnsmasq 及真 LAN client `192.168.101.10` 的 UDP／TCP 查詢全部成功，
+  不支持 nft lease redirect 本身必然造成 DNS 死亡的假設。
+- 新候選把續租條件改為受管 runtime 的 `running` state、當次 boot identity、PID 存在及
+  executable identity；狀態明示 `guard_basis=runtime_lifecycle` 與
+  `guard_reason=runtime_lease_refreshed`。20 秒、跨至少三個 renewal interval 的 loopback
+  `:7874` capture 為 0 packet，證明 guard 不再製造 UDP／TCP DNS probe。
+- 真 VDE LAN client 對 router `192.168.101.1:53` 的 UDP 與 TCP 查詢均 `rcode=0`、各有兩個
+  answer，pcap 同時記錄 request／response。外部終止 Mihomo 後，guard 曾觀察到
+  `mihomo_runtime_inactive`；Core supervision 隨後以新 PID 恢復，lease 再次續上。正式
+  `runtime_stop` 會撤回 takeover、清除 guard state，WAN dnsmasq 仍回答，而 7874 明確拒絕。
+- 未把 supervision 停用並強迫進程長期退出，因此「inactive 持續至 lease 到期後的 LAN
+  資料面」記為 NOT RUN，不提升 LUCI-RESTORE 為完整 PASS。測試後已停止 runtime、takeover、
+  router/client QEMU 與 VDE；兩份 qcow2 均通過 `qemu-img check`，未操作正式路由器。
+- 同一組三個腳本改動連同 package release bump 以 LuCI v0.1.0-78、commit `51b323b`
+  公開發佈；Main CI `34348679841` 與 Release workflow `34348964548` 成功，13 項公開資產、
+  六份 checksum 與兩架構 `.run` 靜態／完整性／解包檢查通過。公開 v78 IPK 未另行安裝到
+  QEMU 或正式路由器，因此不把資產驗證寫成新增的 runtime 功能證據。
