@@ -27,8 +27,13 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 
 Changes:
 
-- DNS 接管重構為 ingress dead-man lease；短效 nft token 只控制 router localhost 與 LAN 外部
-  DNS 是否進 Mihomo，dnsmasq 始終保留 WAN upstream。
+- DNS 接管改用 nft ingress dead-man lease；dnsmasq 保留 WAN 上游，guard 或 Mihomo 停止逾
+  15 秒後，新 DNS 連線自動回到 dnsmasq。
+
+Details:
+
+- 短效 nft token 只控制 router localhost 與 LAN 外部 DNS 是否進 Mihomo，dnsmasq 始終保留
+  WAN upstream。
 - guard 或 Mihomo 停止後，token 到期即讓新 DNS flow 回到 dnsmasq，不需 userspace cleanup；
   既有 NAT／conntrack flow 的限制不變。
 - 狀態明示 `mode=ingress_deadman`、`fallback=dnsmasq` 及實際 `path`；套用會拒絕沒有 WAN
@@ -59,6 +64,10 @@ Verification:
 ### localClash Core v0.1.85
 
 Changes:
+
+- 預設 TLS sniffer 新增 SMTPS 465 與 IMAPS 993，沿用既有域名嗅探與分流。
+
+Details:
 
 - Router 預設 profile 的 TLS sniffer 端口由 `443/8443` 擴至 `443/465/993/8443`，讓 SMTPS 465 與 IMAPS 993 的初始 TLS ClientHello 可進入既有域名嗅探流程。
 - 保留原有 HTTP、QUIC、DNS mapping、純 IP 解析及 destination override 行為；本版沒有加入 SMTP／IMAP 協議解析，也沒有改動共享策略組或規則順序。
@@ -97,9 +106,12 @@ Verification:
 
 Changes:
 
-- DNS lease 改為只跟隨受管 Mihomo 的 runtime lifecycle：核對 supervision running state、
-  boot identity、PID 與 executable identity 後續租，不再每 5 秒向 7874 發出 UDP／TCP
-  DNS probe。
+- DNS lease 改跟隨受管 Mihomo lifecycle，不再用 UDP／TCP DNS probe 判斷存活。
+
+Details:
+
+- 續租前核對 supervision running state、boot identity、PID 與 executable identity，不再每
+  5 秒向 7874 發出 UDP／TCP DNS probe。
 - takeover 狀態新增 `guard_basis=runtime_lifecycle`，續租／失效原因改為
   `runtime_lease_refreshed`／`mihomo_runtime_inactive`；代理出口切換期間的 DNS 暫時錯誤
   不再被 guard 當成生命週期失效。
@@ -127,9 +139,14 @@ Verification:
 
 Changes:
 
-- 修正 `dnsmasq noresolv=1` 被無條件當成沒有 WAN DNS baseline、令 takeover 永遠拒絕套用的回歸；明確設定且與目前 WAN resolver 一致的 catch-all server 現在可使用既有 fail-open 健康租約。
+- 修正 `noresolv` 搭配明確 WAN DNS 被錯判為沒有 fallback 的回歸，並把 DNS preflight
+  提前到清理接管狀態之前。
+
+Details:
+
+- 明確設定且與目前 WAN resolver 一致的 catch-all server 現在可使用既有 fail-open 健康租約。
 - 若 dnsmasq 唯一指向受管 Mihomo DNS endpoint，takeover 會明確記錄為 `fail_closed`／`mihomo`，guard 不建立 WAN lease；混合、外部 servers-file 或無法驗證的上游仍會明確拒絕，不會偷偷改寫 dnsmasq。
-- DNS preflight 改在清理既有接管狀態前完成；配置衝突不再先撤掉原有 takeover。狀態查詢會按實際 policy 回報，缺少 policy state 時不再假報為有效 WAN fallback。
+- 配置衝突不再先撤掉原有 takeover。狀態查詢會按實際 policy 回報，缺少 policy state 時不再假報為有效 WAN fallback。
 - 發版時加入了三個 host harness；後續審核確認它們以替身取代 dns-probe、nft、UCI 或 takeover apply／stop，不能驗證產品能力，現已從 CI 移除。
 
 Release:
