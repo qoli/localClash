@@ -101,6 +101,7 @@ type codedProductError struct {
 }
 
 var downloadCore = coredownload.Download
+var downloadDashboard = dashboard.Download
 var rebuildProductChatGPT = chatgptavailable.RebuildSelectedCandidateWithMihomo
 
 func (err codedProductError) Error() string {
@@ -519,7 +520,7 @@ func runProductComponentUpdate(args []string, state appinit.RuntimeState) error 
 		warnings := refreshCoreVersionCacheWarnings(ctx, state, "")
 		return printProductOK(productEnvelope{OK: true, Changed: true, Summary: "Mihomo components updated.", Status: result, Changes: []string{"mihomo_updated"}, Warnings: warnings})
 	case "dashboard":
-		result, err := dashboard.Download(ctx, dashboard.Options{
+		result, err := downloadDashboard(ctx, dashboard.Options{
 			Version:   "latest",
 			AssetName: "dist.zip",
 			OutputDir: filepath.Join(state.Paths.MihomoRuntimeDir, "ui", "zashboard"),
@@ -527,6 +528,16 @@ func runProductComponentUpdate(args []string, state appinit.RuntimeState) error 
 			Force:     true,
 		})
 		if err != nil {
+			if warning, attempts, ok := optionalDashboardWarning(err); ok {
+				return printProductOK(productEnvelope{
+					OK:       true,
+					Changed:  false,
+					Summary:  "Dashboard update skipped after repeated download failures; Dashboard is optional.",
+					Status:   map[string]any{"component": "dashboard", "skipped": true, "attempts": attempts, "existing_assets_preserved": true},
+					Changes:  []string{},
+					Warnings: []string{warning},
+				})
+			}
 			return err
 		}
 		return printProductOK(productEnvelope{OK: true, Changed: true, Summary: "Dashboard assets updated.", Status: result, Changes: []string{"dashboard_updated"}, Warnings: []string{}})
@@ -1106,10 +1117,15 @@ func executeDesiredState(input desiredStateInput, state appinit.RuntimeState) ([
 			changes = append(changes, "mihomo_updated")
 		}
 		if input.Components.Dashboard == "installed_or_latest" {
-			if _, err := dashboard.Download(ctx, dashboard.Options{Version: "latest", AssetName: "dist.zip", OutputDir: filepath.Join(state.Paths.MihomoRuntimeDir, "ui", "zashboard"), Repo: "Zephyruso/zashboard", Force: true}); err != nil {
-				return changes, warnings, err
+			if _, err := downloadDashboard(ctx, dashboard.Options{Version: "latest", AssetName: "dist.zip", OutputDir: filepath.Join(state.Paths.MihomoRuntimeDir, "ui", "zashboard"), Repo: "Zephyruso/zashboard", Force: true}); err != nil {
+				if warning, _, ok := optionalDashboardWarning(err); ok {
+					warnings = append(warnings, warning)
+				} else {
+					return changes, warnings, err
+				}
+			} else {
+				changes = append(changes, "dashboard_updated")
 			}
-			changes = append(changes, "dashboard_updated")
 		}
 	}
 	configChanged, configWarnings, err := executeDesiredConfig(ctx, input.Config, state)
@@ -1135,6 +1151,15 @@ func executeDesiredState(input desiredStateInput, state appinit.RuntimeState) ([
 	changes = append(changes, runtimeChanges...)
 	warnings = append(warnings, runtimeWarnings...)
 	return changes, warnings, nil
+}
+
+func optionalDashboardWarning(err error) (string, int, bool) {
+	var unavailable dashboard.UnavailableError
+	if !errors.As(err, &unavailable) {
+		return "", 0, false
+	}
+	warning := fmt.Sprintf("Dashboard update skipped after %d failed download attempts because Dashboard is optional; existing assets, if any, were preserved: %v", unavailable.Attempts, unavailable.Err)
+	return warning, unavailable.Attempts, true
 }
 
 func executeDesiredConfig(ctx context.Context, input *desiredConfig, state appinit.RuntimeState) (bool, []string, error) {

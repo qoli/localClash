@@ -25,6 +25,7 @@ import (
 	"localclash/internal/configpatch"
 	"localclash/internal/coredownload"
 	"localclash/internal/customsites"
+	"localclash/internal/dashboard"
 	"localclash/internal/localconfig"
 	"localclash/internal/mihomoapi"
 	"localclash/internal/mihomotest"
@@ -1108,6 +1109,66 @@ func TestRunProductComponentUpdateMihomoRefreshesCoreVersionCache(t *testing.T) 
 	cache := readMainCoreCache(t, appinit.CoreVersionCachePath(filepath.Join(dir, ".runtime")))
 	if cache.CorePath != core || cache.Version != "Mihomo component update" {
 		t.Fatalf("cache = %+v, want refreshed component update core %s", cache, core)
+	}
+}
+
+func TestRunProductComponentUpdateDashboardReportsOptionalSkip(t *testing.T) {
+	dir := t.TempDir()
+	state := appinit.RuntimeState{Paths: appinit.RuntimePaths{MihomoRuntimeDir: filepath.Join(dir, ".runtime", "mihomo")}}
+	oldDownloadDashboard := downloadDashboard
+	downloadDashboard = func(context.Context, dashboard.Options) (dashboard.Result, error) {
+		return dashboard.Result{}, dashboard.UnavailableError{Attempts: 5, Err: errors.New("all endpoints failed")}
+	}
+	t.Cleanup(func() { downloadDashboard = oldDownloadDashboard })
+
+	output := captureStdout(t, func() error {
+		return runProductComponentUpdate([]string{"dashboard", "--json"}, state)
+	})
+	var result struct {
+		OK      bool `json:"ok"`
+		Changed bool `json:"changed"`
+		Status  struct {
+			Skipped                 bool `json:"skipped"`
+			Attempts                int  `json:"attempts"`
+			ExistingAssetsPreserved bool `json:"existing_assets_preserved"`
+		} `json:"status"`
+		Warnings []string `json:"warnings"`
+	}
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
+		t.Fatalf("component update JSON = %q, error = %v", output, err)
+	}
+	if !result.OK || result.Changed || !result.Status.Skipped || result.Status.Attempts != 5 || !result.Status.ExistingAssetsPreserved {
+		t.Fatalf("component update result = %+v, want visible optional skip", result)
+	}
+	if len(result.Warnings) != 1 || !strings.Contains(result.Warnings[0], "Dashboard is optional") {
+		t.Fatalf("warnings = %v, want optional Dashboard warning", result.Warnings)
+	}
+}
+
+func TestExecuteDesiredStateContinuesWhenOptionalDashboardIsUnavailable(t *testing.T) {
+	dir := t.TempDir()
+	state := appinit.RuntimeState{Paths: appinit.RuntimePaths{MihomoRuntimeDir: filepath.Join(dir, ".runtime", "mihomo")}}
+	oldDownloadDashboard := downloadDashboard
+	downloadDashboard = func(context.Context, dashboard.Options) (dashboard.Result, error) {
+		return dashboard.Result{}, dashboard.UnavailableError{Attempts: 5, Err: errors.New("all endpoints failed")}
+	}
+	t.Cleanup(func() { downloadDashboard = oldDownloadDashboard })
+
+	changes, warnings, err := executeDesiredState(desiredStateInput{
+		Version: 1,
+		Mode:    "execute",
+		Components: &desiredComponents{
+			Dashboard: "installed_or_latest",
+		},
+	}, state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(changes) != 0 {
+		t.Fatalf("changes = %v, want no false dashboard update", changes)
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "Dashboard is optional") {
+		t.Fatalf("warnings = %v, want optional Dashboard warning", warnings)
 	}
 }
 

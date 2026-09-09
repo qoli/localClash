@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -41,6 +42,24 @@ type asset struct {
 
 const defaultGitHubReleaseMirrors = "https://gh-proxy.com/https://github.com https://ghproxy.imciel.com/https://github.com https://gitproxy.mrhjx.cn/https://github.com https://gh.jasonzeng.dev/https://github.com https://gh.monlor.com/https://github.com https://gh.noki.icu/https://github.com https://ghfast.top/https://github.com"
 
+const maxDownloadAttempts = 5
+
+type UnavailableError struct {
+	Attempts int
+	Err      error
+}
+
+func (err UnavailableError) Error() string {
+	return fmt.Sprintf("dashboard download unavailable after %d attempts: %v", err.Attempts, err.Err)
+}
+
+func (err UnavailableError) Unwrap() error { return err.Err }
+
+func IsUnavailable(err error) bool {
+	var unavailable UnavailableError
+	return errors.As(err, &unavailable)
+}
+
 func Download(ctx context.Context, opts Options) (Result, error) {
 	opts = normalizeOptions(opts)
 	if err := opts.validate(); err != nil {
@@ -48,11 +67,7 @@ func Download(ctx context.Context, opts Options) (Result, error) {
 	}
 
 	if opts.Version == "latest" {
-		result, err := downloadDirectLatest(ctx, opts)
-		if err == nil {
-			return result, nil
-		}
-		fmt.Fprintf(os.Stderr, "download: dashboard latest asset direct path failed, falling back to github api: %v\n", err)
+		return downloadDirectLatest(ctx, opts)
 	}
 
 	rel, err := fetchRelease(ctx, opts.Repo, opts.Version)
@@ -64,7 +79,7 @@ func Download(ctx context.Context, opts Options) (Result, error) {
 		return Result{}, err
 	}
 
-	if err := prepareOutputDir(opts.OutputDir, opts.Force); err != nil {
+	if err := validateOutputTarget(opts.OutputDir, opts.Force); err != nil {
 		return Result{}, err
 	}
 
@@ -74,10 +89,7 @@ func Download(ctx context.Context, opts Options) (Result, error) {
 	}
 	defer os.Remove(tmpZip)
 
-	if err := extractZip(tmpZip, opts.OutputDir); err != nil {
-		return Result{}, err
-	}
-	if err := verifyDashboard(opts.OutputDir); err != nil {
+	if err := installDashboardZip(tmpZip, opts.OutputDir, opts.Force); err != nil {
 		return Result{}, err
 	}
 
@@ -85,7 +97,7 @@ func Download(ctx context.Context, opts Options) (Result, error) {
 }
 
 func downloadDirectLatest(ctx context.Context, opts Options) (Result, error) {
-	if err := prepareOutputDir(opts.OutputDir, opts.Force); err != nil {
+	if err := validateOutputTarget(opts.OutputDir, opts.Force); err != nil {
 		return Result{}, err
 	}
 	url := fmt.Sprintf("https://github.com/%s/releases/latest/download/%s", opts.Repo, opts.AssetName)
@@ -94,10 +106,7 @@ func downloadDirectLatest(ctx context.Context, opts Options) (Result, error) {
 		return Result{}, err
 	}
 	defer os.Remove(tmpZip)
-	if err := extractZip(tmpZip, opts.OutputDir); err != nil {
-		return Result{}, err
-	}
-	if err := verifyDashboard(opts.OutputDir); err != nil {
+	if err := installDashboardZip(tmpZip, opts.OutputDir, opts.Force); err != nil {
 		return Result{}, err
 	}
 	return Result{Version: "latest", AssetName: opts.AssetName, OutputDir: opts.OutputDir}, nil
@@ -147,6 +156,9 @@ func fetchRelease(ctx context.Context, repo, version string) (release, error) {
 		if err == nil {
 			return rel, nil
 		}
+		if ctx.Err() != nil {
+			return release{}, ctx.Err()
+		}
 		lastErr = err
 		fmt.Fprintf(os.Stderr, "download: dashboard release metadata failed from %s: %v\n", candidate, err)
 	}
@@ -164,7 +176,7 @@ func fetchReleaseURL(ctx context.Context, endpoint string) (release, error) {
 
 	resp, err := httpClient().Do(req)
 	if err != nil {
-		return release{}, err
+		return release{}, fmt.Errorf("request failed: %w", sanitizeRequestError(err))
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
@@ -190,7 +202,7 @@ func selectAsset(assets []asset, name string) (asset, error) {
 	return asset{}, fmt.Errorf("release asset %q not found", name)
 }
 
-func prepareOutputDir(path string, force bool) error {
+func validateOutputTarget(path string, force bool) error {
 	info, err := os.Stat(path)
 	if err == nil {
 		if !info.IsDir() {
@@ -199,26 +211,75 @@ func prepareOutputDir(path string, force bool) error {
 		if !force {
 			return fmt.Errorf("output directory %q already exists; pass --force to replace it", path)
 		}
-		if err := os.RemoveAll(path); err != nil {
-			return err
-		}
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	return os.MkdirAll(path, 0o755)
+	return nil
+}
+
+func installDashboardZip(zipPath, outputDir string, force bool) error {
+	if err := validateOutputTarget(outputDir, force); err != nil {
+		return err
+	}
+	parent := filepath.Dir(outputDir)
+	if err := os.MkdirAll(parent, 0o755); err != nil {
+		return err
+	}
+	staging, err := os.MkdirTemp(parent, "."+filepath.Base(outputDir)+".staging-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(staging)
+	if err := extractZip(zipPath, staging); err != nil {
+		return err
+	}
+	if err := verifyDashboard(staging); err != nil {
+		return err
+	}
+
+	if _, err := os.Stat(outputDir); errors.Is(err, os.ErrNotExist) {
+		return os.Rename(staging, outputDir)
+	} else if err != nil {
+		return err
+	}
+
+	backup, err := os.MkdirTemp(parent, "."+filepath.Base(outputDir)+".backup-*")
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(backup); err != nil {
+		return err
+	}
+	if err := os.Rename(outputDir, backup); err != nil {
+		return err
+	}
+	if err := os.Rename(staging, outputDir); err != nil {
+		if rollbackErr := os.Rename(backup, outputDir); rollbackErr != nil {
+			return fmt.Errorf("install dashboard: %w; restore previous dashboard: %v", err, rollbackErr)
+		}
+		return err
+	}
+	if err := os.RemoveAll(backup); err != nil {
+		fmt.Fprintf(os.Stderr, "download: dashboard updated but previous asset cleanup failed at %s: %v\n", backup, err)
+	}
+	return nil
 }
 
 func downloadAsset(ctx context.Context, url string) (string, error) {
+	candidates := downloadCandidates(url)
 	var lastErr error
-	for _, candidate := range downloadCandidates(url) {
+	for _, candidate := range candidates {
 		tmp, err := downloadAssetURL(ctx, candidate)
 		if err == nil {
 			return tmp, nil
 		}
+		if ctx.Err() != nil {
+			return "", ctx.Err()
+		}
 		lastErr = err
 		fmt.Fprintf(os.Stderr, "download: dashboard asset failed from %s: %v\n", candidate, err)
 	}
-	return "", lastErr
+	return "", UnavailableError{Attempts: len(candidates), Err: lastErr}
 }
 
 func downloadAssetURL(ctx context.Context, url string) (string, error) {
@@ -231,7 +292,7 @@ func downloadAssetURL(ctx context.Context, url string) (string, error) {
 
 	resp, err := httpClient().Do(req)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("request failed: %w", sanitizeRequestError(err))
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
@@ -250,6 +311,14 @@ func downloadAssetURL(ctx context.Context, url string) (string, error) {
 	return tmp.Name(), nil
 }
 
+func sanitizeRequestError(err error) error {
+	var requestErr *url.Error
+	if errors.As(err, &requestErr) && requestErr.Err != nil {
+		return errors.New(requestErr.Err.Error())
+	}
+	return err
+}
+
 func downloadCandidates(url string) []string {
 	if mirrorModeDisabled() {
 		return []string{url}
@@ -257,7 +326,11 @@ func downloadCandidates(url string) []string {
 	candidates := make([]string, 0, 6)
 	candidates = append(candidates, mirroredURLs(url)...)
 	candidates = append(candidates, url)
-	return uniqueStrings(candidates)
+	candidates = uniqueStrings(candidates)
+	if len(candidates) <= maxDownloadAttempts {
+		return candidates
+	}
+	return append(candidates[:maxDownloadAttempts-1], candidates[len(candidates)-1])
 }
 
 func mirrorModeDisabled() bool {
