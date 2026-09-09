@@ -135,6 +135,10 @@ func TestDefaultRouterProfileMatchesRouterReferencePreferences(t *testing.T) {
 	if sniffer["enable"] != true || sniffer["override-destination"] != true || sniffer["force-dns-mapping"] != true || sniffer["parse-pure-ip"] != true {
 		t.Fatalf("router sniffer = %+v, want enabled DNS mapping and pure-IP parsing", sniffer)
 	}
+	tlsSniffer := sniffer["sniff"].(map[string]any)["TLS"].(map[string]any)
+	if want := []any{443, 465, 993, 8443}; !reflect.DeepEqual(tlsSniffer["ports"], want) {
+		t.Fatalf("router TLS sniffer ports = %v, want %v", tlsSniffer["ports"], want)
+	}
 }
 
 func assertGitHubProxyGeoxURL(t *testing.T, geoxURL map[string]any, profile string) {
