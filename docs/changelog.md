@@ -19,7 +19,7 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
 | localClash Core | [v0.1.84](https://github.com/qoli/localClash/releases/tag/v0.1.84) | 2026-09-09 UTC+8 |
-| localclash-luci | [v0.1.0-75](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-75) | 2026-09-04 UTC+8 |
+| localclash-luci | [v0.1.0-76](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-76) | 2026-09-09 UTC+8 |
 
 ## 2026-09-09
 
@@ -39,7 +39,28 @@ Verification:
 
 - `go test ./...`、`go vet ./...` 與 Dashboard 原子替換、失敗保留、5 次上限及可見 skip 回歸測試通過。
 - iStoreOS `24.10.8-2026073111` x86_64 QEMU 重新驗證有效 archive 更新、component status、`external-ui`、controller `/ui/`，以及 5 次下載失敗後原 index hash 保留；證據記錄於功能表 E07。
+- [Core Release workflow 34302343500](https://github.com/qoli/localClash/actions/runs/34302343500) 成功；7 項公開資產與三份 checksum 已重新下載校驗，manifest 版本及遠端 tag 均對應 commit `bcce59c`。
 - 受控 Dashboard archive 只驗證產品下載／更新編排；不代表本輪驗證上游公開 Release 可用性。未執行 ARM64 runtime 或正式路由器驗收。
+
+### localclash-luci v0.1.0-76
+
+Changes:
+
+- DNS 接管新增健康租約：只在接管有效時維持，健康檢查失敗會撤回 DNS hijack，恢復後再授予；明確停止後會清除 guard 狀態，不把過期狀態顯示為仍在運行。
+- 完整工作區重置改用頁面內可見的破壞性操作警告與勾選確認；未勾選時按鈕保持停用，不再依賴原生確認對話框。
+- LuCI helper 與 iStore 離線 installer 會在 `opkg` 前驗證 IPK 套件名稱及架構；錯誤的 arm64／其他不相容套件會明確拒絕，避免交給 `opkg` 觸發崩潰。
+- dnsqualify 候選來源可在隔離路徑驗證；離線 bundle 固定使用 Core `v0.1.84` 的官方 manifest 與精確 SHA-256。
+
+Release:
+
+[qoli/localclash-luci v0.1.0-76](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-76)
+
+Verification:
+
+- JavaScript UI、shell syntax／helper、IPK preflight、Python release resolver 與 dnsqualify source 邊界回歸測試通過。
+- iStoreOS `24.10.8-2026073111` x86_64 QEMU 的完整功能表 E05 加上修復後 E07 回驗，確認 Dashboard、完整重置與 LuCI 安裝三個剩餘項目均為 PASS；E07 包含真 RPC checkbox 流程、錯誤 arm64 IPK 預檢拒絕與安裝資料保留。
+- [Main CI 34302643168](https://github.com/qoli/localclash-luci/actions/runs/34302643168) 與 [Release workflow 34302884177](https://github.com/qoli/localclash-luci/actions/runs/34302884177) 成功；13 項公開資產與六份 checksum 已重新下載校驗，兩架構 `.run` 均通過 `--info`、`--list`、`--check`、`--noexec`，遠端 tag 對應 commit `65a21bd`。
+- QEMU 功能驗收為 x86_64；ARM64 bundle 已做靜態／完整性及解包校驗，但未宣稱 ARM64 runtime 或正式路由器驗收。
 
 ## 2026-09-08
 
