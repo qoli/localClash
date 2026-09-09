@@ -38,6 +38,7 @@ Verification:
 
 - `go test ./...`、`go vet ./...`、runtime-profile／config-render 定向測試及 diff 檢查通過。
 - Meta 與 Smart 的可拋棄 CLI render 均生成精確 TLS sniffer 端口 `[443,465,993,8443]`；證據記錄於功能表 E08。
+- [Core Release workflow 34333569819](https://github.com/qoli/localClash/actions/runs/34333569819) 成功；7 項公開資產及 GitHub digest、三份 sidecar checksum 已重新下載校驗，manifest 與雙架構 binary 版本均為 `v0.1.85`，binary revision 及遠端 tag 對應 commit `4bb0bc5`。
 - 未執行 Linux Mihomo binary、iStoreOS QEMU、ARM64 runtime 或正式路由器驗收；生成配置成功不代表 Mail.app 已命中 Google 代理，該結果保留給發佈後真機驗收。
 
 ### localClash Core v0.1.84
