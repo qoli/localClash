@@ -46,16 +46,20 @@ User selection belongs in a separate packs selection gob:
 `proxy_groups` materialize to Clash/Mihomo runtime proxy-groups. `nodes` must
 be exact proxy names from `subscription.gob`; use `subscription_nodes_search`
 to find candidate names first. Most groups do not verify egress regions with IP
-lookup or hostname geolocation. `openai.chatgpt.oauth_token.v1` is the built-in
+lookup or hostname geolocation. `openai.chatgpt.oauth_statsig.v1` is the built-in
 capability rebuilt by `subscriptions_refresh`; it derives its nodes by
 posting a dummy refresh token to `https://auth.openai.com/oauth/token` through an
-isolated temporary Mihomo. Its candidate set is the complete selectable
-subscription. HTTP 401 with `error.code=token_expired` qualifies a node because
+isolated temporary Mihomo while also initializing Statsig at
+`https://ab.chatgpt.com/v1/initialize`. Its candidate set is the complete
+selectable subscription. A node qualifies only when both measurements pass.
+HTTP 401 with `error.code=token_expired` passes the OAuth measurement because
 the request passed the regional gate before the dummy token was rejected. HTTP
 403 with `error.code=unsupported_country_region_territory` rejects the node
-immediately. Other HTTP errors, malformed responses, connection failures, and
-timeouts are inconclusive failures and are retried once; they never qualify a
-node. There is no failure hysteresis. A completed probe with no qualified nodes publishes an
+immediately. Statsig requires HTTP 200, Brotli JSON, and a non-empty
+`derived_fields.country`. OAuth and Statsig run independently for every candidate;
+other HTTP errors, malformed responses, connection failures, and timeouts are
+retried once per measurement and never qualify a node. There is no failure
+hysteresis. A completed probe with no qualified nodes publishes an
 explicit empty capability result. Infrastructure, missing, and malformed
 snapshot errors fail explicitly. A `capability` group
 cannot also declare `nodes` or `match`. Choose either

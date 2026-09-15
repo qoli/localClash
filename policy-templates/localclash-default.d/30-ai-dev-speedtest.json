@@ -6,7 +6,7 @@
     "proxy_groups": {
       "ChatGPT-available": {
         "mode": "auto",
-        "capability": "openai.chatgpt.oauth_token.v1",
+        "capability": "openai.chatgpt.oauth_statsig.v1",
         "smart_priority": [
           {
             "label": "US",
@@ -35,7 +35,7 @@
           }
         ],
         "optional": true,
-        "reason": "由 localClash 在訂閱更新時向 auth.openai.com/oauth/token 發送 dummy refresh，按 OAuth 地區准入錯誤碼重建。",
+        "reason": "由 localClash 在訂閱更新時分別探測 auth.openai.com OAuth 地區准入及 ab.chatgpt.com Statsig 初始化，只保留兩者交集。",
         "boundary": "chatgpt_service_qualified_subscription_nodes"
       }
     },

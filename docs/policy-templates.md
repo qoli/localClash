@@ -61,10 +61,12 @@ United States regional exit and places `ChatGPT-available` last as an opt-in
 choice. That localClash-owned automatic exit is rebuilt during
 `subscriptions_refresh` from nodes that pass ChatGPT's regional admission gate.
 Qualification posts a dummy refresh token to `auth.openai.com/oauth/token` and
-requires HTTP 401 with `error.code=token_expired`. HTTP 403 with
+also initializes Statsig at `ab.chatgpt.com/v1/initialize`; a node must pass both
+measurements. OAuth requires HTTP 401 with `error.code=token_expired`. HTTP 403 with
 `error.code=unsupported_country_region_territory` is a conclusive regional
-rejection. Other HTTP errors, malformed responses, connection resets, and
-timeouts are recorded as inconclusive failures and never qualify a node. One
+rejection. Statsig requires HTTP 200, Brotli JSON, and a non-empty
+`derived_fields.country`. Other HTTP errors, malformed responses, connection
+resets, and timeouts are recorded as failures and never qualify a node. One
 failed refresh removes a previously-qualified node without failure hysteresis. The
 regional exits remain available before that opt-in choice. `🚦 QUIC` defaults to
 `REJECT`; game platform/Apple/Microsoft/speed-test
@@ -92,12 +94,13 @@ localClash starts an isolated temporary Mihomo and assigns one loopback mixed
 listener to every capability candidate. It waits for every listener before
 starting HTTP workers and checks the process plus all listeners again after the
 workers complete; a startup race or listener collapse is an infrastructure
-failure, not an empty capability observation. The ChatGPT capability sends the
-dummy OAuth refresh request for every selectable subscription proxy. Endpoint
-checks use 16-worker bounded concurrency. A conclusive supported or unsupported
-regional result ends that candidate's probe immediately. An inconclusive request
-is retried once; either attempt may qualify the candidate, while two failures
-remove it.
+failure, not an empty capability observation. The ChatGPT capability sends both
+the dummy OAuth refresh request and Statsig initialize request for every selectable
+subscription proxy. The two measurements run independently and concurrently
+through the candidate's isolated listener. Endpoint checks use 16-worker bounded
+candidate concurrency. A conclusive OAuth result ends only the OAuth measurement;
+Statsig still runs. Inconclusive failures are retried once per measurement, and
+the node qualifies only when both measurements pass.
 Large subscriptions finish according to
 their finite batch count and per-request timeout rather than an unrelated fixed
 whole-batch deadline. The probes do not mutate or depend on the active core's
@@ -137,7 +140,7 @@ attestation in one rollback-protected material transaction. This is the LuCI
 one-click-update and configured first-use path; callers do not need to coordinate
 those intermediate states themselves.
 
-ChatGPT OAuth admission qualification uses a two-attempt inconclusive-failure threshold.
+ChatGPT OAuth and Statsig qualification each use a two-attempt failure threshold.
 There is no cross-refresh failure hysteresis or stale-result retention.
 ChatGPT qualification starts from every selectable subscription proxy.
 

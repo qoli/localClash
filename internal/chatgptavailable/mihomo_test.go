@@ -1,6 +1,7 @@
 package chatgptavailable
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -11,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/andybalholm/brotli"
 )
 
 func TestProbeOAuthTokenAcceptsTokenExpiredAsRegionSupported(t *testing.T) {
@@ -77,52 +80,139 @@ func TestProbeOAuthTokenDoesNotAdmitOtherOAuthErrors(t *testing.T) {
 	}
 }
 
-func TestNewMihomoProberDefaultsScaleLargeSubscriptions(t *testing.T) {
+func TestRequestStatsigRequiresBrotliAndReadsCountry(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.Header.Get("Accept-Encoding") != "br" || r.Header.Get("Statsig-Api-Key") != "test-key" || r.URL.Query().Get("k") != "test-key" {
+			t.Errorf("unexpected Statsig request: method=%s encoding=%q key=%q query=%q", r.Method, r.Header.Get("Accept-Encoding"), r.Header.Get("Statsig-Api-Key"), r.URL.RawQuery)
+		}
+		w.Header().Set("Content-Encoding", "br")
+		writer := brotli.NewWriter(w)
+		_, _ = writer.Write([]byte(`{"feature_gates":{"large":{"nested":[1,2,3]}},"derived_fields":{"country":"hk"},"sdk_flags":{}}`))
+		_ = writer.Close()
+	}))
+	defer server.Close()
+
+	result := requestStatsig(context.Background(), server.Client(), server.URL, "test-key", time.Second)
+	if result.err != nil || result.decision != statsigReachable || result.country != "HK" || result.contentEncoding != "br" {
+		t.Fatalf("result = %+v, want reachable HK Brotli response", result)
+	}
+	if result.compressedBytes <= 0 || result.decompressedBytes <= result.compressedBytes {
+		t.Fatalf("byte accounting = compressed %d decompressed %d", result.compressedBytes, result.decompressedBytes)
+	}
+}
+
+func TestRequestStatsigRejectsUncompressedResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"derived_fields":{"country":"US"}}`))
+	}))
+	defer server.Close()
+
+	result := requestStatsig(context.Background(), server.Client(), server.URL, "test-key", time.Second)
+	if result.err == nil || result.decision != statsigUnexpectedResponse || !strings.Contains(result.err.Error(), "Brotli") {
+		t.Fatalf("result = %+v, want explicit uncompressed-response rejection", result)
+	}
+}
+
+func TestReadStatsigCountryRejectsMissingOrTrailingData(t *testing.T) {
+	for _, input := range []string{`{"feature_gates":{}}`, `{"derived_fields":{"country":"US"}} true`} {
+		if country, err := readStatsigCountry(bytes.NewBufferString(input)); err == nil || country != "" {
+			t.Fatalf("input %q produced country=%q err=%v, want explicit failure", input, country, err)
+		}
+	}
+}
+
+func TestNewMihomoProberDefaultsIncludeOAuthAndStatsig(t *testing.T) {
 	corePath := filepath.Join(t.TempDir(), "mihomo")
 	if err := os.WriteFile(corePath, []byte("test"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	prober, err := NewMihomoProber(MihomoOptions{
-		CorePath:      corePath,
-		RuntimeParent: t.TempDir(),
-	})
+	prober, err := NewMihomoProber(MihomoOptions{CorePath: corePath, RuntimeParent: t.TempDir()})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if prober.options.Concurrency != 16 || prober.options.RequestTimeout != 5*time.Second || prober.options.Attempts != 2 || prober.options.Endpoint != oauthTokenURL || prober.options.ClientID != oauthClientID {
-		t.Fatalf("probe defaults = %+v, want concurrency 16, timeout 5s, two attempts, and OAuth defaults", prober.options)
+	options := prober.options
+	if options.Concurrency != 16 || options.RequestTimeout != 5*time.Second || options.Attempts != 2 || options.OAuthEndpoint != oauthTokenURL || options.OAuthClientID != oauthClientID || options.StatsigEndpoint != statsigInitializeURL || options.StatsigClientKey != statsigClientKey {
+		t.Fatalf("probe defaults = %+v, want OAuth and Statsig defaults", options)
 	}
 }
 
-func TestProbeCandidateRetriesInconclusiveFailureAndAccumulatesResponseBytes(t *testing.T) {
-	calls := 0
-	prober := &MihomoProber{
-		options: MihomoOptions{Attempts: 3, RetryDelay: time.Nanosecond, RequestTimeout: time.Second},
-		probe: func(context.Context, *http.Client, string, string, time.Duration) oauthProbeResult {
-			calls++
-			if calls == 1 {
-				return oauthProbeResult{decision: oauthTransportFailure, responseBytes: 100, err: context.DeadlineExceeded}
+func TestProbeCandidateRequiresOAuthAndStatsigIntersection(t *testing.T) {
+	tests := []struct {
+		name       string
+		oauth      oauthProbeResult
+		statsig    statsigProbeResult
+		want       bool
+		wantReject bool
+	}{
+		{name: "both-pass", oauth: oauthProbeResult{decision: oauthRegionSupported, httpStatus: 401, errorCode: "token_expired"}, statsig: statsigProbeResult{decision: statsigReachable, httpStatus: 200, country: "US", contentEncoding: "br"}, want: true},
+		{name: "oauth-only", oauth: oauthProbeResult{decision: oauthRegionSupported, httpStatus: 401, errorCode: "token_expired"}, statsig: statsigProbeResult{decision: statsigTransportFailure, err: errors.New("statsig timeout")}},
+		{name: "statsig-only", oauth: oauthProbeResult{decision: oauthRegionUnsupported, httpStatus: 403, errorCode: oauthRegionUnsupported, explicitReject: true, err: errors.New("unsupported")}, statsig: statsigProbeResult{decision: statsigReachable, httpStatus: 200, country: "SG", contentEncoding: "br"}, wantReject: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			oauthCalls := 0
+			statsigCalls := 0
+			prober := &MihomoProber{
+				options: MihomoOptions{Attempts: 1, RetryDelay: time.Nanosecond, RequestTimeout: time.Second},
+				probeOAuth: func(context.Context, *http.Client, string, string, time.Duration) oauthProbeResult {
+					oauthCalls++
+					return test.oauth
+				},
+				probeStatsig: func(context.Context, *http.Client, string, string, time.Duration) statsigProbeResult {
+					statsigCalls++
+					return test.statsig
+				},
 			}
-			return oauthProbeResult{decision: oauthRegionSupported, httpStatus: http.StatusUnauthorized, errorCode: "token_expired", responseBytes: 50}
-		},
-	}
-	observation := prober.probeCandidate(context.Background(), Candidate{Fingerprint: "node"}, &http.Client{})
-	if !observation.Available || observation.Attempts != 2 || calls != 2 || observation.ResponseBytes != 150 || observation.AdmissionStatus != oauthRegionSupported {
-		t.Fatalf("observation = %+v calls=%d, want second-attempt success with cumulative bytes", observation, calls)
+			observation := prober.probeCandidate(context.Background(), Candidate{Fingerprint: "node"}, &http.Client{})
+			if observation.Available != test.want || observation.ServiceRejected != test.wantReject || oauthCalls != 1 || statsigCalls != 1 {
+				t.Fatalf("observation = %+v OAuth calls=%d Statsig calls=%d", observation, oauthCalls, statsigCalls)
+			}
+		})
 	}
 }
 
-func TestProbeCandidateStopsAfterConclusiveUnsupportedRegion(t *testing.T) {
-	calls := 0
+func TestProbeCandidateRetriesEachInconclusiveProbeIndependently(t *testing.T) {
+	oauthCalls := 0
+	statsigCalls := 0
 	prober := &MihomoProber{
 		options: MihomoOptions{Attempts: 2, RetryDelay: time.Nanosecond, RequestTimeout: time.Second},
-		probe: func(context.Context, *http.Client, string, string, time.Duration) oauthProbeResult {
-			calls++
-			return oauthProbeResult{decision: oauthRegionUnsupported, httpStatus: http.StatusForbidden, explicitReject: true, errorCode: oauthRegionUnsupported, err: errors.New("rejected")}
+		probeOAuth: func(context.Context, *http.Client, string, string, time.Duration) oauthProbeResult {
+			oauthCalls++
+			if oauthCalls == 1 {
+				return oauthProbeResult{decision: oauthTransportFailure, responseBytes: 10, err: context.DeadlineExceeded}
+			}
+			return oauthProbeResult{decision: oauthRegionSupported, httpStatus: 401, errorCode: "token_expired", responseBytes: 20}
+		},
+		probeStatsig: func(context.Context, *http.Client, string, string, time.Duration) statsigProbeResult {
+			statsigCalls++
+			if statsigCalls == 1 {
+				return statsigProbeResult{decision: statsigTransportFailure, compressedBytes: 30, decompressedBytes: 40, err: context.DeadlineExceeded}
+			}
+			return statsigProbeResult{decision: statsigReachable, httpStatus: 200, country: "JP", contentEncoding: "br", compressedBytes: 50, decompressedBytes: 60}
 		},
 	}
 	observation := prober.probeCandidate(context.Background(), Candidate{Fingerprint: "node"}, &http.Client{})
-	if observation.Available || !observation.ServiceRejected || observation.Attempts != 1 || calls != 1 || !strings.Contains(observation.Error, "rejected") {
-		t.Fatalf("observation = %+v calls=%d, want immediate conclusive rejection", observation, calls)
+	if !observation.Available || observation.OAuthAttempts != 2 || observation.StatsigAttempts != 2 || observation.OAuthResponseBytes != 30 || observation.CompressedBytes != 80 || observation.DecompressedBytes != 100 {
+		t.Fatalf("observation = %+v, want independently retried intersection", observation)
+	}
+}
+
+func TestProbeCandidateStopsOAuthAfterConclusiveUnsupportedButStillRunsStatsig(t *testing.T) {
+	oauthCalls := 0
+	statsigCalls := 0
+	prober := &MihomoProber{
+		options: MihomoOptions{Attempts: 2, RetryDelay: time.Nanosecond, RequestTimeout: time.Second},
+		probeOAuth: func(context.Context, *http.Client, string, string, time.Duration) oauthProbeResult {
+			oauthCalls++
+			return oauthProbeResult{decision: oauthRegionUnsupported, httpStatus: 403, explicitReject: true, errorCode: oauthRegionUnsupported, err: errors.New("unsupported")}
+		},
+		probeStatsig: func(context.Context, *http.Client, string, string, time.Duration) statsigProbeResult {
+			statsigCalls++
+			return statsigProbeResult{decision: statsigReachable, httpStatus: 200, country: "TW", contentEncoding: "br"}
+		},
+	}
+	observation := prober.probeCandidate(context.Background(), Candidate{Fingerprint: "node"}, &http.Client{})
+	if observation.Available || !observation.ServiceRejected || observation.OAuthAttempts != 1 || observation.StatsigAttempts != 1 || oauthCalls != 1 || statsigCalls != 1 {
+		t.Fatalf("observation = %+v OAuth calls=%d Statsig calls=%d", observation, oauthCalls, statsigCalls)
 	}
 }

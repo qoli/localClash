@@ -17,10 +17,11 @@ import (
 )
 
 const (
-	ProfileID                   = "openai.chatgpt.oauth_token.v1"
+	ProfileID                   = "openai.chatgpt.oauth_statsig.v1"
 	LegacyProfileID             = "openai.chatgpt.mobile.v1"
 	LegacyStatsigProfileID      = "openai.chatgpt.statsig.v1"
-	SnapshotVersion             = 6
+	LegacyOAuthProfileID        = "openai.chatgpt.oauth_token.v1"
+	SnapshotVersion             = 7
 	ConsecutiveFailureThreshold = 1
 )
 
@@ -32,16 +33,24 @@ type Candidate struct {
 }
 
 type Observation struct {
-	Fingerprint      string        `json:"fingerprint"`
-	Available        bool          `json:"available"`
-	ServiceRejected  bool          `json:"service_rejected,omitempty"`
-	Attempts         int           `json:"attempts"`
-	Duration         time.Duration `json:"-"`
-	AdmissionStatus  string        `json:"admission_status,omitempty"`
-	HTTPStatus       int           `json:"http_status,omitempty"`
-	ServiceErrorCode string        `json:"service_error_code,omitempty"`
-	ResponseBytes    int64         `json:"response_bytes,omitempty"`
-	Error            string        `json:"error,omitempty"`
+	Fingerprint          string        `json:"fingerprint"`
+	Available            bool          `json:"available"`
+	ServiceRejected      bool          `json:"service_rejected,omitempty"`
+	Duration             time.Duration `json:"-"`
+	OAuthAttempts        int           `json:"oauth_attempts"`
+	OAuthAdmissionStatus string        `json:"oauth_admission_status,omitempty"`
+	OAuthHTTPStatus      int           `json:"oauth_http_status,omitempty"`
+	OAuthErrorCode       string        `json:"oauth_error_code,omitempty"`
+	OAuthResponseBytes   int64         `json:"oauth_response_bytes,omitempty"`
+	OAuthError           string        `json:"oauth_error,omitempty"`
+	StatsigAttempts      int           `json:"statsig_attempts"`
+	StatsigStatus        string        `json:"statsig_status,omitempty"`
+	StatsigHTTPStatus    int           `json:"statsig_http_status,omitempty"`
+	StatsigCountry       string        `json:"statsig_country,omitempty"`
+	ContentEncoding      string        `json:"content_encoding,omitempty"`
+	CompressedBytes      int64         `json:"compressed_bytes,omitempty"`
+	DecompressedBytes    int64         `json:"decompressed_bytes,omitempty"`
+	StatsigError         string        `json:"statsig_error,omitempty"`
 }
 
 type Prober interface {
@@ -49,20 +58,28 @@ type Prober interface {
 }
 
 type NodeState struct {
-	Name                string `json:"name"`
-	Available           bool   `json:"available"`
-	ObservedAvailable   bool   `json:"observed_available"`
-	ServiceRejected     bool   `json:"service_rejected,omitempty"`
-	ConsecutiveFailures int    `json:"consecutive_failures"`
-	Attempts            int    `json:"attempts"`
-	AdmissionStatus     string `json:"admission_status,omitempty"`
-	HTTPStatus          int    `json:"http_status,omitempty"`
-	ServiceErrorCode    string `json:"service_error_code,omitempty"`
-	ResponseBytes       int64  `json:"response_bytes,omitempty"`
-	Error               string `json:"error,omitempty"`
-	CheckedAt           string `json:"checked_at"`
-	LastAvailableAt     string `json:"last_available_at,omitempty"`
-	DurationMS          int64  `json:"duration_ms"`
+	Name                 string `json:"name"`
+	Available            bool   `json:"available"`
+	ObservedAvailable    bool   `json:"observed_available"`
+	ServiceRejected      bool   `json:"service_rejected,omitempty"`
+	ConsecutiveFailures  int    `json:"consecutive_failures"`
+	OAuthAttempts        int    `json:"oauth_attempts"`
+	OAuthAdmissionStatus string `json:"oauth_admission_status,omitempty"`
+	OAuthHTTPStatus      int    `json:"oauth_http_status,omitempty"`
+	OAuthErrorCode       string `json:"oauth_error_code,omitempty"`
+	OAuthResponseBytes   int64  `json:"oauth_response_bytes,omitempty"`
+	OAuthError           string `json:"oauth_error,omitempty"`
+	StatsigAttempts      int    `json:"statsig_attempts"`
+	StatsigStatus        string `json:"statsig_status,omitempty"`
+	StatsigHTTPStatus    int    `json:"statsig_http_status,omitempty"`
+	StatsigCountry       string `json:"statsig_country,omitempty"`
+	ContentEncoding      string `json:"content_encoding,omitempty"`
+	CompressedBytes      int64  `json:"compressed_bytes,omitempty"`
+	DecompressedBytes    int64  `json:"decompressed_bytes,omitempty"`
+	StatsigError         string `json:"statsig_error,omitempty"`
+	CheckedAt            string `json:"checked_at"`
+	LastAvailableAt      string `json:"last_available_at,omitempty"`
+	DurationMS           int64  `json:"duration_ms"`
 }
 
 type Snapshot struct {
@@ -145,18 +162,26 @@ func Rebuild(ctx context.Context, proxies []map[string]any, prober Prober, opts 
 		}
 		previousState := previous.Nodes[candidate.Fingerprint]
 		state := NodeState{
-			Name:              candidate.Name,
-			Available:         observation.Available,
-			ObservedAvailable: observation.Available,
-			ServiceRejected:   observation.ServiceRejected,
-			Attempts:          observation.Attempts,
-			AdmissionStatus:   observation.AdmissionStatus,
-			HTTPStatus:        observation.HTTPStatus,
-			ServiceErrorCode:  observation.ServiceErrorCode,
-			ResponseBytes:     observation.ResponseBytes,
-			Error:             observation.Error,
-			CheckedAt:         now.Format(time.RFC3339Nano),
-			DurationMS:        observation.Duration.Milliseconds(),
+			Name:                 candidate.Name,
+			Available:            observation.Available,
+			ObservedAvailable:    observation.Available,
+			ServiceRejected:      observation.ServiceRejected,
+			OAuthAttempts:        observation.OAuthAttempts,
+			OAuthAdmissionStatus: observation.OAuthAdmissionStatus,
+			OAuthHTTPStatus:      observation.OAuthHTTPStatus,
+			OAuthErrorCode:       observation.OAuthErrorCode,
+			OAuthResponseBytes:   observation.OAuthResponseBytes,
+			OAuthError:           observation.OAuthError,
+			StatsigAttempts:      observation.StatsigAttempts,
+			StatsigStatus:        observation.StatsigStatus,
+			StatsigHTTPStatus:    observation.StatsigHTTPStatus,
+			StatsigCountry:       observation.StatsigCountry,
+			ContentEncoding:      observation.ContentEncoding,
+			CompressedBytes:      observation.CompressedBytes,
+			DecompressedBytes:    observation.DecompressedBytes,
+			StatsigError:         observation.StatsigError,
+			CheckedAt:            now.Format(time.RFC3339Nano),
+			DurationMS:           observation.Duration.Milliseconds(),
 		}
 		if observation.Available {
 			state.LastAvailableAt = now.Format(time.RFC3339Nano)
@@ -328,7 +353,7 @@ func readSnapshot(path string) (Snapshot, bool, error) {
 	if err := json.Unmarshal(data, &snapshot); err != nil {
 		return Snapshot{}, false, fmt.Errorf("decode ChatGPT capability snapshot: %w", err)
 	}
-	if snapshot.Profile == LegacyProfileID || snapshot.Profile == LegacyStatsigProfileID || (snapshot.Profile == ProfileID && snapshot.Version > 0 && snapshot.Version < SnapshotVersion) {
+	if snapshot.Profile == LegacyProfileID || snapshot.Profile == LegacyStatsigProfileID || snapshot.Profile == LegacyOAuthProfileID || (snapshot.Profile == ProfileID && snapshot.Version > 0 && snapshot.Version < SnapshotVersion) {
 		return Snapshot{}, false, nil
 	}
 	if snapshot.Version != SnapshotVersion {
