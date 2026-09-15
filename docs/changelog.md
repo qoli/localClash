@@ -53,8 +53,11 @@ Verification:
 - `SUB-REFRESH` 保留為 PARTIAL：snapshot 時觀察到的 OAuth 403／Statsig 200 出口，在稍後
   獨立逐出口 oracle 已漂移成 OAuth 401 或 transport error，未能在同一時間重現負向等價類；
   不把 snapshot 自身的判定當成獨立 oracle。Meta、ARM64 runtime 與正式路由器未在本輪實測。
-- 本機 release asset 建置因所有 `geoip.dat` 鏡像下載 404／502／中途超時而明確失敗；沒有把
-  部分下載當成有效產物。公開資產仍須由 tag-triggered Core Release workflow 成功建立並校驗。
+- [Core Release workflow 34997463348](https://github.com/qoli/localClash/actions/runs/34997463348)
+  成功；7 項公開資產及 GitHub digest、三份 sidecar checksum 已重新下載校驗。manifest 與
+  雙架構 binary 版本均為 `v0.1.86`，binary revision、遠端 tag 及 `main` 對應 commit
+  `7c84cb7`；base-assets 亦包含新的 OAuth∩Statsig capability 模板。本機先前的
+  `geoip.dat` 鏡像下載失敗沒有被當成有效產物或替代本次 workflow 證據。
 
 ## 2026-09-09
 
