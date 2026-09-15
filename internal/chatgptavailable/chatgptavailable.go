@@ -17,9 +17,10 @@ import (
 )
 
 const (
-	ProfileID                   = "openai.chatgpt.statsig.v1"
+	ProfileID                   = "openai.chatgpt.oauth_token.v1"
 	LegacyProfileID             = "openai.chatgpt.mobile.v1"
-	SnapshotVersion             = 5
+	LegacyStatsigProfileID      = "openai.chatgpt.statsig.v1"
+	SnapshotVersion             = 6
 	ConsecutiveFailureThreshold = 1
 )
 
@@ -31,18 +32,16 @@ type Candidate struct {
 }
 
 type Observation struct {
-	Fingerprint       string        `json:"fingerprint"`
-	Available         bool          `json:"available"`
-	ServiceRejected   bool          `json:"service_rejected,omitempty"`
-	Attempts          int           `json:"attempts"`
-	Duration          time.Duration `json:"-"`
-	StatsigStatus     string        `json:"statsig_status,omitempty"`
-	StatsigHTTPStatus int           `json:"statsig_http_status,omitempty"`
-	StatsigCountry    string        `json:"statsig_country,omitempty"`
-	ContentEncoding   string        `json:"content_encoding,omitempty"`
-	CompressedBytes   int64         `json:"compressed_bytes,omitempty"`
-	DecompressedBytes int64         `json:"decompressed_bytes,omitempty"`
-	Error             string        `json:"error,omitempty"`
+	Fingerprint      string        `json:"fingerprint"`
+	Available        bool          `json:"available"`
+	ServiceRejected  bool          `json:"service_rejected,omitempty"`
+	Attempts         int           `json:"attempts"`
+	Duration         time.Duration `json:"-"`
+	AdmissionStatus  string        `json:"admission_status,omitempty"`
+	HTTPStatus       int           `json:"http_status,omitempty"`
+	ServiceErrorCode string        `json:"service_error_code,omitempty"`
+	ResponseBytes    int64         `json:"response_bytes,omitempty"`
+	Error            string        `json:"error,omitempty"`
 }
 
 type Prober interface {
@@ -56,12 +55,10 @@ type NodeState struct {
 	ServiceRejected     bool   `json:"service_rejected,omitempty"`
 	ConsecutiveFailures int    `json:"consecutive_failures"`
 	Attempts            int    `json:"attempts"`
-	StatsigStatus       string `json:"statsig_status,omitempty"`
-	StatsigHTTPStatus   int    `json:"statsig_http_status,omitempty"`
-	StatsigCountry      string `json:"statsig_country,omitempty"`
-	ContentEncoding     string `json:"content_encoding,omitempty"`
-	CompressedBytes     int64  `json:"compressed_bytes,omitempty"`
-	DecompressedBytes   int64  `json:"decompressed_bytes,omitempty"`
+	AdmissionStatus     string `json:"admission_status,omitempty"`
+	HTTPStatus          int    `json:"http_status,omitempty"`
+	ServiceErrorCode    string `json:"service_error_code,omitempty"`
+	ResponseBytes       int64  `json:"response_bytes,omitempty"`
 	Error               string `json:"error,omitempty"`
 	CheckedAt           string `json:"checked_at"`
 	LastAvailableAt     string `json:"last_available_at,omitempty"`
@@ -153,12 +150,10 @@ func Rebuild(ctx context.Context, proxies []map[string]any, prober Prober, opts 
 			ObservedAvailable: observation.Available,
 			ServiceRejected:   observation.ServiceRejected,
 			Attempts:          observation.Attempts,
-			StatsigStatus:     observation.StatsigStatus,
-			StatsigHTTPStatus: observation.StatsigHTTPStatus,
-			StatsigCountry:    observation.StatsigCountry,
-			ContentEncoding:   observation.ContentEncoding,
-			CompressedBytes:   observation.CompressedBytes,
-			DecompressedBytes: observation.DecompressedBytes,
+			AdmissionStatus:   observation.AdmissionStatus,
+			HTTPStatus:        observation.HTTPStatus,
+			ServiceErrorCode:  observation.ServiceErrorCode,
+			ResponseBytes:     observation.ResponseBytes,
 			Error:             observation.Error,
 			CheckedAt:         now.Format(time.RFC3339Nano),
 			DurationMS:        observation.Duration.Milliseconds(),
@@ -333,7 +328,7 @@ func readSnapshot(path string) (Snapshot, bool, error) {
 	if err := json.Unmarshal(data, &snapshot); err != nil {
 		return Snapshot{}, false, fmt.Errorf("decode ChatGPT capability snapshot: %w", err)
 	}
-	if snapshot.Profile == LegacyProfileID || (snapshot.Profile == ProfileID && snapshot.Version > 0 && snapshot.Version < SnapshotVersion) {
+	if snapshot.Profile == LegacyProfileID || snapshot.Profile == LegacyStatsigProfileID || (snapshot.Profile == ProfileID && snapshot.Version > 0 && snapshot.Version < SnapshotVersion) {
 		return Snapshot{}, false, nil
 	}
 	if snapshot.Version != SnapshotVersion {

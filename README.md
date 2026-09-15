@@ -326,14 +326,14 @@ MCP subscription bootstrap tools:
   relies on Mihomo's own automatic-group health checks instead of a separate
   subscription prefilter. Referenced dialer helpers remain excluded from the
   selectable group. If the intent declares
-  `capability: openai.chatgpt.statsig.v1`, refresh independently rebuilds that
+  `capability: openai.chatgpt.oauth_token.v1`, refresh independently rebuilds that
   service exit from every selectable proxy. Every ChatGPT-qualified node must
-  complete `POST https://ab.chatgpt.com/v1/initialize`, return HTTP
-  200 with Brotli encoding, and expose a non-empty `derived_fields.country`.
-  localClash streams the response through bounded Brotli and JSON readers rather
-  than retaining the multi-megabyte Statsig document. Probes use 16 workers and
-  observe every candidate once. A TLS reset, timeout, rejection, malformed response,
-  missing country, or response-limit breach removes that candidate immediately.
+  complete a dummy refresh-token `POST https://auth.openai.com/oauth/token`.
+  HTTP 401 with `error.code=token_expired` proves the egress passed the regional
+  admission gate; HTTP 403 with
+  `error.code=unsupported_country_region_territory` rejects it immediately.
+  Other HTTP errors, malformed responses, TLS failures, and timeouts never qualify
+  a candidate. Inconclusive failures are retried once. Probes use 16 workers.
   The check is independent from the active core's cached `alive` state.
 
   MCP refresh renders `config.yaml.candidate`, validates it with `mihomo -t`, and

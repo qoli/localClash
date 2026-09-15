@@ -2720,7 +2720,7 @@ func validateCapabilityProfiles(profiles []string) error {
 	for _, profile := range profiles {
 		switch profile {
 		case chatgptavailable.ProfileID:
-		case chatgptavailable.LegacyProfileID:
+		case chatgptavailable.LegacyProfileID, chatgptavailable.LegacyStatsigProfileID:
 			return fmt.Errorf("legacy ChatGPT capability %q is no longer supported; refresh the localclash-default policy-template patches before subscription refresh", profile)
 		default:
 			return fmt.Errorf("unsupported proxy-group capability: %s", profile)

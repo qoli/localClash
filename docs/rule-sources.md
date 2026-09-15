@@ -46,15 +46,16 @@ User selection belongs in a separate packs selection gob:
 `proxy_groups` materialize to Clash/Mihomo runtime proxy-groups. `nodes` must
 be exact proxy names from `subscription.gob`; use `subscription_nodes_search`
 to find candidate names first. Most groups do not verify egress regions with IP
-lookup or hostname geolocation. `openai.chatgpt.statsig.v1` is the built-in
+lookup or hostname geolocation. `openai.chatgpt.oauth_token.v1` is the built-in
 capability rebuilt by `subscriptions_refresh`; it derives its nodes by
-requiring a successful Brotli-compressed Statsig initialization at
-`https://ab.chatgpt.com/v1/initialize` through an isolated temporary Mihomo. Its
-candidate set is the complete selectable subscription.
-HTTP 200, valid JSON, and a non-empty `derived_fields.country` are required.
-Rejection, connection reset, timeout, malformed response, or a bounded-size
-violation removes the candidate after two failed observations with one retry and
-no failure hysteresis. A completed probe with no qualified nodes publishes an
+posting a dummy refresh token to `https://auth.openai.com/oauth/token` through an
+isolated temporary Mihomo. Its candidate set is the complete selectable
+subscription. HTTP 401 with `error.code=token_expired` qualifies a node because
+the request passed the regional gate before the dummy token was rejected. HTTP
+403 with `error.code=unsupported_country_region_territory` rejects the node
+immediately. Other HTTP errors, malformed responses, connection failures, and
+timeouts are inconclusive failures and are retried once; they never qualify a
+node. There is no failure hysteresis. A completed probe with no qualified nodes publishes an
 explicit empty capability result. Infrastructure, missing, and malformed
 snapshot errors fail explicitly. A `capability` group
 cannot also declare `nodes` or `match`. Choose either

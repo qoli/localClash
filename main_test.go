@@ -492,7 +492,7 @@ proxy_groups:
       min: 1
   ChatGPT-available:
     mode: auto
-    capability: openai.chatgpt.statsig.v1
+    capability: openai.chatgpt.oauth_token.v1
     optional: true
 custom_rules:
   - id: chatgpt_test
@@ -502,8 +502,8 @@ custom_rules:
         value: openai.com
 `)
 	writeMainTestFile(t, filepath.Join(".runtime", "capabilities", "chatgpt-available.json"), `{
-  "version": 5,
-  "profile": "openai.chatgpt.statsig.v1",
+  "version": 6,
+  "profile": "openai.chatgpt.oauth_token.v1",
   "updated_at": "2026-08-15T00:00:00Z",
   "qualified": ["US 01"],
 	  "nodes": {}
@@ -565,7 +565,7 @@ proxy_groups:
       min: 1
   ChatGPT-available:
     mode: auto
-    capability: openai.chatgpt.statsig.v1
+    capability: openai.chatgpt.oauth_token.v1
     optional: true
 custom_rules:
   - id: chatgpt_test
@@ -593,8 +593,8 @@ custom_rules:
 			t.Fatalf("capability paths = runtime %q candidate %q previous %q", runtimeParent, snapshotPath, previousSnapshotPath)
 		}
 		writeMainTestFile(t, snapshotPath, `{
-  "version": 5,
-  "profile": "openai.chatgpt.statsig.v1",
+  "version": 6,
+  "profile": "openai.chatgpt.oauth_token.v1",
   "updated_at": "2026-08-15T00:00:00Z",
   "qualified": ["US 01"],
   "nodes": {}
@@ -664,7 +664,7 @@ proxy_groups:
       min: 1
   ChatGPT-available:
     mode: auto
-    capability: openai.chatgpt.statsig.v1
+    capability: openai.chatgpt.oauth_token.v1
     optional: true
 `)
 
@@ -676,7 +676,7 @@ proxy_groups:
 		if !reflect.DeepEqual(eligible, []string{"HK exit", "US 01"}) {
 			t.Fatalf("ChatGPT eligible nodes = %+v, want all selectable subscription proxies", eligible)
 		}
-		writeMainTestFile(t, candidate, fmt.Sprintf(`{"version":5,"profile":%q,"updated_at":"new","qualified":["US 01"],"nodes":{}}`, chatgptavailable.ProfileID))
+		writeMainTestFile(t, candidate, fmt.Sprintf(`{"version":6,"profile":%q,"updated_at":"new","qualified":["US 01"],"nodes":{}}`, chatgptavailable.ProfileID))
 		return chatgptavailable.Result{Profile: chatgptavailable.ProfileID, SnapshotPath: candidate, Qualified: []string{"US 01"}, QualifiedCount: 1}, nil
 	}
 
@@ -885,7 +885,7 @@ func TestApplyTemplateTransactionRestoresPriorIntentAndRegistryWhenCapabilityRef
     "policy_template": "localclash-default",
     "proxy_groups": {
       "Auto": {"mode": "auto", "match": {"type": "name_regex", "pattern": ".*", "min": 1}},
-      "ChatGPT-available": {"mode": "auto", "capability": "openai.chatgpt.statsig.v1", "optional": true}
+      "ChatGPT-available": {"mode": "auto", "capability": "openai.chatgpt.oauth_token.v1", "optional": true}
     },
     "policy_groups": {
       "DNSProxy": {"mode": "manual", "exits": ["Auto"]}

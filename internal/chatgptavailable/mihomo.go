@@ -13,23 +13,18 @@ import (
 	"sync"
 	"time"
 
-	"github.com/andybalholm/brotli"
 	"localclash/internal/proxyprobe"
 )
 
 const (
-	statsigInitializeURL = "https://ab.chatgpt.com/v1/initialize"
-	// Statsig client SDK keys are public application identifiers, not OpenAI account credentials.
-	statsigClientKey            = "client-zUdXdSTygXJdzoE0sWTkP8GKTVsUMF2IRM7ShVO2JAG"
-	statsigMaxCompressedBytes   = 1024 * 1024
-	statsigMaxDecompressedBytes = 4 * 1024 * 1024
-)
-
-const (
-	statsigReachable          = "reachable"
-	statsigRejected           = "rejected"
-	statsigUnexpectedResponse = "unexpected_response"
-	statsigTransportFailure   = "transport_failure"
+	oauthTokenURL = "https://auth.openai.com/oauth/token"
+	// OAuth client IDs are public application identifiers, not OpenAI account credentials.
+	oauthClientID           = "app_WXrF1LSkiTtfYqiL6XtjygvX"
+	dummyRefreshToken       = "localclash-dummy-refresh-token"
+	oauthRegionSupported    = "region_supported"
+	oauthRegionUnsupported  = "unsupported_country_region_territory"
+	oauthUnexpectedResponse = "unexpected_response"
+	oauthTransportFailure   = "transport_failure"
 )
 
 type MihomoOptions struct {
@@ -41,12 +36,12 @@ type MihomoOptions struct {
 	RequestTimeout time.Duration
 	RetryDelay     time.Duration
 	Endpoint       string
-	ClientKey      string
+	ClientID       string
 }
 
 type MihomoProber struct {
 	options MihomoOptions
-	probe   func(context.Context, *http.Client, string, string, time.Duration) statsigProbeResult
+	probe   func(context.Context, *http.Client, string, string, time.Duration) oauthProbeResult
 }
 
 func RebuildWithMihomo(ctx context.Context, proxies []map[string]any, corePath, runtimeParent, snapshotPath string) (Result, error) {
@@ -101,12 +96,12 @@ func NewMihomoProber(options MihomoOptions) (*MihomoProber, error) {
 		options.RetryDelay = 500 * time.Millisecond
 	}
 	if strings.TrimSpace(options.Endpoint) == "" {
-		options.Endpoint = statsigInitializeURL
+		options.Endpoint = oauthTokenURL
 	}
-	if strings.TrimSpace(options.ClientKey) == "" {
-		options.ClientKey = statsigClientKey
+	if strings.TrimSpace(options.ClientID) == "" {
+		options.ClientID = oauthClientID
 	}
-	return &MihomoProber{options: options, probe: probeStatsig}, nil
+	return &MihomoProber{options: options, probe: probeOAuthToken}, nil
 }
 
 func (p *MihomoProber) Probe(ctx context.Context, candidates []Candidate) ([]Observation, error) {
@@ -151,7 +146,7 @@ func (p *MihomoProber) Probe(ctx context.Context, candidates []Candidate) ([]Obs
 			for index := range jobs {
 				client, clientErr := session.HTTPClient(index, p.options.RequestTimeout)
 				if clientErr != nil {
-					observations[index] = Observation{Fingerprint: candidates[index].Fingerprint, Error: clientErr.Error()}
+					observations[index] = Observation{Fingerprint: candidates[index].Fingerprint, AdmissionStatus: oauthTransportFailure, Error: clientErr.Error()}
 					continue
 				}
 				observations[index] = p.probeCandidate(ctx, candidates[index], client)
@@ -206,20 +201,25 @@ func (p *MihomoProber) probeCandidate(ctx context.Context, candidate Candidate, 
 	observation := Observation{Fingerprint: candidate.Fingerprint}
 	for attempt := 1; attempt <= p.options.Attempts; attempt++ {
 		observation.Attempts = attempt
-		result := p.probe(ctx, client, p.options.Endpoint, p.options.ClientKey, p.options.RequestTimeout)
-		observation.StatsigStatus = result.decision
-		observation.StatsigHTTPStatus = result.httpStatus
-		observation.StatsigCountry = result.country
-		observation.ContentEncoding = result.contentEncoding
-		observation.CompressedBytes += result.compressedBytes
-		observation.DecompressedBytes += result.decompressedBytes
+		result := p.probe(ctx, client, p.options.Endpoint, p.options.ClientID, p.options.RequestTimeout)
+		observation.AdmissionStatus = result.decision
+		observation.HTTPStatus = result.httpStatus
+		observation.ServiceErrorCode = result.errorCode
+		observation.ResponseBytes += result.responseBytes
 		observation.ServiceRejected = result.explicitReject
-		if result.err == nil && result.decision == statsigReachable {
+		if result.decision == oauthRegionSupported {
 			observation.Available = true
 			observation.Error = ""
 			break
 		}
-		observation.Error = result.err.Error()
+		if result.err == nil {
+			observation.Error = "OAuth token probe returned an unclassified result"
+		} else {
+			observation.Error = result.err.Error()
+		}
+		if result.decision == oauthRegionUnsupported {
+			break
+		}
 		if attempt < p.options.Attempts {
 			select {
 			case <-time.After(p.options.RetryDelay):
@@ -233,179 +233,104 @@ func (p *MihomoProber) probeCandidate(ctx context.Context, candidate Candidate, 
 	return observation
 }
 
-type statsigProbeResult struct {
-	decision          string
-	httpStatus        int
-	explicitReject    bool
-	country           string
-	contentEncoding   string
-	compressedBytes   int64
-	decompressedBytes int64
-	err               error
+type oauthProbeResult struct {
+	decision       string
+	httpStatus     int
+	explicitReject bool
+	errorCode      string
+	responseBytes  int64
+	err            error
 }
 
-func probeStatsig(parent context.Context, client *http.Client, endpoint, clientKey string, timeout time.Duration) statsigProbeResult {
-	return requestStatsig(parent, client, endpoint, clientKey, timeout)
+type oauthTokenRequest struct {
+	GrantType    string `json:"grant_type"`
+	ClientID     string `json:"client_id"`
+	RefreshToken string `json:"refresh_token"`
 }
 
-func requestStatsig(parent context.Context, client *http.Client, endpoint, clientKey string, timeout time.Duration) statsigProbeResult {
+type oauthErrorResponse struct {
+	Error struct {
+		Code string `json:"code"`
+		Type string `json:"type"`
+	} `json:"error"`
+}
+
+func probeOAuthToken(parent context.Context, client *http.Client, endpoint, clientID string, timeout time.Duration) oauthProbeResult {
 	requestURL, err := url.Parse(endpoint)
 	if err != nil {
-		return statsigTransportError(fmt.Errorf("parse Statsig initialize URL: %w", err))
+		return oauthTransportError(fmt.Errorf("parse OAuth token URL: %w", err))
 	}
-	query := requestURL.Query()
-	query.Set("k", clientKey)
-	query.Set("st", "localclash")
-	query.Set("sv", "1")
-	requestURL.RawQuery = query.Encode()
+	body, err := json.Marshal(oauthTokenRequest{
+		GrantType:    "refresh_token",
+		ClientID:     clientID,
+		RefreshToken: dummyRefreshToken,
+	})
+	if err != nil {
+		return oauthTransportError(fmt.Errorf("encode OAuth token probe: %w", err))
+	}
 	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, requestURL.String(), strings.NewReader("{}"))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, requestURL.String(), strings.NewReader(string(body)))
 	if err != nil {
-		return statsigTransportError(err)
+		return oauthTransportError(fmt.Errorf("create OAuth token probe: %w", err))
 	}
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Accept-Encoding", "br")
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Statsig-Api-Key", clientKey)
 	req.Header.Set("User-Agent", "localClash-chatgpt-capability/1")
 	resp, err := client.Do(req)
 	if err != nil {
-		return statsigTransportError(err)
+		return oauthTransportError(err)
 	}
 	defer resp.Body.Close()
-	result := statsigProbeResult{
-		httpStatus:      resp.StatusCode,
-		contentEncoding: strings.ToLower(strings.TrimSpace(resp.Header.Get("Content-Encoding"))),
-	}
-	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-		result.decision = statsigRejected
-		result.explicitReject = true
-		result.err = fmt.Errorf("Statsig initialize rejected the probe (HTTP %d)", resp.StatusCode)
-		return result
-	}
-	if resp.StatusCode != http.StatusOK {
-		result.decision = statsigUnexpectedResponse
-		result.err = fmt.Errorf("Statsig initialize returned HTTP %d", resp.StatusCode)
-		return result
-	}
-	if result.contentEncoding != "br" {
-		result.decision = statsigUnexpectedResponse
-		result.err = fmt.Errorf("Statsig initialize did not return required Brotli encoding (content-encoding=%q)", result.contentEncoding)
-		return result
-	}
-	compressed := &countingReader{reader: io.LimitReader(resp.Body, statsigMaxCompressedBytes+1)}
-	decompressed := &countingReader{reader: io.LimitReader(brotli.NewReader(compressed), statsigMaxDecompressedBytes+1)}
-	country, decodeErr := readStatsigCountry(decompressed)
-	result.compressedBytes = compressed.count
-	result.decompressedBytes = decompressed.count
-	if compressed.count > statsigMaxCompressedBytes {
-		result.decision = statsigUnexpectedResponse
-		result.err = fmt.Errorf("Statsig initialize compressed response exceeds %d bytes", statsigMaxCompressedBytes)
-		return result
-	}
-	if decompressed.count > statsigMaxDecompressedBytes {
-		result.decision = statsigUnexpectedResponse
-		result.err = fmt.Errorf("Statsig initialize decompressed response exceeds %d bytes", statsigMaxDecompressedBytes)
-		return result
+
+	counted := &countingReader{reader: resp.Body}
+	response, decodeErr := decodeOAuthError(counted)
+	result := oauthProbeResult{
+		httpStatus:    resp.StatusCode,
+		responseBytes: counted.count,
 	}
 	if decodeErr != nil {
-		result.decision = statsigUnexpectedResponse
-		result.err = fmt.Errorf("decode Statsig initialize response: %w", decodeErr)
+		result.decision = oauthUnexpectedResponse
+		result.err = fmt.Errorf("decode OAuth token response (HTTP %d): %w", resp.StatusCode, decodeErr)
 		return result
 	}
-	if country == "" {
-		result.decision = statsigUnexpectedResponse
-		result.err = errors.New("Statsig initialize response is missing derived_fields.country")
+	result.errorCode = strings.TrimSpace(response.Error.Code)
+	switch {
+	case resp.StatusCode == http.StatusUnauthorized && result.errorCode == "token_expired":
+		result.decision = oauthRegionSupported
+		return result
+	case resp.StatusCode == http.StatusForbidden && result.errorCode == oauthRegionUnsupported:
+		result.decision = oauthRegionUnsupported
+		result.explicitReject = true
+		result.err = errors.New("OAuth token endpoint rejected the egress region")
+		return result
+	default:
+		result.decision = oauthUnexpectedResponse
+		result.err = fmt.Errorf("OAuth token endpoint returned unexpected HTTP %d error code %q", resp.StatusCode, result.errorCode)
 		return result
 	}
-	result.decision = statsigReachable
-	result.country = country
-	return result
 }
 
-func statsigTransportError(err error) statsigProbeResult {
-	return statsigProbeResult{decision: statsigTransportFailure, err: err}
-}
-
-func readStatsigCountry(reader io.Reader) (string, error) {
+func decodeOAuthError(reader io.Reader) (oauthErrorResponse, error) {
+	var response oauthErrorResponse
 	decoder := json.NewDecoder(reader)
-	token, err := decoder.Token()
-	if err != nil {
-		return "", err
+	if err := decoder.Decode(&response); err != nil {
+		return oauthErrorResponse{}, err
 	}
-	if token != json.Delim('{') {
-		return "", errors.New("Statsig initialize response must be a JSON object")
-	}
-	var country string
-	for decoder.More() {
-		keyToken, err := decoder.Token()
-		if err != nil {
-			return "", err
-		}
-		key, ok := keyToken.(string)
-		if !ok {
-			return "", errors.New("Statsig initialize response contains a non-string object key")
-		}
-		if key == "derived_fields" {
-			var fields struct {
-				Country string `json:"country"`
-			}
-			if err := decoder.Decode(&fields); err != nil {
-				return "", err
-			}
-			country = strings.ToUpper(strings.TrimSpace(fields.Country))
-			continue
-		}
-		if err := skipJSONValue(decoder); err != nil {
-			return "", err
-		}
-	}
-	if _, err := decoder.Token(); err != nil {
-		return "", err
+	if response.Error.Code == "" {
+		return oauthErrorResponse{}, errors.New("OAuth token response is missing error.code")
 	}
 	if token, err := decoder.Token(); err != io.EOF {
 		if err != nil {
-			return "", err
+			return oauthErrorResponse{}, err
 		}
-		return "", fmt.Errorf("unexpected JSON token after Statsig initialize response: %v", token)
+		return oauthErrorResponse{}, fmt.Errorf("unexpected JSON token after OAuth token response: %v", token)
 	}
-	if country == "" {
-		return "", errors.New("Statsig initialize response is missing derived_fields.country")
-	}
-	return country, nil
+	return response, nil
 }
 
-func skipJSONValue(decoder *json.Decoder) error {
-	token, err := decoder.Token()
-	if err != nil {
-		return err
-	}
-	delim, ok := token.(json.Delim)
-	if !ok {
-		return nil
-	}
-	switch delim {
-	case '{':
-		for decoder.More() {
-			if _, err := decoder.Token(); err != nil {
-				return err
-			}
-			if err := skipJSONValue(decoder); err != nil {
-				return err
-			}
-		}
-	case '[':
-		for decoder.More() {
-			if err := skipJSONValue(decoder); err != nil {
-				return err
-			}
-		}
-	default:
-		return fmt.Errorf("unexpected JSON delimiter %q", delim)
-	}
-	_, err = decoder.Token()
-	return err
+func oauthTransportError(err error) oauthProbeResult {
+	return oauthProbeResult{decision: oauthTransportFailure, err: err}
 }
 
 type countingReader struct {

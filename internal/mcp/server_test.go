@@ -1222,7 +1222,7 @@ sources:
     url: %s/sub
 `, subscriptionServer.URL))
 	writeMCPFile(t, intent, `{
-  "version": 5,
+  "version": 6,
   "proxy_groups": {
     "⚡ 自动选择": {
       "mode": "smart",
@@ -1230,7 +1230,7 @@ sources:
     },
     "ChatGPT-available": {
       "mode": "smart",
-      "capability": "openai.chatgpt.statsig.v1",
+      "capability": "openai.chatgpt.oauth_token.v1",
       "optional": true
     }
   },
@@ -1268,7 +1268,7 @@ sources:
 		if runtimeParent != capabilityRoot || filepath.Dir(snapshotPath) == capabilityRoot || previousSnapshotPath != filepath.Join(capabilityRoot, "chatgpt-available.json") {
 			t.Fatalf("capability paths = runtime %q candidate %q previous %q", runtimeParent, snapshotPath, previousSnapshotPath)
 		}
-		writeMCPFile(t, snapshotPath, fmt.Sprintf(`{"version":5,"profile":%q,"updated_at":"2026-08-15T00:00:00Z","qualified":["JP 01"],"nodes":{}}`, chatgptavailable.ProfileID))
+		writeMCPFile(t, snapshotPath, fmt.Sprintf(`{"version":6,"profile":%q,"updated_at":"2026-08-15T00:00:00Z","qualified":["JP 01"],"nodes":{}}`, chatgptavailable.ProfileID))
 		return chatgptavailable.Result{
 			Profile:          chatgptavailable.ProfileID,
 			SnapshotPath:     snapshotPath,
@@ -1314,7 +1314,7 @@ sources:
 		t.Fatalf("capabilities = %+v", capabilities)
 	}
 	resolvedIntent := readMCPFile(t, intent)
-	if !strings.Contains(resolvedIntent, `"capability": "openai.chatgpt.statsig.v1"`) || !strings.Contains(resolvedIntent, `"JP 01"`) {
+	if !strings.Contains(resolvedIntent, `"capability": "openai.chatgpt.oauth_token.v1"`) || !strings.Contains(resolvedIntent, `"JP 01"`) {
 		t.Fatalf("resolved intent missing capability selection: %s", resolvedIntent)
 	}
 	config := readMCPYAML(t, generated)
@@ -1340,10 +1340,10 @@ func TestSubscriptionsRefreshBuildsChatGPTFromAllSelectableNodes(t *testing.T) {
 	rulesCache := filepath.Join(dir, ".runtime", "rules", "packs")
 	writeMCPPackIndex(t, rulesCache, rules.PackCache{Version: 1, Source: "blackmatrix7", Adapter: "blackmatrix7", Renderable: true, Packs: []rules.Pack{mcpBlackmatrixPack("Unused", "⚡ 自动选择")}})
 	writeMCPFile(t, intent, `{
-  "version": 5,
+  "version": 6,
   "proxy_groups": {
     "⚡ 自动选择": {"mode": "smart", "match": {"type": "name_regex", "pattern": ".*", "min": 1}},
-    "ChatGPT-available": {"mode": "smart", "capability": "openai.chatgpt.statsig.v1", "optional": true}
+    "ChatGPT-available": {"mode": "smart", "capability": "openai.chatgpt.oauth_token.v1", "optional": true}
   }
 }`)
 	proxies := []any{
@@ -1359,7 +1359,7 @@ func TestSubscriptionsRefreshBuildsChatGPTFromAllSelectableNodes(t *testing.T) {
 		if !reflect.DeepEqual(eligible, []string{"HK exit", "US 01"}) {
 			t.Fatalf("ChatGPT eligible nodes = %v, want every selectable subscription proxy", eligible)
 		}
-		writeMCPFile(t, candidate, fmt.Sprintf(`{"version":5,"profile":%q,"updated_at":"new","qualified":["US 01"],"nodes":{}}`, chatgptavailable.ProfileID))
+		writeMCPFile(t, candidate, fmt.Sprintf(`{"version":6,"profile":%q,"updated_at":"new","qualified":["US 01"],"nodes":{}}`, chatgptavailable.ProfileID))
 		return chatgptavailable.Result{Profile: chatgptavailable.ProfileID, SnapshotPath: candidate, Qualified: []string{"US 01"}, QualifiedCount: 1}, nil
 	}
 	impact := server.evaluateLocalClashAfterRefresh(
@@ -1384,6 +1384,9 @@ func TestValidateCapabilityProfilesAcceptsChatGPTAndRejectsRemovedG204(t *testin
 	if err := validateCapabilityProfiles([]string{chatgptavailable.ProfileID}); err != nil {
 		t.Fatalf("ChatGPT capability should remain supported: %v", err)
 	}
+	if err := validateCapabilityProfiles([]string{chatgptavailable.LegacyStatsigProfileID}); err == nil || !strings.Contains(err.Error(), "legacy ChatGPT capability") {
+		t.Fatalf("legacy Statsig capability error = %v, want explicit template refresh instruction", err)
+	}
 	if err := validateCapabilityProfiles([]string{"network.connectivity.g204.v1"}); err == nil || !strings.Contains(err.Error(), "unsupported proxy-group capability") {
 		t.Fatalf("removed g204 capability error = %v, want explicit unsupported capability failure", err)
 	}
@@ -1396,7 +1399,7 @@ func TestSubscriptionsRefreshCandidateConfigFailurePreservesPromotedConfig(t *te
 	rulesCache := filepath.Join(dir, "rules")
 	writeMCPPackIndex(t, rulesCache, rules.PackCache{Version: 1, Source: "blackmatrix7", Adapter: "blackmatrix7", Renderable: true, Packs: []rules.Pack{mcpBlackmatrixPack("OpenAI", "ChatGPT")}})
 	writeMCPFile(t, intent, `{
-  "version": 5,
+  "version": 6,
   "proxy_groups": {
     "AI": {"mode": "manual", "nodes": ["US 01"]}
   }

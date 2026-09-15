@@ -53,8 +53,8 @@ func TestRebuildPublishesOnlyQualifiedNodes(t *testing.T) {
 		{"name": "JP 01", "type": "trojan", "server": "jp.example.com", "password": "secret-jp"},
 	}
 	result, err := Rebuild(context.Background(), proxies, fakeProber{observations: map[string]Observation{
-		"US 01": {Available: true, Attempts: 1, StatsigStatus: statsigReachable, StatsigHTTPStatus: 200, StatsigCountry: "US", ContentEncoding: "br", CompressedBytes: 250000, DecompressedBytes: 2800000, Duration: 120 * time.Millisecond},
-		"JP 01": {Available: false, Attempts: 3, StatsigStatus: statsigTransportFailure, Error: "Statsig timeout", Duration: 2 * time.Second},
+		"US 01": {Available: true, Attempts: 1, AdmissionStatus: oauthRegionSupported, HTTPStatus: 401, ServiceErrorCode: "token_expired", ResponseBytes: 154, Duration: 120 * time.Millisecond},
+		"JP 01": {Available: false, Attempts: 2, AdmissionStatus: oauthTransportFailure, Error: "OAuth token timeout", Duration: 2 * time.Second},
 	}}, Options{
 		SnapshotPath: snapshotPath,
 		Now:          func() time.Time { return time.Date(2026, 8, 15, 12, 0, 0, 0, time.UTC) },
@@ -77,11 +77,11 @@ func TestRebuildPublishesOnlyQualifiedNodes(t *testing.T) {
 			t.Fatalf("snapshot leaked %q: %s", secret, data)
 		}
 	}
-	if !strings.Contains(string(data), `"profile": "openai.chatgpt.statsig.v1"`) {
+	if !strings.Contains(string(data), `"profile": "openai.chatgpt.oauth_token.v1"`) {
 		t.Fatalf("snapshot missing profile: %s", data)
 	}
-	if !strings.Contains(string(data), `"version": 5`) || !strings.Contains(string(data), `"qualified": [`) || !strings.Contains(string(data), `"statsig_status": "reachable"`) || !strings.Contains(string(data), `"statsig_country": "US"`) || !strings.Contains(string(data), `"content_encoding": "br"`) {
-		t.Fatalf("snapshot missing v5 qualified nodes and Statsig evidence: %s", data)
+	if !strings.Contains(string(data), `"version": 6`) || !strings.Contains(string(data), `"qualified": [`) || !strings.Contains(string(data), `"admission_status": "region_supported"`) || !strings.Contains(string(data), `"service_error_code": "token_expired"`) || !strings.Contains(string(data), `"response_bytes": 154`) {
+		t.Fatalf("snapshot missing v6 qualified nodes and OAuth admission evidence: %s", data)
 	}
 	qualified, err := LoadQualified(snapshotPath)
 	if err != nil {
@@ -100,8 +100,8 @@ func TestRebuildSelectedOnlyProbesEligibleNodes(t *testing.T) {
 		{"name": "JP 01", "type": "ss", "server": "jp.example.com"},
 	}
 	result, err := RebuildSelected(context.Background(), proxies, []string{"US 01", "JP 01"}, fakeProber{observations: map[string]Observation{
-		"US 01": {Available: true, Attempts: 1, StatsigStatus: statsigReachable},
-		"JP 01": {Available: false, Attempts: 1, StatsigStatus: statsigTransportFailure, Error: "timeout"},
+		"US 01": {Available: true, Attempts: 1, AdmissionStatus: oauthRegionSupported},
+		"JP 01": {Available: false, Attempts: 1, AdmissionStatus: oauthTransportFailure, Error: "timeout"},
 	}}, Options{SnapshotPath: snapshotPath})
 	if err != nil {
 		t.Fatal(err)
@@ -136,7 +136,7 @@ func TestRebuildPublishesExplicitEmptyResultAfterTotalLoss(t *testing.T) {
 	snapshotPath := filepath.Join(dir, "chatgpt.json")
 	proxies := []map[string]any{{"name": "US 01", "type": "ss", "server": "us.example.com", "password": "secret"}}
 	available := fakeProber{observations: map[string]Observation{
-		"US 01": {Available: true, Attempts: 1, StatsigStatus: statsigReachable, StatsigCountry: "US"},
+		"US 01": {Available: true, Attempts: 1, AdmissionStatus: oauthRegionSupported, HTTPStatus: 401, ServiceErrorCode: "token_expired"},
 	}}
 	if _, err := Rebuild(context.Background(), proxies, available, Options{SnapshotPath: snapshotPath}); err != nil {
 		t.Fatal(err)
@@ -172,8 +172,8 @@ func TestRebuildServiceRejectionPublishesExplicitEmptyResult(t *testing.T) {
 	proxies := []map[string]any{{"name": "HK 01", "type": "vless", "server": "hk.example.com"}}
 	available := fakeProber{observations: map[string]Observation{
 		"HK 01": {
-			Available: true, Attempts: 1, StatsigStatus: statsigReachable,
-			StatsigHTTPStatus: 200, StatsigCountry: "HK",
+			Available: true, Attempts: 1, AdmissionStatus: oauthRegionSupported,
+			HTTPStatus: 401, ServiceErrorCode: "token_expired",
 		},
 	}}
 	if _, err := Rebuild(context.Background(), proxies, available, Options{SnapshotPath: snapshotPath}); err != nil {
@@ -181,8 +181,8 @@ func TestRebuildServiceRejectionPublishesExplicitEmptyResult(t *testing.T) {
 	}
 	rejected := fakeProber{observations: map[string]Observation{
 		"HK 01": {
-			ServiceRejected: true, Attempts: 1, StatsigStatus: statsigRejected,
-			StatsigHTTPStatus: 403, Error: "Statsig initialize rejected the probe",
+			ServiceRejected: true, Attempts: 1, AdmissionStatus: oauthRegionUnsupported,
+			HTTPStatus: 403, ServiceErrorCode: oauthRegionUnsupported, Error: "OAuth token endpoint rejected the egress region",
 		},
 	}}
 	result, err := Rebuild(context.Background(), proxies, rejected, Options{SnapshotPath: snapshotPath})
@@ -198,15 +198,15 @@ func TestRebuildNetworkFailureImmediatelyRemovesPreviouslyQualifiedNode(t *testi
 		{"name": "JP 01", "type": "vless", "server": "jp.example.com"},
 	}
 	available := fakeProber{observations: map[string]Observation{
-		"US 01": {Available: true, Attempts: 1, StatsigStatus: statsigReachable, StatsigHTTPStatus: 200, StatsigCountry: "US"},
-		"JP 01": {Available: true, Attempts: 1, StatsigStatus: statsigReachable, StatsigHTTPStatus: 200, StatsigCountry: "JP"},
+		"US 01": {Available: true, Attempts: 1, AdmissionStatus: oauthRegionSupported, HTTPStatus: 401, ServiceErrorCode: "token_expired"},
+		"JP 01": {Available: true, Attempts: 1, AdmissionStatus: oauthRegionSupported, HTTPStatus: 401, ServiceErrorCode: "token_expired"},
 	}}
 	if _, err := Rebuild(context.Background(), proxies, available, Options{SnapshotPath: snapshotPath}); err != nil {
 		t.Fatal(err)
 	}
 	networkFailure := fakeProber{observations: map[string]Observation{
-		"US 01": {Attempts: 3, StatsigStatus: statsigTransportFailure, Error: "connection reset by peer"},
-		"JP 01": {Available: true, Attempts: 1, StatsigStatus: statsigReachable, StatsigHTTPStatus: 200, StatsigCountry: "JP"},
+		"US 01": {Attempts: 3, AdmissionStatus: oauthTransportFailure, Error: "connection reset by peer"},
+		"JP 01": {Available: true, Attempts: 1, AdmissionStatus: oauthRegionSupported, HTTPStatus: 401, ServiceErrorCode: "token_expired"},
 	}}
 	result, err := Rebuild(context.Background(), proxies, networkFailure, Options{SnapshotPath: snapshotPath})
 	if err != nil {
@@ -234,7 +234,7 @@ func TestRebuildCandidatePublishesEmptyWithoutMutatingPromotedSnapshot(t *testin
 	candidate := filepath.Join(dir, "transaction", "candidate.json")
 	proxies := []map[string]any{{"name": "US 01", "type": "ss", "server": "us.example.com"}}
 	available := fakeProber{observations: map[string]Observation{
-		"US 01": {Available: true, Attempts: 1, StatsigStatus: statsigReachable, StatsigCountry: "US"},
+		"US 01": {Available: true, Attempts: 1, AdmissionStatus: oauthRegionSupported, HTTPStatus: 401, ServiceErrorCode: "token_expired"},
 	}}
 	if _, err := Rebuild(context.Background(), proxies, available, Options{SnapshotPath: promoted}); err != nil {
 		t.Fatal(err)
@@ -244,7 +244,7 @@ func TestRebuildCandidatePublishesEmptyWithoutMutatingPromotedSnapshot(t *testin
 		t.Fatal(err)
 	}
 	unavailable := fakeProber{observations: map[string]Observation{
-		"US 01": {Attempts: 3, StatsigStatus: statsigTransportFailure, Error: "timeout"},
+		"US 01": {Attempts: 3, AdmissionStatus: oauthTransportFailure, Error: "timeout"},
 	}}
 	result, err := Rebuild(context.Background(), proxies, unavailable, Options{SnapshotPath: candidate, PreviousSnapshotPath: promoted})
 	if err != nil || result.QualifiedCount != 0 || result.UnavailableCount != 1 {
@@ -287,10 +287,12 @@ func TestReadSnapshotTreatsLegacyQualificationsAsAbsent(t *testing.T) {
 		profile string
 	}{
 		{name: "mobile-v1", version: 1, profile: LegacyProfileID},
-		{name: "statsig-v1", version: 1, profile: ProfileID},
-		{name: "statsig-v2", version: 2, profile: ProfileID},
-		{name: "statsig-v3", version: 3, profile: ProfileID},
-		{name: "statsig-v4", version: 4, profile: ProfileID},
+		{name: "statsig-v5", version: 5, profile: LegacyStatsigProfileID},
+		{name: "oauth-v1", version: 1, profile: ProfileID},
+		{name: "oauth-v2", version: 2, profile: ProfileID},
+		{name: "oauth-v3", version: 3, profile: ProfileID},
+		{name: "oauth-v4", version: 4, profile: ProfileID},
+		{name: "oauth-v5", version: 5, profile: ProfileID},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -328,8 +330,8 @@ func TestLoadQualifiedRequiresCurrentSnapshot(t *testing.T) {
 func TestLoadQualifiedRejectsMalformedCurrentSnapshot(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "chatgpt.json")
 	data := `{
-  "version": 5,
-  "profile": "openai.chatgpt.statsig.v1",
+  "version": 6,
+  "profile": "openai.chatgpt.oauth_token.v1",
   "updated_at": "2026-08-15T00:00:00Z",
   "qualified": ["US 01", "US 01"],
   "nodes": {}

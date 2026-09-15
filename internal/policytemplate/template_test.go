@@ -263,7 +263,7 @@ func TestRealLocalClashDefaultTemplateIsLayered(t *testing.T) {
 		t.Fatalf("香港节点 group = %+v, want optional region selector", config.ProxyGroups["🇭🇰 香港节点"])
 	}
 	chatGPTAvailable := config.ProxyGroups["ChatGPT-available"]
-	if chatGPTAvailable.Mode != "auto" || chatGPTAvailable.Capability != "openai.chatgpt.statsig.v1" || !chatGPTAvailable.Optional {
+	if chatGPTAvailable.Mode != "auto" || chatGPTAvailable.Capability != "openai.chatgpt.oauth_token.v1" || !chatGPTAvailable.Optional {
 		t.Fatalf("ChatGPT-available group = %+v, want optional ChatGPT capability auto group", chatGPTAvailable)
 	}
 	wantPriority := []smartpolicy.Rule{
