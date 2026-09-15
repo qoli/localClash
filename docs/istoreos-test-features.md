@@ -47,7 +47,7 @@
 | 功能 ID | 功能／驗證內容 | 責任／核心範圍 | 最後實測版本；結果；證據 |
 | --- | --- | --- | --- |
 | SUB-MANAGEMENT | **訂閱來源管理**：設定、修改及移除來源後能重新讀取；支援訂閱 URL 與節點 URI，非法／空白輸入按入口契約拒絕，原有效來源不被誤清空。[實作入口](../product_cli.go) | Core／共用 | v0.1.83／不適用；PASS；URL／節點 URI 增改刪、空白／FTP／空集合拒絕及原設定保留 [E05](#e05) |
-| SUB-REFRESH | **訂閱取得與刷新**：取得並解析多來源、合併節點及重建已配置的服務能力篩選材料（如 ChatGPT 可用節點）；來源失敗如實呈現，有有效來源與全部無效的結果不同；失敗保留合法材料。保存來源與刷新生效分別讀回。[實作入口](../product_cli.go) | Core／共用 | v0.1.83／不適用；PASS；多來源合併、部分失敗、全失敗、合法材料恢復及能力快照 [E05](#e05) |
+| SUB-REFRESH | **訂閱取得與刷新**：取得並解析多來源、合併節點及重建已配置的服務能力篩選材料（如 ChatGPT 可用節點）；來源失敗如實呈現，有有效來源與全部無效的結果不同；失敗保留合法材料。保存來源與刷新生效分別讀回。[實作入口](../product_cli.go) | Core／共用 | v0.1.86／不適用；PARTIAL；正式來源 fetch／parse／merge、全失敗敏感度及 v7 OAuth∩Statsig 快照通過；OAuth unsupported＋Statsig pass 等價類的獨立 oracle 未在同一時間重現，完整 PASS 保留 [E12](#e12) |
 | SUB-NODES | **節點查詢**：列出與搜尋已取得節點，名稱／類型與來源一致，不洩漏連線憑證；查詢結果不冒充節點品質或出口地理驗證。[實作入口](../internal/mcp/registry.go) | Core／共用 | v0.1.83／不適用；PASS；MCP 列出／搜尋、來源欄位及敏感資料界線 [E05](#e05) |
 
 <a id="sites"></a>
@@ -66,11 +66,11 @@
 
 | 功能 ID | 功能／驗證內容 | 責任／核心範圍 | 最後實測版本；結果；證據 |
 | --- | --- | --- | --- |
-| CONFIG-TEMPLATE | **策略模板設定**：選取完整預設或 minimal 模板、配置 profile，產生相應補丁及 intent；重設模板只依明示選項處理既有補丁，不默默覆蓋自訂設定。[實作入口](../product_cli.go) | Core／共用 | v0.1.85／不適用；PASS；router 預設 TLS sniffer 端口及精確回歸斷言 [E08](#e08)；其餘範圍沿用 v0.1.83 [E05](#e05) |
+| CONFIG-TEMPLATE | **策略模板設定**：選取完整預設或 minimal 模板、配置 profile，產生相應補丁及 intent；重設模板只依明示選項處理既有補丁，不默默覆蓋自訂設定。[實作入口](../product_cli.go) | Core／共用 | v0.1.86／不適用；PASS；正式 Smart/router default template、profile 及候選 capability contract 套用 [E12](#e12) |
 | CONFIG-PATCHES | **配置補丁管理**：讀取、預覽、套用、移除、啟停及排序補丁；預覽不落盤，套用後 registry／intent 一致，失效草稿或非法引用明確拒絕。[實作入口](../product_cli.go) | Core／共用 | v0.1.83／不適用；PASS；預覽／套用／移除／啟停／排序／tombstone、registry 恢復及非法／過期草稿拒絕 [E05](#e05) |
-| CONFIG-RENDER | **Mihomo 配置生成**：由訂閱、模板、補丁與 profile 生成正確配置。Meta 自動組為 url-test，Smart 為 smart 並移除 tolerance；Smart 參數、群組 priority 與 defaults 按 intent 傳遞且不覆蓋既有值；生成不等於已載入。[實作入口](../product_cli.go) | Core／按核心差異 | v0.1.85／不適用；PASS；Meta／Smart router render 均保留 TLS `[443,465,993,8443]` [E08](#e08)；其餘範圍沿用 v0.1.83 [E05](#e05) |
-| CONFIG-VALIDATION | **配置驗證**：用所選核心驗證生成配置，記錄對應 hash；非法配置不取得通過證明；驗證與活躍程序隔離，不爭用工作目錄。[實作入口](../product_cli.go) | Core／按核心差異 | v0.1.83／不適用；PASS；Meta／Smart hash 證明、非法 YAML 不改 attestation、活躍程序隔離 [E05](#e05) |
-| CONFIG-APPLY | **配置套用**：按所選入口核對候選檔提交或 runtime 載入；config-promote 是其中一個檔案提交入口，不是所有流程的前置。驗證 hash、實際載入規則／組及失敗結果符合契約，提交檔案不當成已熱載入，生成檔存在不當成已生效。[實作入口](../product_cli.go) | Core／按核心差異 | v0.1.83／不適用；PASS；非法候選拒絕、合法原子提交、hash／controller 讀回及 restart 前後載入界線 [E05](#e05) |
+| CONFIG-RENDER | **Mihomo 配置生成**：由訂閱、模板、補丁與 profile 生成正確配置。Meta 自動組為 url-test，Smart 為 smart 並移除 tolerance；Smart 參數、群組 priority 與 defaults 按 intent 傳遞且不覆蓋既有值；生成不等於已載入。[實作入口](../product_cli.go) | Core／按核心差異 | v0.1.86／不適用；PASS；Smart/router formal render 50 proxies／64 rules，ChatGPT-available 11 成員與 v7 snapshot 及 controller read-back 完全一致 [E12](#e12) |
+| CONFIG-VALIDATION | **配置驗證**：用所選核心驗證生成配置，記錄對應 hash；非法配置不取得通過證明；驗證與活躍程序隔離，不爭用工作目錄。[實作入口](../product_cli.go) | Core／按核心差異 | v0.1.86／不適用；PASS；Smart 候選正式 Mihomo `-t` isolated pass，attestation hash `2cf720…e085` 與候選一致 [E12](#e12) |
+| CONFIG-APPLY | **配置套用**：按所選入口核對候選檔提交或 runtime 載入；config-promote 是其中一個檔案提交入口，不是所有流程的前置。驗證 hash、實際載入規則／組及失敗結果符合契約，提交檔案不當成已熱載入，生成檔存在不當成已生效。[實作入口](../product_cli.go) | Core／按核心差異 | v0.1.86／不適用；PASS；正式 candidate config promote、runtime start 及 ChatGPT-available controller read-back 通過 [E12](#e12) |
 
 <a id="cores"></a>
 ## 核心管理
@@ -382,3 +382,24 @@ iStoreOS `24.10.8-2026073111` x86_64 QEMU 對 ingress dead-man DNS lease 做影�
 - QEMU slirp `10.0.2.3` 沒有可用的 TCP DNS baseline，因此該早期觀測不列入功能結論；最終
   UDP／TCP oracle 使用隔離 WAN namespace。測試後 runtime、guard、fixture、namespace、QEMU
   均已停止，qcow2 通過 `qemu-img check`。未操作正式路由器，亦未宣稱 ARM64 runtime 驗收。
+
+<a id="e12"></a>
+### E12
+
+2026-09-16 對 Core `4bdd1d4` 的 Smart/router 候選執行限定驗收；LuCI 未修改，QEMU 映像內既有
+LuCI 為 `0.1.0-76`，因此不作 LuCI v0.1.0-79 新版宣稱。原始證據見
+[v0.1.86 候選報告](../.runtime/istoreos-acceptance/20260916-release-v0186/report.md)。
+
+- 正式 `subscription refresh` 取得並解析受控 fixture 的 50 個真實 VLESS 節點，生成 v7
+  `openai.chatgpt.oauth_statsig.v1` snapshot；11 個節點符合 OAuth region-supported 與
+  Statsig reachable 的交集，39 個不可用。先停止必要 fixture endpoint，正式 refresh 以
+  `all subscription sources are invalid` 失敗；恢復後再次成功，確認 oracle 敏感度。
+- 正式 `config apply-template`（Smart/router/default）、`config render`、候選配置複製及
+  `mihomo config-test`／`config-promote` 均成功。候選 SHA 為
+  `2cf720ee61445d0a9c8e99adf6b1a6aed754e7b79ee3038e2aa83acc9cde085e`；正式 controller
+  read-back 的 `ChatGPT-available` 11 名與 v7 snapshot 完全一致。
+- 獨立逐出口 HTTP oracle 對 US04 觀察到 OAuth `401 token_expired` 與 Statsig `200 br`；
+  snapshot 當時記錄的 TW02／SG02 為 OAuth `403 unsupported_country_region_territory` 且
+  Statsig `200`，但較後獨立重測未重現該 OAuth reject（回為 `401 token_expired` 或 transport
+  error）。故 SUB-REFRESH 記 `PARTIAL`，不得把這次時間漂移升格為完整 PASS；其餘四個選測
+  配置功能依本輪正式入口與外部可觀察結果記 `PASS`。

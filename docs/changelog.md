@@ -18,8 +18,43 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
-| localClash Core | [v0.1.85](https://github.com/qoli/localClash/releases/tag/v0.1.85) | 2026-09-09 UTC+8 |
+| localClash Core | [v0.1.86](https://github.com/qoli/localClash/releases/tag/v0.1.86) | 2026-09-16 UTC+8 |
 | localclash-luci | [v0.1.0-79](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-79) | 2026-09-09 UTC+8 |
+
+## 2026-09-16
+
+### localClash Core v0.1.86
+
+Changes:
+
+- `ChatGPT-available` 改為同時驗證 OpenAI OAuth 地區准入與 ChatGPT Statsig 初始化，只保留
+  兩項探測都通過的代理出口交集。
+- OAuth 探測向 `auth.openai.com/oauth/token` 發送 dummy refresh；只有 HTTP 401
+  `token_expired` 視為通過地區閘門，HTTP 403
+  `unsupported_country_region_territory` 會明確淘汰該出口。
+- Statsig 探測仍要求 `ab.chatgpt.com/v1/initialize` 回傳 HTTP 200、Brotli JSON 及非空
+  `derived_fields.country`。兩項探測對每個候選出口獨立並行，任一失敗都不會由另一項兜底。
+- capability 更新為 `openai.chatgpt.oauth_statsig.v1`，snapshot 升至 v7，分別保存 OAuth
+  與 Statsig 的狀態、HTTP code、重試及錯誤證據；舊 Statsig 或 OAuth-only snapshot 必須
+  重新刷新，不會被沿用。
+
+Release:
+
+[qoli/localClash v0.1.86](https://github.com/qoli/localClash/releases/tag/v0.1.86)
+
+Verification:
+
+- `go test ./...`、`go vet ./...`、ChatGPT capability race test 及 diff 檢查通過；交集測試確認
+  OAuth-only、Statsig-only 都不會進組，OAuth 明確拒絕亦不會跳過 Statsig 觀測。
+- iStoreOS `24.10.8-2026073111` x86_64 QEMU 安裝 Core 候選 `4bdd1d4` 與 Smart
+  `alpha-smart-651ca46`。正式模板、render、Mihomo `-t`、config promote、runtime 啟動及
+  controller read-back 通過；v7 snapshot、生成配置與 runtime 的 `ChatGPT-available` 均為
+  相同 11 個成員，證據見功能表 E12。
+- `SUB-REFRESH` 保留為 PARTIAL：snapshot 時觀察到的 OAuth 403／Statsig 200 出口，在稍後
+  獨立逐出口 oracle 已漂移成 OAuth 401 或 transport error，未能在同一時間重現負向等價類；
+  不把 snapshot 自身的判定當成獨立 oracle。Meta、ARM64 runtime 與正式路由器未在本輪實測。
+- 本機 release asset 建置因所有 `geoip.dat` 鏡像下載 404／502／中途超時而明確失敗；沒有把
+  部分下載當成有效產物。公開資產仍須由 tag-triggered Core Release workflow 成功建立並校驗。
 
 ## 2026-09-09
 
