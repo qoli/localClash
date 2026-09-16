@@ -698,6 +698,73 @@ proxy_groups:
 	}
 }
 
+func TestRunProductSubscriptionRefreshRebuildsTemplateOwnedGroupsBeforeCapabilities(t *testing.T) {
+	dir := t.TempDir()
+	runtimeRoot := filepath.Join(dir, ".runtime")
+	state := appinit.RuntimeState{Paths: appinit.RuntimePaths{
+		WorkspaceRoot: dir, RuntimeRoot: runtimeRoot,
+		SubscriptionConfig:  filepath.Join(dir, "localclash-subscriptions.json"),
+		SubscriptionRuntime: filepath.Join(runtimeRoot, "subscriptions"),
+		SubscriptionPath:    filepath.Join(dir, "subscription.gob"),
+		CorePath:            filepath.Join(dir, "mihomo"),
+	}}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("proxies:\n  - name: US 01\n    type: ss\n    server: us.example\n    port: 443\n    cipher: aes-128-gcm\n    password: secret\n"))
+	}))
+	t.Cleanup(server.Close)
+	replace := true
+	if _, err := subscriptions.Configure(subscriptions.ConfigureOptions{
+		ConfigPath: state.Paths.SubscriptionConfig,
+		Sources:    []subscriptions.Source{{URL: server.URL + "/sub", DisplayName: "01"}},
+		Replace:    &replace,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	writeMainTestFile(t, filepath.Join(dir, "policy-templates", "localclash-default.json"), `{
+  "id":"localclash-default","name":"Default","description":"Current default.",
+  "config":{"version":4,"policy_template":"localclash-default","proxy_groups":{
+    "ChatGPT-current":{"mode":"auto","capability":"openai.chatgpt.oauth_statsig.v1","optional":true}
+  }}
+}`)
+	writeMainTestFile(t, filepath.Join(dir, configpatch.RegistryDirName, "default.old_old.json"), `{
+  "version":1,"patch_id":"default.old","title":"Old","source":"policy_template",
+  "source_ref":"old.json","status":"enabled","order_id":"0200.000000","overlay":{"proxy_groups":[
+    {"id":"ChatGPT-old","mode":"auto","capability":"openai.chatgpt.statsig.v1","optional":true}
+  ]}
+}`)
+	writeMainTestFile(t, filepath.Join(dir, "localclash-intent.json"), `{
+  "version":4,"policy_template":"localclash-default","proxy_groups":{
+    "ChatGPT-old":{"mode":"auto","capability":"openai.chatgpt.statsig.v1","optional":true}
+  }
+}`)
+
+	previousChatGPT := rebuildProductChatGPT
+	t.Cleanup(func() { rebuildProductChatGPT = previousChatGPT })
+	rebuildProductChatGPT = func(_ context.Context, _ []map[string]any, eligible []string, _, _, candidate, _ string) (chatgptavailable.Result, error) {
+		if !reflect.DeepEqual(eligible, []string{"US 01"}) {
+			t.Fatalf("eligible = %v", eligible)
+		}
+		writeMainTestFile(t, candidate, fmt.Sprintf(`{"version":7,"profile":%q,"updated_at":"now","qualified":["US 01"],"nodes":{}}`, chatgptavailable.ProfileID))
+		return chatgptavailable.Result{Profile: chatgptavailable.ProfileID, SnapshotPath: candidate, Qualified: []string{"US 01"}, QualifiedCount: 1}, nil
+	}
+
+	if _, err := captureStdoutAllowError(t, func() error {
+		return runProductSubscription([]string{"refresh", "--json"}, state)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	config, err := localconfig.Load(filepath.Join(dir, "localclash-intent.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := config.ProxyGroups["ChatGPT-old"]; exists {
+		t.Fatalf("old template-owned group survived refresh: %+v", config.ProxyGroups)
+	}
+	if got := config.ProxyGroups["ChatGPT-current"].Capability; got != chatgptavailable.ProfileID {
+		t.Fatalf("current capability = %q", got)
+	}
+}
+
 func TestRunProductSubscriptionSetRejectsRemovedG204Option(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)

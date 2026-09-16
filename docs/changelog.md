@@ -18,10 +18,37 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
-| localClash Core | [v0.1.86](https://github.com/qoli/localClash/releases/tag/v0.1.86) | 2026-09-16 UTC+8 |
+| localClash Core | [v0.1.87](https://github.com/qoli/localClash/releases/tag/v0.1.87) | 2026-09-16 UTC+8 |
 | localclash-luci | [v0.1.0-79](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-79) | 2026-09-09 UTC+8 |
 
 ## 2026-09-16
+
+### localClash Core v0.1.87
+
+Changes:
+
+- 修正 Core 更新後「保存並應用訂閱」可能仍從舊 compiled intent 讀到已更名
+  `ChatGPT-available` capability，並在探測前以 `unsupported proxy-group capability`
+  終止的問題。
+- `subscription refresh` 與 MCP `subscriptions_refresh` 現在先從已安裝的當前選定模板
+  重新建立 template-owned patches 及 intent，再以新訂閱節點重建 Proxy Group；已移除或
+  改名的模板群組自然消失，不再查找、改名或 alias 舊群組。
+- user-owned patches 仍會保留；舊 capability snapshot 只依 schema version 判定是否過期，
+  不再維護歷史 Proxy Group／capability 名稱清單。
+
+Release:
+
+[qoli/localClash v0.1.87](https://github.com/qoli/localClash/releases/tag/v0.1.87)
+
+Verification:
+
+- `go test ./...`、`go vet ./...`、ChatGPT capability race test 及 diff 檢查通過；新增回歸測試
+  證明舊 template-owned group 會由當前模板的 group 取代、user-owned group 保留，並在重編譯後
+  才啟動 OAuth∩Statsig capability refresh。
+- iStoreOS `24.10.8-2026073111` x86_64 QEMU 以正式 `subscription set` →
+  `subscription refresh` 回驗通過：舊 group 消失、當前 group 與 user patch 讀回正確；50 個候選
+  完成雙探測，12 個進入 OAuth∩Statsig 交集。`SUB-REFRESH` 仍保留 E12 的獨立負向 oracle
+  `PARTIAL` 邊界；本輪只關閉 template-refresh 回歸，證據見功能表 E13。
 
 ### localClash Core v0.1.86
 

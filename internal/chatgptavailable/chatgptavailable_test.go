@@ -286,9 +286,9 @@ func TestReadSnapshotTreatsLegacyQualificationsAsAbsent(t *testing.T) {
 		version int
 		profile string
 	}{
-		{name: "mobile-v1", version: 1, profile: LegacyProfileID},
-		{name: "statsig-v5", version: 5, profile: LegacyStatsigProfileID},
-		{name: "oauth-v6", version: 6, profile: LegacyOAuthProfileID},
+		{name: "mobile-v1", version: 1, profile: "openai.chatgpt.mobile.v1"},
+		{name: "statsig-v5", version: 5, profile: "openai.chatgpt.statsig.v1"},
+		{name: "oauth-v6", version: 6, profile: "openai.chatgpt.oauth_token.v1"},
 		{name: "intersection-v6", version: 6, profile: ProfileID},
 	}
 	for _, test := range tests {

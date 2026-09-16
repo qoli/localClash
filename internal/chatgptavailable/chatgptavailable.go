@@ -18,9 +18,6 @@ import (
 
 const (
 	ProfileID                   = "openai.chatgpt.oauth_statsig.v1"
-	LegacyProfileID             = "openai.chatgpt.mobile.v1"
-	LegacyStatsigProfileID      = "openai.chatgpt.statsig.v1"
-	LegacyOAuthProfileID        = "openai.chatgpt.oauth_token.v1"
 	SnapshotVersion             = 7
 	ConsecutiveFailureThreshold = 1
 )
@@ -353,7 +350,7 @@ func readSnapshot(path string) (Snapshot, bool, error) {
 	if err := json.Unmarshal(data, &snapshot); err != nil {
 		return Snapshot{}, false, fmt.Errorf("decode ChatGPT capability snapshot: %w", err)
 	}
-	if snapshot.Profile == LegacyProfileID || snapshot.Profile == LegacyStatsigProfileID || snapshot.Profile == LegacyOAuthProfileID || (snapshot.Profile == ProfileID && snapshot.Version > 0 && snapshot.Version < SnapshotVersion) {
+	if snapshot.Version > 0 && snapshot.Version < SnapshotVersion {
 		return Snapshot{}, false, nil
 	}
 	if snapshot.Version != SnapshotVersion {

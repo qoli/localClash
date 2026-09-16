@@ -121,8 +121,13 @@ qualifies, the snapshot records the per-candidate failures and an explicit empty
 `qualified` list.
 
 The product CLI `subscription refresh --json` and MCP `subscriptions_refresh`
-both rebuild the capabilities selected by the subscription policy. ChatGPT is
-always rebuilt when it is declared by the product template. `⚡ 自动选择`
+first replace template-owned patches from the currently installed selected
+template, preserve user-owned patches, and compile a fresh intent. Proxy groups
+removed or renamed by a product update therefore disappear through normal
+one-way compilation; refresh does not look up, rename, or alias old generated
+group or capability identifiers. Both entries then rebuild the capabilities
+selected by that fresh subscription policy. ChatGPT is always rebuilt when it
+is declared by the product template. `⚡ 自动选择`
 resolves directly from the complete selectable subscription set. Capability snapshots record the
 ordered qualified node names as derived state so a following `config render
 --json` or MCP `config_render` can resolve the same capability even after the

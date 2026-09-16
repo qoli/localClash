@@ -1384,12 +1384,6 @@ func TestValidateCapabilityProfilesAcceptsChatGPTAndRejectsRemovedG204(t *testin
 	if err := validateCapabilityProfiles([]string{chatgptavailable.ProfileID}); err != nil {
 		t.Fatalf("ChatGPT capability should remain supported: %v", err)
 	}
-	if err := validateCapabilityProfiles([]string{chatgptavailable.LegacyStatsigProfileID}); err == nil || !strings.Contains(err.Error(), "legacy ChatGPT capability") {
-		t.Fatalf("legacy Statsig capability error = %v, want explicit template refresh instruction", err)
-	}
-	if err := validateCapabilityProfiles([]string{chatgptavailable.LegacyOAuthProfileID}); err == nil || !strings.Contains(err.Error(), "legacy ChatGPT capability") {
-		t.Fatalf("legacy OAuth-only capability error = %v, want explicit template refresh instruction", err)
-	}
 	if err := validateCapabilityProfiles([]string{"network.connectivity.g204.v1"}); err == nil || !strings.Contains(err.Error(), "unsupported proxy-group capability") {
 		t.Fatalf("removed g204 capability error = %v, want explicit unsupported capability failure", err)
 	}

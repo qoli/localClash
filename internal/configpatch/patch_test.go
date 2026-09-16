@@ -176,6 +176,65 @@ func TestImportPolicyTemplateRefreshesOnlyPolicyTemplatePatches(t *testing.T) {
 	}
 }
 
+func TestRefreshSelectedPolicyTemplateReplacesCompiledTemplateGroupsWithoutNameMigration(t *testing.T) {
+	dir := t.TempDir()
+	templatesDir := filepath.Join(dir, "policy-templates")
+	writeTestFile(t, filepath.Join(templatesDir, "localclash-default.json"), `{
+  "id": "localclash-default",
+  "name": "Default",
+  "description": "Default template.",
+  "config": {
+    "version": 4,
+    "policy_template": "localclash-default",
+    "proxy_groups": {
+      "ChatGPT-current": {"mode": "auto", "capability": "openai.chatgpt.oauth_statsig.v1", "optional": true}
+    }
+  }
+}`)
+	registryDir := filepath.Join(dir, "patches")
+	writePatchJSON(t, filepath.Join(registryDir, "default.old_old-default.json"), Patch{
+		Version: PatchVersion, PatchID: "default.old", Title: "Old Default",
+		Source: SourcePolicyTemplate, Status: StatusEnabled, OrderID: "0200.000000",
+		Overlay: configplan.OverlayIntent{ProxyGroups: []configplan.OverlayProxyGroupIntent{{
+			ID: "ChatGPT-old", Mode: "auto", Capability: "openai.chatgpt.statsig.v1", Optional: true,
+		}}},
+	})
+	writePatchJSON(t, filepath.Join(registryDir, "user.keep_keep.json"), Patch{
+		Version: PatchVersion, PatchID: "user.keep", Title: "Keep",
+		Source: SourceUser, Status: StatusEnabled, OrderID: "1000.000000",
+		Overlay: configplan.OverlayIntent{ProxyGroups: []configplan.OverlayProxyGroupIntent{{ID: "UserGroup", Mode: "direct"}}},
+	})
+	configPath := filepath.Join(dir, "localclash-intent.json")
+	writeTestFile(t, configPath, `{
+  "version": 4,
+  "policy_template": "localclash-default",
+  "proxy_groups": {
+    "ChatGPT-old": {"mode": "auto", "capability": "openai.chatgpt.statsig.v1", "optional": true}
+  }
+}`)
+
+	_, refreshed, err := RefreshSelectedPolicyTemplate(context.Background(), registryDir, templatesDir, configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !refreshed {
+		t.Fatal("selected policy template was not refreshed")
+	}
+	config, err := localconfig.Load(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := config.ProxyGroups["ChatGPT-old"]; exists {
+		t.Fatalf("compiled intent retained old template-owned proxy group: %+v", config.ProxyGroups)
+	}
+	if current := config.ProxyGroups["ChatGPT-current"]; current.Capability != "openai.chatgpt.oauth_statsig.v1" {
+		t.Fatalf("current template proxy group = %+v", current)
+	}
+	if _, exists := config.ProxyGroups["UserGroup"]; !exists {
+		t.Fatalf("compiled intent lost user-owned proxy group: %+v", config.ProxyGroups)
+	}
+}
+
 func TestImportPolicyTemplateResetPatchesReplacesConflictingUserPack(t *testing.T) {
 	dir := t.TempDir()
 	templatesDir := filepath.Join(dir, "policy-templates")

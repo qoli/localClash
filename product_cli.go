@@ -244,6 +244,14 @@ func runProductSubscription(args []string, state appinit.RuntimeState) error {
 			return err
 		}
 		ctx := context.Background()
+		if _, _, err := configpatch.RefreshSelectedPolicyTemplate(
+			ctx,
+			productWorkspacePath(state, configpatch.RegistryDirName),
+			productWorkspacePath(state, policytemplate.DefaultDir),
+			productWorkspacePath(state, "localclash-intent.json"),
+		); err != nil {
+			return fmt.Errorf("refresh selected policy template: %w", err)
+		}
 		result, err := subscriptions.Refresh(ctx, subscriptions.RefreshOptions{
 			ConfigPath: state.Paths.SubscriptionConfig,
 			RuntimeDir: state.Paths.SubscriptionRuntime,
@@ -389,8 +397,6 @@ func validateSupportedCapabilityProfiles(profiles []string) error {
 	for _, profile := range profiles {
 		switch profile {
 		case chatgptavailable.ProfileID:
-		case chatgptavailable.LegacyProfileID:
-			return fmt.Errorf("legacy ChatGPT capability %q is no longer supported; refresh the localclash-default policy-template patches before subscription refresh", profile)
 		default:
 			return fmt.Errorf("unsupported proxy-group capability: %s", profile)
 		}

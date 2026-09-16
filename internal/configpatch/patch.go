@@ -597,6 +597,36 @@ func ImportPolicyTemplate(ctx context.Context, opts ImportTemplateOptions) (Impo
 	return result, nil
 }
 
+// RefreshSelectedPolicyTemplate rebuilds template-owned patches from the
+// currently installed template while preserving user-owned patches. The
+// selected template is the only persisted input reused; compiled proxy groups
+// are replaced by the fresh compilation instead of migrated by name.
+func RefreshSelectedPolicyTemplate(ctx context.Context, registryDir, policyTemplatesDir, configPath string) (ImportTemplateResult, bool, error) {
+	config, err := localconfig.Load(configPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return ImportTemplateResult{}, false, nil
+		}
+		return ImportTemplateResult{}, false, err
+	}
+	templateID := strings.TrimSpace(config.PolicyTemplate)
+	if templateID == "" {
+		return ImportTemplateResult{}, false, nil
+	}
+	result, err := ImportPolicyTemplate(ctx, ImportTemplateOptions{
+		RegistryDir:         registryDir,
+		PolicyTemplatesDir:  policyTemplatesDir,
+		PolicyTemplate:      templateID,
+		RefreshTemplateOnly: true,
+		ConfigPath:          configPath,
+		SkipArtifactBuild:   true,
+	})
+	if err != nil {
+		return ImportTemplateResult{}, false, err
+	}
+	return result, true, nil
+}
+
 func Compile(dir, policyTemplate string, now time.Time) (localconfig.Config, string, error) {
 	registry, err := Load(dir)
 	if err != nil {
