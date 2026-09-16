@@ -27,14 +27,10 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 
 Changes:
 
-- 修正 Core 更新後「保存並應用訂閱」可能仍從舊 compiled intent 讀到已更名
-  `ChatGPT-available` capability，並在探測前以 `unsupported proxy-group capability`
-  終止的問題。
-- `subscription refresh` 與 MCP `subscriptions_refresh` 現在先從已安裝的當前選定模板
-  重新建立 template-owned patches 及 intent，再以新訂閱節點重建 Proxy Group；已移除或
-  改名的模板群組自然消失，不再查找、改名或 alias 舊群組。
-- user-owned patches 仍會保留；舊 capability snapshot 只依 schema version 判定是否過期，
-  不再維護歷史 Proxy Group／capability 名稱清單。
+- 修正 Core 更新後「保存並應用訂閱」可能讀到舊模板群組，並在 ChatGPT 探測前以
+  `unsupported proxy-group capability` 終止的問題。
+- 訂閱刷新現在先以已安裝的當前模板重新編譯 intent，再由新節點建立 Proxy Group；舊模板群組
+  自然消失而不作名稱遷移／alias，user-owned patches 仍會保留。
 
 Release:
 
@@ -49,21 +45,19 @@ Verification:
   `subscription refresh` 回驗通過：舊 group 消失、當前 group 與 user patch 讀回正確；50 個候選
   完成雙探測，12 個進入 OAuth∩Statsig 交集。`SUB-REFRESH` 仍保留 E12 的獨立負向 oracle
   `PARTIAL` 邊界；本輪只關閉 template-refresh 回歸，證據見功能表 E13。
+- [Core Release workflow 35060795632](https://github.com/qoli/localClash/actions/runs/35060795632)
+  成功；7 項公開資產及 GitHub digest、三份 sidecar checksum 已重新下載校驗。manifest 與
+  雙架構 binary 版本均為 `v0.1.87`，遠端 annotated tag 指向 commit `c7ad8e4`；base assets
+  包含本輪用於單向重建 Proxy Group 的當前 policy templates。
 
 ### localClash Core v0.1.86
 
 Changes:
 
-- `ChatGPT-available` 改為同時驗證 OpenAI OAuth 地區准入與 ChatGPT Statsig 初始化，只保留
-  兩項探測都通過的代理出口交集。
-- OAuth 探測向 `auth.openai.com/oauth/token` 發送 dummy refresh；只有 HTTP 401
-  `token_expired` 視為通過地區閘門，HTTP 403
-  `unsupported_country_region_territory` 會明確淘汰該出口。
-- Statsig 探測仍要求 `ab.chatgpt.com/v1/initialize` 回傳 HTTP 200、Brotli JSON 及非空
-  `derived_fields.country`。兩項探測對每個候選出口獨立並行，任一失敗都不會由另一項兜底。
-- capability 更新為 `openai.chatgpt.oauth_statsig.v1`，snapshot 升至 v7，分別保存 OAuth
-  與 Statsig 的狀態、HTTP code、重試及錯誤證據；舊 Statsig 或 OAuth-only snapshot 必須
-  重新刷新，不會被沿用。
+- `ChatGPT-available` 現在同時驗證 OAuth 地區准入與 Statsig 初始化，只保留兩項都通過的出口；
+  `unsupported_country_region_territory` 會明確淘汰節點，不以另一項結果兜底。
+- capability 更新為 `openai.chatgpt.oauth_statsig.v1`、snapshot 升至 v7 並分別保存兩項證據；
+  舊 Statsig-only 或 OAuth-only snapshot 必須重新刷新。
 
 Release:
 
