@@ -123,23 +123,15 @@
       {
         "id": "large-model-download-hosts",
         "target": "📥 大模型下载",
-        "reason": "Route dedicated Hugging Face and ModelScope artifact-transfer hosts plus the Ollama model registry without capturing their websites, generic cloud storage, or shared GitHub release assets.",
+        "reason": "Route dedicated Hugging Face Xet namespaces and ModelScope artifact-transfer hosts plus the Ollama model registry without capturing their websites, generic cloud storage, or shared GitHub release assets.",
         "rules": [
           {
-            "type": "domain",
-            "value": "cas-server.xethub.hf.co"
+            "type": "domain_suffix",
+            "value": "xethub.hf.co"
           },
           {
-            "type": "domain",
-            "value": "cas-server.xethub-eu.hf.co"
-          },
-          {
-            "type": "domain",
-            "value": "transfer.xethub.hf.co"
-          },
-          {
-            "type": "domain",
-            "value": "transfer.xethub-eu.hf.co"
+            "type": "domain_suffix",
+            "value": "xethub-eu.hf.co"
           },
           {
             "type": "domain",

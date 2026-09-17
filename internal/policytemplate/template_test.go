@@ -402,25 +402,26 @@ func TestRealLocalClashDefaultTemplateIsLayered(t *testing.T) {
 	if modelDownloadRule == nil || modelDownloadRule.Target != "📥 大模型下载" {
 		t.Fatalf("large-model-download-hosts custom rule = %+v, want 📥 大模型下载", modelDownloadRule)
 	}
-	wantModelDownloadDomains := []string{
-		"cas-server.xethub.hf.co",
-		"cas-server.xethub-eu.hf.co",
-		"transfer.xethub.hf.co",
-		"transfer.xethub-eu.hf.co",
-		"us.aws.cdn.hf.co",
-		"us.gcp.cdn.hf.co",
-		"cdn-lfs-us-1.hf.co",
-		"cdn-lfs-eu-1.hf.co",
-		"cdn-lfs-cn-1.modelscope.cn",
-		"cdn-lfs-ap-1.modelscope.ai",
-		"registry.ollama.ai",
+	wantModelDownloadRules := []struct {
+		typeName string
+		value    string
+	}{
+		{"domain_suffix", "xethub.hf.co"},
+		{"domain_suffix", "xethub-eu.hf.co"},
+		{"domain", "us.aws.cdn.hf.co"},
+		{"domain", "us.gcp.cdn.hf.co"},
+		{"domain", "cdn-lfs-us-1.hf.co"},
+		{"domain", "cdn-lfs-eu-1.hf.co"},
+		{"domain", "cdn-lfs-cn-1.modelscope.cn"},
+		{"domain", "cdn-lfs-ap-1.modelscope.ai"},
+		{"domain", "registry.ollama.ai"},
 	}
-	if len(modelDownloadRule.Rules) != len(wantModelDownloadDomains) {
-		t.Fatalf("large-model-download-hosts rules = %+v, want %d exact domains", modelDownloadRule.Rules, len(wantModelDownloadDomains))
+	if len(modelDownloadRule.Rules) != len(wantModelDownloadRules) {
+		t.Fatalf("large-model-download-hosts rules = %+v, want %d artifact-delivery rules", modelDownloadRule.Rules, len(wantModelDownloadRules))
 	}
-	for i, wantDomain := range wantModelDownloadDomains {
-		if got := modelDownloadRule.Rules[i]; got.Type != "domain" || got.Value != wantDomain || got.NoResolve {
-			t.Fatalf("large-model-download-hosts rule[%d] = %+v, want exact domain %q", i, got, wantDomain)
+	for i, want := range wantModelDownloadRules {
+		if got := modelDownloadRule.Rules[i]; got.Type != want.typeName || got.Value != want.value || got.NoResolve {
+			t.Fatalf("large-model-download-hosts rule[%d] = %+v, want %s %q", i, got, want.typeName, want.value)
 		}
 	}
 	if got := config.Packs[len(config.Packs)-2].Target; got != "🌍 非中國網站" {
