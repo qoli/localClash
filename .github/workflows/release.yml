@@ -57,17 +57,6 @@ jobs:
         run: scripts/build-release-assets.sh "$RELEASE_TAG"
 
       - name: Create GitHub release
-        uses: softprops/action-gh-release@v3
-        with:
-          tag_name: ${{ env.RELEASE_TAG }}
-          name: localClash ${{ env.RELEASE_TAG }}
-          preserve_order: true
-          files: |
-            dist/localclash-base-assets.tar.gz
-            dist/localclash-base-assets.tar.gz.sha256
-            dist/localclash-linux-amd64
-            dist/localclash-linux-arm64
-            dist/localclash-linux-amd64.sha256
-            dist/localclash-linux-arm64.sha256
-            dist/localclash-release-manifest.json
-          fail_on_unmatched_files: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/publish-release-assets.sh "$RELEASE_TAG"
