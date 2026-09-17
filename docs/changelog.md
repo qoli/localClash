@@ -18,8 +18,34 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
-| localClash Core | [v0.1.87](https://github.com/qoli/localClash/releases/tag/v0.1.87) | 2026-09-16 UTC+8 |
+| localClash Core | [v0.1.88](https://github.com/qoli/localClash/releases/tag/v0.1.88) | 2026-09-18 UTC+8 |
 | localclash-luci | [v0.1.0-79](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-79) | 2026-09-09 UTC+8 |
+
+## 2026-09-18
+
+### localClash Core v0.1.88
+
+Changes:
+
+- Hugging Face Xet 大模型制品傳輸改以 `xethub.hf.co` 與 `xethub-eu.hf.co` 的 domain suffix
+  分流，不再只列舉 `cas-server`／`transfer` 等容易過期的精確主機。
+- `cas-bridge.xethub.hf.co` 及未來新增的 Xet 子域名會在泛 AI 分類前命中「📥 大模型下载」；
+  `hf.co` 其他網站與服務不會被整體捕捉。
+- 既有 Hugging Face CDN、ModelScope 與 Ollama 精確下載規則保持不變。
+
+Release:
+
+[qoli/localClash v0.1.88](https://github.com/qoli/localClash/releases/tag/v0.1.88)
+
+Verification:
+
+- `go test ./...`、`go vet ./...`、release broadcast tests 與 diff 檢查通過；模板回歸測試鎖定
+  Xet US／EU suffix 及既有精確下載規則。
+- iStoreOS `24.10.8-2026073111` x86_64 QEMU 在同一 qcow2 先由公開 v0.1.87 正式 full reset、
+  套用預設模板、刷新受控訂閱、render、Mihomo `-t`、保存套用、啟動及 controller 讀回；停止後
+  只替換候選 v0.1.88 binary／base assets，再走正式模板刷新及相同鏈路。載入規則確認兩條 Xet
+  suffix 位於 `category-ai-!cn` 前，舊 user-owned 規則及 HF CDN／ModelScope／Ollama 規則保留，
+  證據見功能表 E15。未操作正式路由器，亦未執行 ARM64 runtime。
 
 ## 2026-09-16
 
@@ -41,10 +67,12 @@ Verification:
 - `go test ./...`、`go vet ./...`、ChatGPT capability race test 及 diff 檢查通過；新增回歸測試
   證明舊 template-owned group 會由當前模板的 group 取代、user-owned group 保留，並在重編譯後
   才啟動 OAuth∩Statsig capability refresh。
-- iStoreOS `24.10.8-2026073111` x86_64 QEMU 以正式 `subscription set` →
-  `subscription refresh` 回驗通過：舊 group 消失、當前 group 與 user patch 讀回正確；50 個候選
-  完成雙探測，12 個進入 OAuth∩Statsig 交集。`SUB-REFRESH` 仍保留 E12 的獨立負向 oracle
-  `PARTIAL` 邊界；本輪只關閉 template-refresh 回歸，證據見功能表 E13。
+- 原 E13 直接修改候選環境檔案建立舊 group，只保留為 synthetic regression，不再視為升級證據。
+  iStoreOS `24.10.8-2026073111` x86_64 QEMU 已由已發布 v0.1.85 經正式入口建立並使用 workspace；
+  升級 v0.1.86 的正式 refresh 重現 `unsupported proxy-group capability` 後不 reset、不人工修復，
+  在同一 workspace 升級已發布 v0.1.87。正式 `subscription refresh` 自動重建 template-owned
+  patches、保留 user state，後續 save/apply、render、Mihomo `-t`、runtime 及 controller
+  read-back 通過。`SUB-REFRESH` 仍保留 E12 的獨立負向 oracle `PARTIAL` 邊界，證據見功能表 E14。
 - [Core Release workflow 35060795632](https://github.com/qoli/localClash/actions/runs/35060795632)
   成功；7 項公開資產及 GitHub digest、三份 sidecar checksum 已重新下載校驗。manifest 與
   雙架構 binary 版本均為 `v0.1.87`，遠端 annotated tag 指向 commit `c7ad8e4`；base assets
