@@ -12,7 +12,6 @@ import (
 
 	"localclash/internal/configmeta"
 	"localclash/internal/customsites"
-	"localclash/internal/resolverconfig"
 	"localclash/internal/rules"
 	"localclash/internal/runtimeprofile"
 	"localclash/internal/smartpolicy"
@@ -536,9 +535,6 @@ enabled_packs: []
 	if got := dns["proxy-server-nameserver"].([]any); len(got) != 2 || got[0] != "https://223.5.5.5/dns-query" || got[1] != "https://doh.pub/dns-query" {
 		t.Fatalf("proxy-server-nameserver changed: %#v", got)
 	}
-	if result.ResolverStatus.Enabled || result.ResolverStatus.Reason != "missing" {
-		t.Fatalf("missing resolver status = %+v", result.ResolverStatus)
-	}
 }
 
 func TestRenderBuiltinRouterKeepsExplicitFilteredFallback(t *testing.T) {
@@ -584,7 +580,7 @@ enabled_packs: []
 	}
 }
 
-func TestRenderRejectsMalformedResolverOverlayAndKeepsSecureBaseline(t *testing.T) {
+func TestRenderIgnoresResidualDNSQualifyJSON(t *testing.T) {
 	paths := writeRenderFixture(t)
 	profilePath := filepath.Join(paths.dir, "localclash-runtime.json")
 	if _, err := runtimeprofile.Configure(profilePath, runtimeprofile.ModeRouter, ""); err != nil {
@@ -601,10 +597,8 @@ policy_groups:
     manual: true
 enabled_packs: []
 `)
-	configPath := resolverconfig.DefaultPath(profilePath)
-	writeFile(t, configPath, `{"version":2,"unknown":true}`)
-	outputPath := filepath.Join(paths.dir, "rejected-baseline.yaml")
-	result, err := Render(Options{
+	outputPath := filepath.Join(paths.dir, "without-dnsqualify.yaml")
+	_, err := Render(Options{
 		SourcePath: paths.subscription, OutputPath: outputPath,
 		PacksSelectionPath: paths.selection, RulesCacheDir: paths.cacheDir,
 		RuntimeProfilePath: profilePath, Force: true,
@@ -612,151 +606,41 @@ enabled_packs: []
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.ResolverStatus.Enabled || result.ResolverStatus.State != "disabled" || result.ResolverStatus.Reason != "rejected" || !strings.Contains(result.ResolverStatus.Detail, "unknown field") {
-		t.Fatalf("rejected resolver status = %+v", result.ResolverStatus)
-	}
-	config := readTestYAML(t, outputPath)
-	policy := config["dns"].(map[string]any)["nameserver-policy"].(map[string]any)
-	if _, exists := policy["devstreaming-cdn.apple.com"]; exists {
-		t.Fatalf("rejected overlay mutated secure baseline: %#v", policy)
-	}
-}
-
-func TestRenderUnacceptableResolverOverlayUsesVisibleSecureBaseline(t *testing.T) {
-	paths := writeRenderFixture(t)
-	profilePath := filepath.Join(paths.dir, "localclash-runtime.json")
-	if _, err := runtimeprofile.Configure(profilePath, runtimeprofile.ModeRouter, ""); err != nil {
-		t.Fatal(err)
-	}
-	writeFile(t, paths.selection, `version: 1
-proxy_groups:
-  "⚡ 自动选择":
-    nodes: ["🇯🇵日本01 | JP"]
-    auto: true
-policy_groups:
-  DNSProxy:
-    exits: ["⚡ 自动选择"]
-    manual: true
-enabled_packs: []
-`)
-	writeFile(t, resolverconfig.DefaultPath(profilePath), `{
-  "version": 2,
-  "scope": {"type":"domains"},
-  "resolver": {},
-  "ecs": {},
-  "measurement": {}
-}`)
-	outputPath := filepath.Join(paths.dir, "legacy-baseline.yaml")
-	result, err := Render(Options{
-		SourcePath: paths.subscription, OutputPath: outputPath,
-		PacksSelectionPath: paths.selection, RulesCacheDir: paths.cacheDir,
-		RuntimeProfilePath: profilePath, Force: true,
-	})
+	baseline, err := os.ReadFile(outputPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.ResolverStatus.Enabled || result.ResolverStatus.State != "disabled" || result.ResolverStatus.Reason != "rejected" || !strings.Contains(result.ResolverStatus.Detail, "unknown field") {
-		t.Fatalf("rejected resolver status = %+v", result.ResolverStatus)
-	}
-	config := readTestYAML(t, outputPath)
-	policy := config["dns"].(map[string]any)["nameserver-policy"].(map[string]any)
-	if _, exists := policy["devstreaming-cdn.apple.com"]; exists {
-		t.Fatalf("rejected resolver policy remained active: %#v", policy)
-	}
-}
-
-func TestRenderIgnoresProducerMetadata(t *testing.T) {
-	paths := writeRenderFixture(t)
-	profilePath := filepath.Join(paths.dir, "localclash-runtime.json")
-	if _, err := runtimeprofile.Configure(profilePath, runtimeprofile.ModeRouter, ""); err != nil {
-		t.Fatal(err)
-	}
-	writeFile(t, paths.selection, `version: 1
-proxy_groups:
-  "⚡ 自动选择":
-    nodes: ["🇯🇵日本01 | JP"]
-    auto: true
-policy_groups:
-  DNSProxy:
-    exits: ["⚡ 自动选择"]
-    manual: true
-enabled_packs: []
-`)
-	domains := []string{"cdn.fastly.steamstatic.com", "devstreaming-cdn.apple.com"}
-	writeFile(t, resolverconfig.DefaultPath(profilePath), `{
-  "version": 2,
-  "expires_at": "2000-01-01T00:00:00Z",
-  "nameserver_policy": {
-    "cdn.fastly.steamstatic.com": ["https://8.8.8.8/dns-query#DNSProxy"],
-    "devstreaming-cdn.apple.com": ["https://8.8.8.8/dns-query#DNSProxy"]
-  }
-}`)
-	outputPath := filepath.Join(paths.dir, "ignored-producer-metadata.yaml")
-	result, err := Render(Options{
-		SourcePath: paths.subscription, OutputPath: outputPath,
-		PacksSelectionPath: paths.selection, RulesCacheDir: paths.cacheDir,
-		RuntimeProfilePath: profilePath, Force: true,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !result.ResolverStatus.Enabled || result.ResolverStatus.State != "active" || result.ResolverStatus.PolicyCount != len(domains) {
-		t.Fatalf("resolver result = %+v", result)
-	}
-	config := readTestYAML(t, outputPath)
-	policy := config["dns"].(map[string]any)["nameserver-policy"].(map[string]any)
-	for _, domain := range domains {
-		if _, exists := policy[domain]; !exists {
-			t.Fatalf("ignored producer metadata disabled ECS policy %q: %#v", domain, policy)
-		}
-	}
-}
-
-func TestRenderConsumesQualifiedECSResolverConfig(t *testing.T) {
-	paths := writeRenderFixture(t)
-	profilePath := filepath.Join(paths.dir, "localclash-runtime.json")
-	if _, err := runtimeprofile.Configure(profilePath, runtimeprofile.ModeRouter, ""); err != nil {
-		t.Fatal(err)
-	}
-	writeFile(t, paths.selection, `version: 1
-proxy_groups:
-  "⚡ 自动选择":
-    nodes: ["🇯🇵日本01 | JP"]
-    auto: true
-policy_groups:
-  DNSProxy:
-    exits: ["⚡ 自动选择"]
-    manual: true
-enabled_packs: []
-`)
-	configPath := resolverconfig.DefaultPath(profilePath)
-	domains := []string{"cdn.fastly.steamstatic.com", "devstreaming-cdn.apple.com"}
-	writeFile(t, configPath, `{
+	dnsqualifyPath := filepath.Join(paths.dir, "dnsqualify.json")
+	for name, content := range map[string]string{
+		"valid": `{
   "version": 2,
   "nameserver_policy": {
     "cdn.fastly.steamstatic.com": ["https://8.8.8.8/dns-query#DNSProxy"],
     "devstreaming-cdn.apple.com": ["https://8.8.8.8/dns-query#DNSProxy"]
   }
-}`)
-	result, err := Render(Options{
-		SourcePath: paths.subscription, OutputPath: filepath.Join(paths.dir, "dnsqualify.yaml"),
-		PacksSelectionPath: paths.selection, RulesCacheDir: paths.cacheDir,
-		RuntimeProfilePath: profilePath, Force: true,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !result.ResolverStatus.Enabled || result.ResolverStatus.State != "active" || result.ResolverStatus.PolicyCount != len(domains) {
-		t.Fatalf("active resolver status = %+v", result.ResolverStatus)
-	}
-	config := readTestYAML(t, result.OutputPath)
-	policy := config["dns"].(map[string]any)["nameserver-policy"].(map[string]any)
-	want := "https://8.8.8.8/dns-query#DNSProxy"
-	for _, domain := range domains {
-		got := policy[domain].([]any)
-		if len(got) != 1 || got[0] != want {
-			t.Fatalf("dnsqualify policy[%q] = %#v", domain, got)
-		}
+}`,
+		"malformed": `{"version":`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := os.WriteFile(dnsqualifyPath, []byte(content), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			candidatePath := filepath.Join(paths.dir, name+"-dnsqualify.yaml")
+			if _, err := Render(Options{
+				SourcePath: paths.subscription, OutputPath: candidatePath,
+				PacksSelectionPath: paths.selection, RulesCacheDir: paths.cacheDir,
+				RuntimeProfilePath: profilePath, Force: true,
+			}); err != nil {
+				t.Fatal(err)
+			}
+			candidate, err := os.ReadFile(candidatePath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(candidate) != string(baseline) {
+				t.Fatalf("residual dnsqualify.json changed rendered output")
+			}
+		})
 	}
 }
 

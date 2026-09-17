@@ -22,7 +22,7 @@
 
 - **Core**：LocalClash 的資料、規則、配置及核心管理能力。對 Mihomo 保證正確核心、
   配置生成與交付、驗證及正常啟動；不測其模型、選路演算法、協定實作或效能。
-- **LuCI**：另列 OpenWrt 包裝、UI 任務、更新編排、DNS 最佳化整合及網路接管。
+- **LuCI**：另列 OpenWrt 包裝、UI 任務、更新編排及網路接管。
   不窮舉所有傳輸協定與環境排列，但功能契約宣稱的 TCP／UDP／DNS 資料面必須由
   獨立 client 實測，受控請求或內部狀態不能代替。
 - **共用**：選代表核心驗功能的完整操作。需要另一核心時，只補受影響配置／啟動介面；
@@ -116,7 +116,6 @@
 | LUCI-INIT | **初始化引導**：由頁面提供訂閱、模板及核心，完成 Core 呼叫、配置、啟動及接管；重新開頁顯示真實狀態，失敗可定位。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI 編排＋Core／按影響 | v0.1.83／0.1.0-76；PASS；空工作區 Meta／Smart 初始化、訂閱／模板／Core、UI 啟動並接管、重開讀回及可定位失敗後恢復 [E05](#e05) |
 | LUCI-UPDATE | **一鍵更新與資料保留**：從頁面更新，兩個檢查點、來源版本及結果可讀回；重跑／舊版升級保持訂閱、網站順序、偏好及核心選擇；原本停止或未初始化的狀態不擅自啟動。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI 編排＋Core／按影響 | v0.1.83／0.1.0-76；PASS；UI／受控 76→77、重跑、software／material checkpoints、資料／選擇保留、停止／未初始化不自啟及 76 恢復 [E05](#e05) |
 | LUCI-TASKS | **介面與長任務交互**：訂閱、網站、初始化及更新頁面操作與後端一致；日誌、取消、互斥、重新連接與終態可用，無重複交易／無限 busy；依各操作是否支援取消驗證。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI／共用 | v0.1.83／0.1.0-76；PASS；訂閱／網站／初始化／更新頁、日誌、代表性取消／互斥、同 task id reload／reopen 及終態恢復 [E05](#e05) |
-| LUCI-DNS | **DNS 最佳化設定整合**：從正式入口完成查詢、真實量測、合格結果套用及移除；資格／WAN 身分不符明確拒絕，套用後由獨立 client 驗證實際 DNS 行為，移除後恢復基線。不評比外部解析器或驗 dnsqualify 演算法。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI 編排＋Core 配置／共用 | v0.1.83／0.1.0-76；PARTIAL；真實量測只取得無合格結果；正向套用使用受控 producer 且沒有 client DNS oracle；WAN eth0→eth9 拒絕及 hash rollback 通過 [E05](#e05) [E09](#e09) |
 | LUCI-TAKEOVER | **OpenWrt 網路接管**：從正式入口套用及停止防火牆、策略路由與 DNS 接管；獨立 LAN client 的實際 TCP／UDP／DNS 請求按配置到達受控 WAN endpoint，停止後恢復原資料面，且非本產品規則保留。內部 effective、規則或 lease 只能解釋結果。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI／共用 | Core `8d573f3`／LuCI v0.1.0-79 source `005f59e`（QEMU 候選 IPK `a150ece`）；PASS（影響範圍回驗）；沿用 E05 非 DNS 資料面，新增 ingress lease active／到期後 router 與獨立 LAN UDP／TCP DNS、router-DNS bypass、狀態及 stop [E05](#e05) [E11](#e11) |
 | LUCI-RESTORE | **接管及服務恢復**：開機、WAN 事件、受管程序退出及依賴故障後，按使用者意圖恢復或撤回接管；每次轉移後由獨立 client 重跑相同資料面 oracle，明確停止後不自行重開。內部狀態與 lease 不代表服務可用。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI＋Core 生命週期／共用 | Core `8d573f3`／LuCI v0.1.0-79 source `005f59e`（QEMU 候選 IPK `a150ece`）；PASS（影響範圍回驗）；沿用 E05 開機／WAN 轉移，新增 guard 或 Mihomo 停止後無 userspace cleanup 的 lease 到期、獨立 LAN UDP／TCP dnsmasq fallback、重新授租及明確 stop [E05](#e05) [E11](#e11) |
 
@@ -249,7 +248,7 @@ VDE 與全部 QEMU；保留的 qcow2 均通過 `qemu-img check`。
 
 現行 LuCI `overview.js` 的 `bootstrap_default`、`one_click_update`、runtime／
 takeover 操作，`subscription.js` 的 `subscription_setup_async`，以及維護頁
-`index.js` 的元件、服務、dnsqualify、`reset` RPC 是本表入口依據。
+`index.js` 的元件、服務及 `reset` RPC 是本表入口依據。
 E05 已按候選版本核對這些正式入口及真實 UI；目前不新增健康 S2 運行中跨核心切換、
 配置單獨 reset、DNS 資格到期自動處理等不存在的 UI 功能。
 
@@ -466,3 +465,17 @@ base assets SHA-256 為 `153571fb96db5504e4cb11a4f89ff42ab4b91889000a5bb1c5dad2e
 - v0.1.87 建立的 user-owned custom-site 規則在升級後仍存在。測試未操作正式路由器；Meta、
   ARM64 runtime 與實際公網下載吞吐未在本輪驗收。runtime、fixture 與 QEMU 已停止，兩份 qcow2
   最終均由 `qemu-img check` 確認無錯誤。
+
+<a id="e16"></a>
+### E16
+
+2026-09-18 以 Core base `c516215` 與 LuCI base `005f59e` 加本輪工作樹改動，移除 Core
+`dnsqualify.json` 讀取 seam、LuCI DNS 最佳化 UI／RPC，以及一鍵更新的 dnsqualify gate。
+Core `go test ./...`、`go vet ./...` 通過；configrender 回歸證明不存在、有效及損壞的殘留
+`dnsqualify.json` 產生 byte-for-byte 相同配置。LuCI 全部 JavaScript syntax／UI tests、
+dns-guard contract 與現存 rpcd／hotplug host checks 通過，一鍵更新 trace 與結果不再包含
+dnsqualify。
+
+本輪未執行 iStoreOS QEMU 或正式路由器驗收，因此不更新 `CONFIG-RENDER`、`LUCI-UPDATE`、
+`LUCI-TASKS` 的最後實測版本；已不存在的 `LUCI-DNS` 功能列直接移除，不把 host checks 記為
+功能 PASS。

@@ -13,7 +13,6 @@ import (
 
 	"localclash/internal/configmeta"
 	"localclash/internal/customsites"
-	"localclash/internal/resolverconfig"
 	rulespkg "localclash/internal/rules"
 	"localclash/internal/runtimeprofile"
 	"localclash/internal/smartpolicy"
@@ -37,7 +36,6 @@ type Options struct {
 	Selection          *rulespkg.Selection `json:"-"`
 	RulesCacheDir      string
 	RuntimeProfilePath string
-	ResolverConfigPath string
 	CustomSitesProxy   string
 	CustomSitesDirect  string
 	Force              bool
@@ -45,12 +43,11 @@ type Options struct {
 }
 
 type Result struct {
-	OutputPath     string
-	RuntimeMode    string
-	Core           string
-	ProxyCount     int
-	RuleCount      int
-	ResolverStatus resolverconfig.Status `json:"resolver_status"`
+	OutputPath  string
+	RuntimeMode string
+	Core        string
+	ProxyCount  int
+	RuleCount   int
 }
 
 type ruleSpec struct {
@@ -124,21 +121,6 @@ func Render(opts Options) (Result, error) {
 		return Result{}, err
 	}
 	finish(nil, map[string]any{"runtime_mode": runtimeFile.Mode, "core": runtimeFile.Core})
-
-	finish = stage("apply_optional_resolver_overlay", map[string]any{"resolver_config_path": opts.ResolverConfigPath})
-	builtinRouter := runtimeFile.Mode == runtimeprofile.ModeRouter && profile.Path == "builtin:"+runtimeprofile.ModeRouter
-	resolverStatus := resolverconfig.Status{State: "disabled", Reason: "not_applicable"}
-	if builtinRouter {
-		resolverStatus = resolverconfig.ApplyOptional(opts.ResolverConfigPath, profile.Mihomo)
-	}
-	fields := map[string]any{"overlay_applied": resolverStatus.Enabled, "state": resolverStatus.State, "reason": resolverStatus.Reason}
-	if resolverStatus.Detail != "" {
-		fields["detail"] = resolverStatus.Detail
-	}
-	if resolverStatus.Enabled {
-		fields["policy_count"] = resolverStatus.PolicyCount
-	}
-	finish(nil, fields)
 
 	finish = stage("read_proxies", nil)
 	proxies, err := readProxies(source)
@@ -253,12 +235,11 @@ func Render(opts Options) (Result, error) {
 	finish(nil, map[string]any{"bytes": len(data)})
 
 	return Result{
-		OutputPath:     opts.OutputPath,
-		RuntimeMode:    runtimeFile.Mode,
-		Core:           runtimeFile.Core,
-		ProxyCount:     len(proxyNames),
-		RuleCount:      len(rendered["rules"].([]string)),
-		ResolverStatus: resolverStatus,
+		OutputPath:  opts.OutputPath,
+		RuntimeMode: runtimeFile.Mode,
+		Core:        runtimeFile.Core,
+		ProxyCount:  len(proxyNames),
+		RuleCount:   len(rendered["rules"].([]string)),
 	}, nil
 }
 
@@ -615,9 +596,6 @@ func normalizeOptions(opts Options) Options {
 	}
 	if opts.RuntimeProfilePath == "" {
 		opts.RuntimeProfilePath = runtimeprofile.DefaultPath
-	}
-	if opts.ResolverConfigPath == "" {
-		opts.ResolverConfigPath = resolverconfig.DefaultPath(opts.RuntimeProfilePath)
 	}
 	return opts
 }
