@@ -46,6 +46,10 @@ Verification:
   只替換候選 v0.1.88 binary／base assets，再走正式模板刷新及相同鏈路。載入規則確認兩條 Xet
   suffix 位於 `category-ai-!cn` 前，舊 user-owned 規則及 HF CDN／ModelScope／Ollama 規則保留，
   證據見功能表 E15。未操作正式路由器，亦未執行 ARM64 runtime。
+- [Core Release workflow 35259844319](https://github.com/qoli/localClash/actions/runs/35259844319)
+  成功；7 項公開資產及 GitHub digest、三份 sidecar checksum 已重新下載校驗。manifest 為
+  `v0.1.88`，雙架構 binary revision 與遠端 annotated tag 均指向 commit `09ae30c`；base assets
+  包含本版兩條 Xet domain-suffix 規則。
 
 ## 2026-09-16
 
