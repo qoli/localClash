@@ -27,11 +27,12 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 
 Changes:
 
-- Hugging Face Xet 大模型制品傳輸改以 `xethub.hf.co` 與 `xethub-eu.hf.co` 的 domain suffix
-  分流，不再只列舉 `cas-server`／`transfer` 等容易過期的精確主機。
-- `cas-bridge.xethub.hf.co` 及未來新增的 Xet 子域名會在泛 AI 分類前命中「📥 大模型下载」；
-  `hf.co` 其他網站與服務不會被整體捕捉。
-- 既有 Hugging Face CDN、ModelScope 與 Ollama 精確下載規則保持不變。
+- Xet 子域名分流：Hugging Face 大模型製品傳輸改以 `xethub.hf.co` 與
+  `xethub-eu.hf.co` 兩個 namespace 的 domain suffix 分流，不再只列舉
+  `cas-server`／`transfer` 等容易過期的精確主機。
+- 規則優先序：`cas-bridge.xethub.hf.co` 及未來新增的 Xet 子域名會在泛 AI 分類前命中
+  「📥 大模型下载」；`hf.co` 其他網站與服務不會被整體捕捉。
+- 既有下載規則保留：Hugging Face CDN、ModelScope 與 Ollama 精確下載規則保持不變。
 
 Release:
 
