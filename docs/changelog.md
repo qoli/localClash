@@ -27,11 +27,8 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 
 Changes:
 
-- LuCI 套件更新不再 restart rpcd 或任何 Web server；iStoreOS 使用 uhttpd、nginx／uwsgi 或其他
-  Web stack 都不會被 localClash 寫死重啟。
-- 首次或手動安裝只執行 session-preserving 的 `rpcd reload`；一鍵更新進行中則先寫入 reload
-  標記，等任務終態持久化後才重新載入 RPC method 與 ACL。
-- rpcd reload 失敗會保留待處理標記並寫入明確日誌，不再吞掉服務操作錯誤。
+- LuCI 更新不再 restart rpcd 或 Web server；首次／手動安裝只執行 `rpcd reload`。
+- 一鍵更新會先持久化任務終態再 reload；失敗時保留待處理標記並寫入明確日誌。
 
 Release:
 
@@ -55,8 +52,7 @@ Verification:
 
 Changes:
 
-- Core 完全停止讀取 `dnsqualify.json`；路由器上殘留的 JSON 或舊 binary 不會被解析、遷移或刪除。
-- 配置生成固定走沒有 dnsqualify overlay 的標準 DNS 路徑。
+- Core 不再讀取 `dnsqualify.json`，固定走標準 DNS 路徑；殘留 JSON／binary 不會被處理。
 
 Release:
 
@@ -86,12 +82,9 @@ Verification:
 
 Changes:
 
-- Xet 子域名分流：Hugging Face 大模型製品傳輸改以 `xethub.hf.co` 與
-  `xethub-eu.hf.co` 兩個 namespace 的 domain suffix 分流，不再只列舉
-  `cas-server`／`transfer` 等容易過期的精確主機。
-- 規則優先序：`cas-bridge.xethub.hf.co` 及未來新增的 Xet 子域名會在泛 AI 分類前命中
-  「📥 大模型下载」；`hf.co` 其他網站與服務不會被整體捕捉。
-- 既有下載規則保留：Hugging Face CDN、ModelScope 與 Ollama 精確下載規則保持不變。
+- Hugging Face Xet US／EU namespace 改用 domain suffix 分流，會在泛 AI 分類前命中
+  「📥 大模型下载」，但不會捕捉其他 `hf.co` 服務。
+- Hugging Face CDN、ModelScope 與 Ollama 既有下載規則保持不變。
 
 Release:
 
