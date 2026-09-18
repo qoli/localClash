@@ -18,10 +18,64 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
-| localClash Core | [v0.1.88](https://github.com/qoli/localClash/releases/tag/v0.1.88) | 2026-09-18 UTC+8 |
-| localclash-luci | [v0.1.0-79](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-79) | 2026-09-09 UTC+8 |
+| localClash Core | [v0.1.89](https://github.com/qoli/localClash/releases/tag/v0.1.89) | 2026-09-18 UTC+8 |
+| localclash-luci | [v0.1.0-81](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-81) | 2026-09-18 UTC+8 |
 
 ## 2026-09-18
+
+### localclash-luci v0.1.0-81
+
+Changes:
+
+- LuCI 套件更新不再 restart rpcd 或任何 Web server；iStoreOS 使用 uhttpd、nginx／uwsgi 或其他
+  Web stack 都不會被 localClash 寫死重啟。
+- 首次或手動安裝只執行 session-preserving 的 `rpcd reload`；一鍵更新進行中則先寫入 reload
+  標記，等任務終態持久化後才重新載入 RPC method 與 ACL。
+- rpcd reload 失敗會保留待處理標記並寫入明確日誌，不再吞掉服務操作錯誤。
+
+Release:
+
+[qoli/localclash-luci v0.1.0-81](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-81)
+
+Verification:
+
+- 全部 LuCI JavaScript、rpcd／hotplug host regressions、shell syntax、IPK/APK 建置及 diff check
+  通過；回歸測試覆蓋 reload 成功、失敗、異常標記與 task terminal-before-reload 順序。
+- iStoreOS `24.10.8-2026073111` x86_64 QEMU 以真 LuCI RPC session 驗證 active-task 安裝只寫
+  reload 標記，`done=true` 終態先落盤，其後才 reload；同一 session token 仍可調用，rpcd 與
+  uhttpd PID 全程不變，HTTP／LuCI／ubus 可用，證據見功能表 E17。精確 sub-second reload 窗口
+  未做連續 HTTP 探針；未驗 ARM64 runtime 或正式路由器。
+
+### localClash Core v0.1.89
+
+Changes:
+
+- Core 完全停止讀取 `dnsqualify.json`；路由器上殘留的 JSON 或舊 binary 不會被解析、遷移或刪除。
+- 配置生成固定走沒有 dnsqualify overlay 的標準 DNS 路徑。
+
+Release:
+
+[qoli/localClash v0.1.89](https://github.com/qoli/localClash/releases/tag/v0.1.89)
+
+Verification:
+
+- 不存在、有效及損壞的殘留 `dnsqualify.json` 均生成 byte-for-byte 相同配置並通過 isolated Smart
+  Mihomo config-test；公開 Release workflow、雙架構 binary、base assets 與 manifest 已驗證。
+
+### localclash-luci v0.1.0-80
+
+Changes:
+
+- 移除 DNS 最佳化 UI、RPC、ACL、helper 與一鍵更新 dnsqualify gate；殘留路由器檔案保持不動。
+
+Release:
+
+[qoli/localclash-luci v0.1.0-80](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-80)
+
+Verification:
+
+- iStoreOS QEMU 的一鍵更新流程與結果不再包含 dnsqualify，損壞 JSON 與舊 binary hash 保持不變；
+  tag-triggered Release workflow、公開套件、checksums 及兩架構 iStore bundle 已驗證。
 
 ### localClash Core v0.1.88
 

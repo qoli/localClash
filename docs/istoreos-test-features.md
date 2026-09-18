@@ -112,10 +112,10 @@
 
 | 功能 ID | 功能／驗證內容 | 責任／核心範圍 | 最後實測版本；結果；證據 |
 | --- | --- | --- | --- |
-| LUCI-INSTALL | **OpenWrt 安裝與版本管理**：離線包安裝、重裝、LuCI／Core 安裝更新及支援的舊版交接正常；架構／完整性錯誤拒絕，應保留資料不丟失。Core 自我更新未實作，實際由 helper 管理。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI／共用 | Core `11ee263`／LuCI `2ac337f`；PASS；離線安裝／重裝、受控 76→77 helper 更新、舊版本拒絕、checksum／套件名／arm64 預檢及資料保留 [E07](#e07) |
+| LUCI-INSTALL | **OpenWrt 安裝與版本管理**：離線包安裝、重裝、LuCI／Core 安裝更新及支援的舊版交接正常；架構／完整性錯誤拒絕，應保留資料不丟失。Core 自我更新未實作，實際由 helper 管理。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI／共用 | Core `591c357`／LuCI v0.1.0-81 候選；PASS（影響範圍）；候選 IPK 在 inactive task 同步 rpcd reload、active task 只寫延後標記，兩路均安裝成功且 rpcd／uhttpd PID 不變 [E17](#e17) |
 | LUCI-INIT | **初始化引導**：由頁面提供訂閱、模板及核心，完成 Core 呼叫、配置、啟動及接管；重新開頁顯示真實狀態，失敗可定位。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI 編排＋Core／按影響 | v0.1.83／0.1.0-76；PASS；空工作區 Meta／Smart 初始化、訂閱／模板／Core、UI 啟動並接管、重開讀回及可定位失敗後恢復 [E05](#e05) |
-| LUCI-UPDATE | **一鍵更新與資料保留**：從頁面更新，兩個檢查點、來源版本及結果可讀回；重跑／舊版升級保持訂閱、網站順序、偏好及核心選擇；原本停止或未初始化的狀態不擅自啟動。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI 編排＋Core／按影響 | `591c357`／0.1.0-79 worktree；PASS（影響範圍）；帶損壞殘留 `dnsqualify.json` 的正式 helper 一鍵更新完成，流程／結果無 dnsqualify，殘留檔與舊 binary 不變，停止狀態及未接管狀態保持 [E16](#e16) |
-| LUCI-TASKS | **介面與長任務交互**：訂閱、網站、初始化及更新頁面操作與後端一致；日誌、取消、互斥、重新連接與終態可用，無重複交易／無限 busy；依各操作是否支援取消驗證。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI／共用 | v0.1.83／0.1.0-76；PASS；訂閱／網站／初始化／更新頁、日誌、代表性取消／互斥、同 task id reload／reopen 及終態恢復 [E05](#e05) |
+| LUCI-UPDATE | **一鍵更新與資料保留**：從頁面更新，兩個檢查點、來源版本及結果可讀回；重跑／舊版升級保持訂閱、網站順序、偏好及核心選擇；原本停止或未初始化的狀態不擅自啟動。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI 編排＋Core／按影響 | Core `591c357`／LuCI v0.1.0-81 候選；PASS（影響範圍）；真 RPC 一鍵更新先持久化 `done=true` 終態，再消費標記 reload rpcd；相同 session token 仍可調用，HTTP／LuCI 恢復且 Web PID 不變 [E17](#e17)；dnsqualify 退役與資料保留沿用 [E16](#e16) |
+| LUCI-TASKS | **介面與長任務交互**：訂閱、網站、初始化及更新頁面操作與後端一致；日誌、取消、互斥、重新連接與終態可用，無重複交易／無限 busy；依各操作是否支援取消驗證。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI／共用 | Core `591c357`／LuCI v0.1.0-81 候選；PASS（影響範圍）；真 RPC session 從啟動追蹤至終態，active-task 重裝未建立重複交易，reload 後同 token、ubus method／ACL、HTTP／LuCI 均可用 [E17](#e17)；其他長任務交互沿用 [E05](#e05) |
 | LUCI-TAKEOVER | **OpenWrt 網路接管**：從正式入口套用及停止防火牆、策略路由與 DNS 接管；獨立 LAN client 的實際 TCP／UDP／DNS 請求按配置到達受控 WAN endpoint，停止後恢復原資料面，且非本產品規則保留。內部 effective、規則或 lease 只能解釋結果。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI／共用 | Core `8d573f3`／LuCI v0.1.0-79 source `005f59e`（QEMU 候選 IPK `a150ece`）；PASS（影響範圍回驗）；沿用 E05 非 DNS 資料面，新增 ingress lease active／到期後 router 與獨立 LAN UDP／TCP DNS、router-DNS bypass、狀態及 stop [E05](#e05) [E11](#e11) |
 | LUCI-RESTORE | **接管及服務恢復**：開機、WAN 事件、受管程序退出及依賴故障後，按使用者意圖恢復或撤回接管；每次轉移後由獨立 client 重跑相同資料面 oracle，明確停止後不自行重開。內部狀態與 lease 不代表服務可用。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI＋Core 生命週期／共用 | Core `8d573f3`／LuCI v0.1.0-79 source `005f59e`（QEMU 候選 IPK `a150ece`）；PASS（影響範圍回驗）；沿用 E05 開機／WAN 轉移，新增 guard 或 Mihomo 停止後無 userspace cleanup 的 lease 到期、獨立 LAN UDP／TCP dnsmasq fallback、重新授租及明確 stop [E05](#e05) [E11](#e11) |
 
@@ -489,3 +489,22 @@ artifact hash 不變；runtime 原本停止且完成後仍停止，takeover 保�
 ACL 及 LuCI JavaScript 亦無 dnsqualify surface。原始證據見
 [dnsqualify 退役驗收報告](../.runtime/istoreos-acceptance/20260918-dnsqualify-retirement/report.md)。
 本輪沒有正式路由器與瀏覽器視覺操作，故 UI 僅以安裝內容及 RPC surface 驗證，不宣稱視覺驗收。
+
+<a id="e17"></a>
+### E17
+
+2026-09-18 以 LuCI base `7d53855` 加本輪工作樹候選 IPK（SHA-256
+`32b26cc770a9618ca8f098ece5692183275f084ec99b310fdadd810acaf0cdac`），在可拋棄 iStoreOS
+`24.10.8-2026073111` x86_64 QEMU 驗證 rpcd reload 與 Web／session 連續性；原始證據見
+[RPC reload 驗收報告](../.runtime/istoreos-acceptance/20260918-rpc-reload-213305/report.md)。
+
+- 無活躍任務時，正式 `opkg install --force-reinstall` 由 post-install 同步執行
+  `rpcd reload`；有真 LuCI RPC 一鍵更新任務時，post-install 只寫
+  `rpcd-reload-required`，沒有 restart rpcd 或 uhttpd。兩條路徑均安裝成功。
+- 真 RPC 一鍵更新先持久化 `running=false`、`done=true`、`exit_code=0`，其後 helper 才 reload
+  rpcd 並清除標記；同一 LuCI session token 在 reload 後仍能成功呼叫 `localclash.status`。
+- rpcd PID 全程為 `3854`，uhttpd PID 全程為 `6937`；HTTP root、LuCI 與 `/ubus` reload 後可用，
+  ubus method 與 ACL 讀回符合候選。未觀察到 nginx／uwsgi 或任何 Web server restart。
+- 精確 sub-second reload 窗口未以連續外部 HTTP 探針取樣，列為剩餘風險；不宣稱零瞬斷。
+  v0.1.0-81 release candidate 只變更 package release metadata，解包後全部安裝檔案與 E17 QEMU
+  候選 byte-for-byte 相同。QEMU 已停止，qcow2 經 `qemu-img check` 確認無錯誤。
