@@ -45,6 +45,11 @@ Verification:
   reload 標記，`done=true` 終態先落盤，其後才 reload；同一 session token 仍可調用，rpcd 與
   uhttpd PID 全程不變，HTTP／LuCI／ubus 可用，證據見功能表 E17。精確 sub-second reload 窗口
   未做連續 HTTP 探針；未驗 ARM64 runtime 或正式路由器。
+- [Main CI 35353208725](https://github.com/qoli/localclash-luci/actions/runs/35353208725) 與
+  [Release workflow 35353343689](https://github.com/qoli/localclash-luci/actions/runs/35353343689)
+  成功；8 項公開資產與四份 sidecar checksum 已重新下載校驗，兩架構 `.run` 均通過
+  `--info`、`--list`、`--check`、`--noexec`。公開 IPK 的安裝 payload 與 E17 QEMU 候選
+  byte-for-byte 相同，遠端 tag 指向 commit `06db99e`。
 
 ### localClash Core v0.1.89
 

@@ -507,4 +507,6 @@ ACL 及 LuCI JavaScript 亦無 dnsqualify surface。原始證據見
   ubus method 與 ACL 讀回符合候選。未觀察到 nginx／uwsgi 或任何 Web server restart。
 - 精確 sub-second reload 窗口未以連續外部 HTTP 探針取樣，列為剩餘風險；不宣稱零瞬斷。
   v0.1.0-81 release candidate 只變更 package release metadata，解包後全部安裝檔案與 E17 QEMU
-  候選 byte-for-byte 相同。QEMU 已停止，qcow2 經 `qemu-img check` 確認無錯誤。
+  候選 byte-for-byte 相同；公開 v0.1.0-81 IPK 再次確認相同。Main CI `35353208725`、Release
+  workflow `35353343689`、8 項公開資產、sidecar checksums 與兩架構 iStore bundle 靜態驗證均
+  通過。QEMU 已停止，qcow2 經 `qemu-img check` 確認無錯誤。
