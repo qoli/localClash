@@ -58,6 +58,13 @@
         "type": "geosite",
         "target": "👥 社交媒体",
         "reason": "Route non-China social media through a business-layer selector."
+      },
+      {
+        "source": "blackmatrix7",
+        "pack": "Facebook",
+        "type": "rule_provider",
+        "target": "💬 通信服务",
+        "reason": "Cover WhatsApp and Meta IP-only traffic after the dedicated communication and social-media domain categories."
       }
     ],
     "custom_rules": [

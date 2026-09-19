@@ -210,8 +210,8 @@ func TestRealLocalClashDefaultTemplateIsLayered(t *testing.T) {
 	if summary.ID != TemplateLocalClashDefault || config.Version != localconfig.ConfigSchemaVersion {
 		t.Fatalf("template = %+v config version = %d, want current localclash default", summary, config.Version)
 	}
-	if len(config.ProxyGroups) != 9 || len(config.PolicyGroups) != 32 || len(config.Packs) != 36 || len(config.TransportRules) != 1 || len(config.CustomRules) != 3 {
-		t.Fatalf("default template counts: proxy_groups=%d policy_groups=%d packs=%d transport_rules=%d custom_rules=%d, want 9/32/36/1/3", len(config.ProxyGroups), len(config.PolicyGroups), len(config.Packs), len(config.TransportRules), len(config.CustomRules))
+	if len(config.ProxyGroups) != 9 || len(config.PolicyGroups) != 32 || len(config.Packs) != 37 || len(config.TransportRules) != 1 || len(config.CustomRules) != 3 {
+		t.Fatalf("default template counts: proxy_groups=%d policy_groups=%d packs=%d transport_rules=%d custom_rules=%d, want 9/32/37/1/3", len(config.ProxyGroups), len(config.PolicyGroups), len(config.Packs), len(config.TransportRules), len(config.CustomRules))
 	}
 	if hasPack(config.Packs, "blackmatrix7", "Crypto") {
 		t.Fatal("default template must not include the broad Crypto pack")
@@ -352,6 +352,15 @@ func TestRealLocalClashDefaultTemplateIsLayered(t *testing.T) {
 	}
 	if got := packTarget(config.Packs, "v2fly-dlc", "telegram"); got != "💬 通信服务" {
 		t.Fatalf("telegram target = %q, want 💬 通信服务", got)
+	}
+	if got := packTarget(config.Packs, "blackmatrix7", "Facebook"); got != "💬 通信服务" {
+		t.Fatalf("Facebook target = %q, want 💬 通信服务", got)
+	}
+	communicationIndex := packIndex(config.Packs, "v2fly-dlc", "category-communication")
+	socialIndex := packIndex(config.Packs, "v2fly-dlc", "category-social-media-!cn")
+	facebookIndex := packIndex(config.Packs, "blackmatrix7", "Facebook")
+	if communicationIndex < 0 || socialIndex < 0 || facebookIndex < 0 || communicationIndex >= socialIndex || socialIndex >= facebookIndex {
+		t.Fatalf("communication/social/Facebook pack indexes = %d/%d/%d, want domain categories before supplemental Facebook provider", communicationIndex, socialIndex, facebookIndex)
 	}
 	wantExactPacks := map[string]string{
 		"category-public-tracker":   "🧲 BT/PT 下载",
