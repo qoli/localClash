@@ -471,18 +471,6 @@ func RenderFragment(selection Selection, caches map[string]PackCache, proxyNames
 		}
 		fragment.Rules = append(fragment.Rules, lines...)
 	}
-	for _, transport := range selection.TransportRules {
-		target, kind, err := renderTarget(transport.Target, targets)
-		if err != nil {
-			return Fragment{}, err
-		}
-		markUsedTarget(target, kind, usedProxyGroups, usedPolicyGroups)
-		line, err := renderTransportRule(transport, target)
-		if err != nil {
-			return Fragment{}, err
-		}
-		fragment.Rules = append(fragment.Rules, line)
-	}
 	for _, custom := range selection.CustomRules {
 		target, kind, err := renderTarget(custom.Target, targets)
 		if err != nil {
@@ -540,6 +528,18 @@ func RenderFragment(selection Selection, caches map[string]PackCache, proxyNames
 			}
 			fragment.Rules = append(fragment.Rules, fmt.Sprintf("RULE-SET,%s,%s", providerName, target))
 		}
+	}
+	for _, transport := range selection.TransportRules {
+		target, kind, err := renderTarget(transport.Target, targets)
+		if err != nil {
+			return Fragment{}, err
+		}
+		markUsedTarget(target, kind, usedProxyGroups, usedPolicyGroups)
+		line, err := renderTransportRule(transport, target)
+		if err != nil {
+			return Fragment{}, err
+		}
+		fragment.Rules = append(fragment.Rules, line)
 	}
 	for _, required := range selection.RequiredTargets {
 		target, kind, err := renderTarget(required, targets)

@@ -1,6 +1,6 @@
 {
   "id": "default.quic-main.v1",
-  "description": "Add Dashboard-switchable UDP/443 QUIC policy before business GEOSITE rules.",
+  "description": "Add Dashboard-switchable UDP/443 QUIC policy after classified business rules and before fallback.",
   "config": {
     "version": 4,
     "policy_groups": {
@@ -24,7 +24,7 @@
         "network": "UDP",
         "dst_port": 443,
         "target": "🚦 QUIC",
-        "reason": "Route UDP destination port 443 to the QUIC main strategy group before business/domain rules."
+        "reason": "Route otherwise-unclassified UDP destination port 443 to the QUIC main strategy group before fallback."
       }
     ]
   }

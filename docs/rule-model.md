@@ -268,7 +268,9 @@ Current code has:
 - renderer support for selected third-party packs
 - renderer support for enabled local rule packs, emitted after inline
   `custom_rules` and before catalog/template packs
-- renderer and resolver support for high-priority `transport_rules`
+- renderer and resolver support for fallback-adjacent `transport_rules`, emitted
+  after classified business rules so broad protocol rules do not preempt known
+  domain, provider, GEOSITE, or GEOIP routes
 - renderer support for inline `custom_rules`
 - renderer support for user-supplied external `rule_providers`
 - resolver checks for transport-rule, custom-rule, external-provider, pack, and

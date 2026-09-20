@@ -17,7 +17,7 @@
     {
       "id": "default.quic-main.v1",
       "path": "localclash-default.d/15-quic-main.json",
-      "description": "Add the Dashboard-visible QUIC main policy group and high-priority UDP/443 rule."
+      "description": "Add the Dashboard-visible QUIC main policy group for otherwise-unclassified UDP/443 traffic."
     },
     {
       "id": "default.communication-social.v1",

@@ -68,8 +68,10 @@ rejection. Statsig requires HTTP 200, Brotli JSON, and a non-empty
 `derived_fields.country`. Other HTTP errors, malformed responses, connection
 resets, and timeouts are recorded as failures and never qualify a node. One
 failed refresh removes a previously-qualified node without failure hysteresis. The
-regional exits remain available before that opt-in choice. `🚦 QUIC` defaults to
-`REJECT`; game platform/Apple/Microsoft/speed-test
+regional exits remain available before that opt-in choice. Classified business
+domain, provider, GEOSITE, and GEOIP rules precede the broad UDP/443 policy;
+otherwise-unclassified traffic then reaches `🚦 QUIC`, which defaults to `REJECT`.
+Game platform/Apple/Microsoft/speed-test
 defaulting to direct; `🧲 BT/PT 下载` defaulting to direct while exposing automatic,
 manual, and regional proxy exits for Dashboard overrides; or Bahamut defaulting
 to Taiwan. Region exits are optional so subscriptions without a given region can

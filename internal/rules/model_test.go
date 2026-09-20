@@ -160,7 +160,7 @@ func TestRenderFragmentRendersV2FlyDLCGeoSiteAttribute(t *testing.T) {
 	}
 }
 
-func TestRenderFragmentRendersTransportRulesBeforeCustomRulesAndPacks(t *testing.T) {
+func TestRenderFragmentRendersTransportRulesAfterBusinessRules(t *testing.T) {
 	selection := Selection{
 		ProxyGroups: map[string]ProxyGroup{
 			"🎯 手动选择":  {Nodes: []string{"HK 01"}, Manual: true},
@@ -186,6 +186,15 @@ func TestRenderFragmentRendersTransportRulesBeforeCustomRulesAndPacks(t *testing
 				Rules:  []CustomRuleLine{{Type: "domain_suffix", Value: "example.com"}},
 			},
 		},
+		RuleProviders: []ExternalRuleProvider{{
+			ID:       "business-provider",
+			Target:   "🎯 手动选择",
+			Type:     "http",
+			Behavior: "classical",
+			Format:   "yaml",
+			Path:     "./rule_provider/business.yaml",
+			URL:      "https://example.com/business.yaml",
+		}},
 		EnabledPack: []SelectedPack{
 			{Source: "v2fly-dlc", Pack: "youtube", Target: "📺 YouTube"},
 		},
@@ -212,9 +221,10 @@ func TestRenderFragmentRendersTransportRulesBeforeCustomRulesAndPacks(t *testing
 		t.Fatal(err)
 	}
 	want := []string{
-		"AND,((NETWORK,UDP),(DST-PORT,443)),🚦 QUIC",
 		"DOMAIN-SUFFIX,example.com,🎯 手动选择",
+		"RULE-SET,business-provider,🎯 手动选择",
 		"GEOSITE,youtube,📺 YouTube",
+		"AND,((NETWORK,UDP),(DST-PORT,443)),🚦 QUIC",
 	}
 	if !reflect.DeepEqual(fragment.Rules, want) {
 		t.Fatalf("rules = %#v, want %#v", fragment.Rules, want)
@@ -233,7 +243,7 @@ func TestRenderFragmentRendersTransportRulesBeforeCustomRulesAndPacks(t *testing
 	}
 }
 
-func TestRenderFragmentRendersPriorityCustomRulesBeforeTransportRules(t *testing.T) {
+func TestRenderFragmentKeepsPriorityCustomRulesAheadOfBusinessAndTransportRules(t *testing.T) {
 	selection := Selection{
 		PriorityCustomRules: []CustomRule{{
 			ID:     "custom-sites",
@@ -258,11 +268,11 @@ func TestRenderFragmentRendersPriorityCustomRulesBeforeTransportRules(t *testing
 	}
 	want := []string{
 		"DOMAIN,latest.example,DIRECT",
-		"AND,((NETWORK,UDP),(DST-PORT,443)),REJECT",
 		"DOMAIN,ordinary.example,DIRECT",
+		"AND,((NETWORK,UDP),(DST-PORT,443)),REJECT",
 	}
 	if !reflect.DeepEqual(fragment.Rules, want) {
-		t.Fatalf("rules = %#v, want priority custom then transport then ordinary custom %#v", fragment.Rules, want)
+		t.Fatalf("rules = %#v, want priority custom then ordinary custom then transport %#v", fragment.Rules, want)
 	}
 }
 
