@@ -19,9 +19,33 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
 | localClash Core | [v0.1.93](https://github.com/qoli/localClash/releases/tag/v0.1.93) | 2026-09-20 UTC+8 |
-| localclash-luci | [v0.1.0-81](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-81) | 2026-09-18 UTC+8 |
+| localclash-luci | [v0.1.0-82](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-82) | 2026-09-20 UTC+8 |
 
 ## 2026-09-20
+
+### localclash-luci v0.1.0-82
+
+Changes:
+
+- 一鍵更新先下載並驗證 Mihomo、Dashboard、訂閱及配置等全部材料，最後才以單一
+  process restart 或 hot reload 批量提交，避免下載工作與多次重啟交錯造成網絡波動。
+- Mihomo 下載失敗但已有可用 managed core 時，保留現有核心並以 warning 繼續；只有缺少可用
+  核心時才令一鍵更新失敗。
+- 更新內置 GitHub Release、API 與 Raw 鏡像列表；離線安裝包固定 Core `v0.1.93`。
+
+Release:
+
+[qoli/localclash-luci v0.1.0-82](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-82)
+
+Verification:
+
+- 本地全部 LuCI JavaScript、rpcd／hotplug contract、shell syntax、IPK／APK 與兩架構 iStore
+  bundle 建置通過；iStoreOS x86_64 QEMU 的 changed、identical、下載故障、缺核心與準備失敗
+  轉移驗收見 E18。LuCI UI／ubus dispatch 未在本輪重跑，故功能表如實記為 PARTIAL。
+- [Main CI 35509067652](https://github.com/qoli/localclash-luci/actions/runs/35509067652) 與
+  [Release workflow 35509136238](https://github.com/qoli/localclash-luci/actions/runs/35509136238)
+  成功；8 項公開資產與四份 sidecar checksum 已重新下載校驗，兩架構 `.run` 均通過
+  `--info`、`--list`、`--check`、`--noexec`，解包 manifest 均固定 Core `v0.1.93`。
 
 ### localClash Core v0.1.93
 
@@ -42,6 +66,9 @@ Verification:
   changed path 在所有材料完成後只執行一次 process restart，identical pair 只執行一次 hot reload，
   Mihomo 下載失敗且現有核心可用時以 warning 完成，缺少核心時則明確失敗。獨立 LAN TCP／UDP／DNS
   連續探針均通過，證據見功能表 E18。未執行 ARM64 runtime，LuCI UI／ubus dispatch 沿用 E17。
+- [Core Release workflow 35508841838](https://github.com/qoli/localClash/actions/runs/35508841838)
+  成功；7 項公開資產、三份 sidecar checksum 與 manifest 已重新下載校驗，tag 精確指向 commit
+  `d8202d9`，manifest SHA-256 為 `fd7584f1…92e32`。
 
 ## 2026-09-18
 
