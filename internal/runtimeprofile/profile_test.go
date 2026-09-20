@@ -136,7 +136,7 @@ func TestDefaultRouterProfileMatchesRouterReferencePreferences(t *testing.T) {
 		t.Fatalf("router sniffer = %+v, want enabled DNS mapping and pure-IP parsing", sniffer)
 	}
 	tlsSniffer := sniffer["sniff"].(map[string]any)["TLS"].(map[string]any)
-	if want := []any{443, 465, 993, 8443}; !reflect.DeepEqual(tlsSniffer["ports"], want) {
+	if want := []any{443, 465, 993, 5222, 8443}; !reflect.DeepEqual(tlsSniffer["ports"], want) {
 		t.Fatalf("router TLS sniffer ports = %v, want %v", tlsSniffer["ports"], want)
 	}
 }
