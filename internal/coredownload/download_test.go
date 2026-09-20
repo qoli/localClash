@@ -302,11 +302,11 @@ func TestDownloadCandidatesUsesDefaultGitHubReleaseMirrors(t *testing.T) {
 	got := downloadCandidates("https://github.com/MetaCubeX/mihomo/releases/download/v1/mihomo.gz")
 	want := []string{
 		"https://gh-proxy.com/https://github.com/MetaCubeX/mihomo/releases/download/v1/mihomo.gz",
-		"https://ghproxy.imciel.com/https://github.com/MetaCubeX/mihomo/releases/download/v1/mihomo.gz",
-		"https://gitproxy.mrhjx.cn/https://github.com/MetaCubeX/mihomo/releases/download/v1/mihomo.gz",
-		"https://gh.jasonzeng.dev/https://github.com/MetaCubeX/mihomo/releases/download/v1/mihomo.gz",
-		"https://gh.monlor.com/https://github.com/MetaCubeX/mihomo/releases/download/v1/mihomo.gz",
-		"https://gh.noki.icu/https://github.com/MetaCubeX/mihomo/releases/download/v1/mihomo.gz",
+		"https://proxy.vvvv.ee/https://github.com/MetaCubeX/mihomo/releases/download/v1/mihomo.gz",
+		"https://cors.isteed.cc/https://github.com/MetaCubeX/mihomo/releases/download/v1/mihomo.gz",
+		"https://gh.ddlc.top/https://github.com/MetaCubeX/mihomo/releases/download/v1/mihomo.gz",
+		"https://gh.xmly.dev/https://github.com/MetaCubeX/mihomo/releases/download/v1/mihomo.gz",
+		"https://ghproxy.net/https://github.com/MetaCubeX/mihomo/releases/download/v1/mihomo.gz",
 		"https://ghfast.top/https://github.com/MetaCubeX/mihomo/releases/download/v1/mihomo.gz",
 		"https://github.com/MetaCubeX/mihomo/releases/download/v1/mihomo.gz",
 	}
@@ -323,12 +323,7 @@ func TestDownloadCandidatesUsesDefaultGitHubAPIMirrors(t *testing.T) {
 	got := downloadCandidates("https://api.github.com/repos/MetaCubeX/mihomo/releases/latest")
 	want := []string{
 		"https://gh-proxy.com/https://api.github.com/repos/MetaCubeX/mihomo/releases/latest",
-		"https://ghproxy.imciel.com/https://api.github.com/repos/MetaCubeX/mihomo/releases/latest",
-		"https://gitproxy.mrhjx.cn/https://api.github.com/repos/MetaCubeX/mihomo/releases/latest",
-		"https://gh.jasonzeng.dev/https://api.github.com/repos/MetaCubeX/mihomo/releases/latest",
-		"https://gh.monlor.com/https://api.github.com/repos/MetaCubeX/mihomo/releases/latest",
-		"https://gh.noki.icu/https://api.github.com/repos/MetaCubeX/mihomo/releases/latest",
-		"https://ghfast.top/https://api.github.com/repos/MetaCubeX/mihomo/releases/latest",
+		"https://proxy.vvvv.ee/https://api.github.com/repos/MetaCubeX/mihomo/releases/latest",
 		"https://api.github.com/repos/MetaCubeX/mihomo/releases/latest",
 	}
 	if !reflect.DeepEqual(got, want) {
@@ -369,11 +364,11 @@ func TestRawMirrorCandidatesUseDefaultMirrorsAndJsdelivr(t *testing.T) {
 	got := downloadCandidates("https://raw.githubusercontent.com/vernesong/OpenClash/core/master/core_version")
 	want := []string{
 		"https://gh-proxy.com/https://raw.githubusercontent.com/vernesong/OpenClash/core/master/core_version",
-		"https://ghproxy.imciel.com/https://raw.githubusercontent.com/vernesong/OpenClash/core/master/core_version",
-		"https://gitproxy.mrhjx.cn/https://raw.githubusercontent.com/vernesong/OpenClash/core/master/core_version",
-		"https://gh.jasonzeng.dev/https://raw.githubusercontent.com/vernesong/OpenClash/core/master/core_version",
-		"https://gh.monlor.com/https://raw.githubusercontent.com/vernesong/OpenClash/core/master/core_version",
-		"https://gh.noki.icu/https://raw.githubusercontent.com/vernesong/OpenClash/core/master/core_version",
+		"https://proxy.vvvv.ee/https://raw.githubusercontent.com/vernesong/OpenClash/core/master/core_version",
+		"https://cors.isteed.cc/https://raw.githubusercontent.com/vernesong/OpenClash/core/master/core_version",
+		"https://gh.ddlc.top/https://raw.githubusercontent.com/vernesong/OpenClash/core/master/core_version",
+		"https://gh.xmly.dev/https://raw.githubusercontent.com/vernesong/OpenClash/core/master/core_version",
+		"https://ghproxy.net/https://raw.githubusercontent.com/vernesong/OpenClash/core/master/core_version",
 		"https://ghfast.top/https://raw.githubusercontent.com/vernesong/OpenClash/core/master/core_version",
 		"https://fastly.jsdelivr.net/gh/vernesong/OpenClash@core/master/core_version",
 		"https://raw.githubusercontent.com/vernesong/OpenClash/core/master/core_version",
@@ -401,7 +396,7 @@ func TestRawMirrorCandidatesIncludeJsdelivrShape(t *testing.T) {
 func assertNoOldDefaultMirrors(t *testing.T, candidates []string) {
 	t.Helper()
 	for _, candidate := range candidates {
-		for _, oldMirror := range []string{"gh.llkk.cc", "v1.ax", "ghp.xptvhelper.link"} {
+		for _, oldMirror := range []string{"gh.llkk.cc", "v1.ax", "ghp.xptvhelper.link", "ghproxy.imciel.com", "gitproxy.mrhjx.cn", "gh.jasonzeng.dev", "gh.monlor.com", "gh.noki.icu"} {
 			if strings.Contains(candidate, oldMirror) {
 				t.Fatalf("candidate %q contains old mirror %q", candidate, oldMirror)
 			}

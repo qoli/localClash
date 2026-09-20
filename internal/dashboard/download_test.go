@@ -134,9 +134,9 @@ func TestDownloadCandidatesUsesDefaultGitHubReleaseMirrors(t *testing.T) {
 	got := downloadCandidates("https://github.com/Zephyruso/zashboard/releases/download/v1/dist.zip")
 	want := []string{
 		"https://gh-proxy.com/https://github.com/Zephyruso/zashboard/releases/download/v1/dist.zip",
-		"https://ghproxy.imciel.com/https://github.com/Zephyruso/zashboard/releases/download/v1/dist.zip",
-		"https://gitproxy.mrhjx.cn/https://github.com/Zephyruso/zashboard/releases/download/v1/dist.zip",
-		"https://gh.jasonzeng.dev/https://github.com/Zephyruso/zashboard/releases/download/v1/dist.zip",
+		"https://proxy.vvvv.ee/https://github.com/Zephyruso/zashboard/releases/download/v1/dist.zip",
+		"https://cors.isteed.cc/https://github.com/Zephyruso/zashboard/releases/download/v1/dist.zip",
+		"https://gh.ddlc.top/https://github.com/Zephyruso/zashboard/releases/download/v1/dist.zip",
 		"https://github.com/Zephyruso/zashboard/releases/download/v1/dist.zip",
 	}
 	if !reflect.DeepEqual(got, want) {
@@ -227,7 +227,7 @@ func writeZip(path string, files map[string]string) error {
 func assertNoOldDefaultMirrors(t *testing.T, candidates []string) {
 	t.Helper()
 	for _, candidate := range candidates {
-		for _, oldMirror := range []string{"gh.llkk.cc", "v1.ax", "ghp.xptvhelper.link"} {
+		for _, oldMirror := range []string{"gh.llkk.cc", "v1.ax", "ghp.xptvhelper.link", "ghproxy.imciel.com", "gitproxy.mrhjx.cn", "gh.jasonzeng.dev", "gh.monlor.com", "gh.noki.icu"} {
 			if strings.Contains(candidate, oldMirror) {
 				t.Fatalf("candidate %q contains old mirror %q", candidate, oldMirror)
 			}

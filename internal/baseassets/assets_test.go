@@ -76,11 +76,11 @@ func TestDownloadCandidatesUsesDefaultGitHubReleaseMirrors(t *testing.T) {
 	got := downloadCandidates("https://github.com/qoli/localClash/releases/latest/download/localclash-release-manifest.json")
 	want := []string{
 		"https://gh-proxy.com/https://github.com/qoli/localClash/releases/latest/download/localclash-release-manifest.json",
-		"https://ghproxy.imciel.com/https://github.com/qoli/localClash/releases/latest/download/localclash-release-manifest.json",
-		"https://gitproxy.mrhjx.cn/https://github.com/qoli/localClash/releases/latest/download/localclash-release-manifest.json",
-		"https://gh.jasonzeng.dev/https://github.com/qoli/localClash/releases/latest/download/localclash-release-manifest.json",
-		"https://gh.monlor.com/https://github.com/qoli/localClash/releases/latest/download/localclash-release-manifest.json",
-		"https://gh.noki.icu/https://github.com/qoli/localClash/releases/latest/download/localclash-release-manifest.json",
+		"https://proxy.vvvv.ee/https://github.com/qoli/localClash/releases/latest/download/localclash-release-manifest.json",
+		"https://cors.isteed.cc/https://github.com/qoli/localClash/releases/latest/download/localclash-release-manifest.json",
+		"https://gh.ddlc.top/https://github.com/qoli/localClash/releases/latest/download/localclash-release-manifest.json",
+		"https://gh.xmly.dev/https://github.com/qoli/localClash/releases/latest/download/localclash-release-manifest.json",
+		"https://ghproxy.net/https://github.com/qoli/localClash/releases/latest/download/localclash-release-manifest.json",
 		"https://ghfast.top/https://github.com/qoli/localClash/releases/latest/download/localclash-release-manifest.json",
 		"https://github.com/qoli/localClash/releases/latest/download/localclash-release-manifest.json",
 	}
@@ -135,7 +135,7 @@ func testArchive(t *testing.T) []byte {
 func assertNoOldDefaultMirrors(t *testing.T, candidates []string) {
 	t.Helper()
 	for _, candidate := range candidates {
-		for _, oldMirror := range []string{"gh.llkk.cc", "v1.ax", "ghp.xptvhelper.link"} {
+		for _, oldMirror := range []string{"gh.llkk.cc", "v1.ax", "ghp.xptvhelper.link", "ghproxy.imciel.com", "gitproxy.mrhjx.cn", "gh.jasonzeng.dev", "gh.monlor.com", "gh.noki.icu"} {
 			if strings.Contains(candidate, oldMirror) {
 				t.Fatalf("candidate %q contains old mirror %q", candidate, oldMirror)
 			}

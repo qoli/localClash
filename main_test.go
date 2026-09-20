@@ -1165,17 +1165,58 @@ func TestRunProductComponentUpdateMihomoRefreshesCoreVersionCache(t *testing.T) 
 	})
 	var result struct {
 		OK       bool     `json:"ok"`
+		Changed  bool     `json:"changed"`
 		Warnings []string `json:"warnings"`
 	}
 	if err := json.Unmarshal([]byte(output), &result); err != nil {
 		t.Fatalf("component update JSON = %q, error = %v", output, err)
 	}
-	if !result.OK || len(result.Warnings) != 0 {
+	if !result.OK || !result.Changed || len(result.Warnings) != 0 {
 		t.Fatalf("component update result = %+v, want ok without cache warning", result)
 	}
 	cache := readMainCoreCache(t, appinit.CoreVersionCachePath(filepath.Join(dir, ".runtime")))
 	if cache.CorePath != core || cache.Version != "Mihomo component update" {
 		t.Fatalf("cache = %+v, want refreshed component update core %s", cache, core)
+	}
+}
+
+func TestRunProductComponentUpdateMihomoReportsIdenticalPairUnchanged(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("LOCALCLASH_WORKDIR", dir)
+	t.Chdir(dir)
+	metaTarget := filepath.Join(dir, runtimeprofile.MetaCorePath)
+	smartTarget := filepath.Join(filepath.Dir(metaTarget), runtimeprofile.ManagedSmartCoreName)
+	writeMainExecutableCore(t, metaTarget, "Mihomo identical meta")
+	writeMainExecutableCore(t, smartTarget, "Mihomo identical smart")
+	oldDownloadCore := downloadCore
+	downloadCore = func(ctx context.Context, opts coredownload.Options) ([]coredownload.Result, error) {
+		meta := filepath.Join(opts.OutputDir, "linux-"+runtime.GOARCH, runtimeprofile.ManagedMetaCoreName)
+		smart := filepath.Join(opts.OutputDir, "linux-"+runtime.GOARCH, runtimeprofile.ManagedSmartCoreName)
+		writeMainExecutableCore(t, meta, "Mihomo identical meta")
+		writeMainExecutableCore(t, smart, "Mihomo identical smart")
+		return []coredownload.Result{
+			{OutputPath: meta, Flavor: coredownload.FlavorMeta, Target: opts.Target},
+			{OutputPath: smart, Flavor: coredownload.FlavorSmart, Target: opts.Target},
+		}, nil
+	}
+	t.Cleanup(func() { downloadCore = oldDownloadCore })
+
+	output := captureStdout(t, func() error {
+		return run([]string{"component", "update", "mihomo", "--json"})
+	})
+	var result struct {
+		OK      bool `json:"ok"`
+		Changed bool `json:"changed"`
+		Status  struct {
+			Changed  bool     `json:"changed"`
+			Promoted []string `json:"promoted"`
+		} `json:"status"`
+	}
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
+		t.Fatalf("component update JSON = %q, error = %v", output, err)
+	}
+	if !result.OK || result.Changed || result.Status.Changed || len(result.Status.Promoted) != 0 {
+		t.Fatalf("component update result = %+v, want byte-identical pair unchanged without promotion", result)
 	}
 }
 

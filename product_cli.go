@@ -524,6 +524,9 @@ func runProductComponentUpdate(args []string, state appinit.RuntimeState) error 
 			return err
 		}
 		warnings := refreshCoreVersionCacheWarnings(ctx, state, "")
+		if !result.Changed {
+			return printProductOK(productEnvelope{OK: true, Changed: false, Summary: "Mihomo components are already current.", Status: result, Changes: []string{}, Warnings: warnings})
+		}
 		return printProductOK(productEnvelope{OK: true, Changed: true, Summary: "Mihomo components updated.", Status: result, Changes: []string{"mihomo_updated"}, Warnings: warnings})
 	case "dashboard":
 		result, err := downloadDashboard(ctx, dashboard.Options{

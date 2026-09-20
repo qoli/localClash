@@ -17,6 +17,7 @@ import (
 type mihomoUpdateStatus struct {
 	Downloads          []coredownload.Result        `json:"downloads"`
 	Promoted           []string                     `json:"promoted"`
+	Changed            bool                         `json:"changed"`
 	ConfigValidation   *mihomotest.ValidationResult `json:"config_validation,omitempty"`
 	ValidationRequired bool                         `json:"validation_required"`
 }
@@ -90,15 +91,44 @@ func updateMihomoComponents(ctx context.Context, state appinit.RuntimeState) (mi
 		return status, fmt.Errorf("inspect current generated config %q: %w", state.Paths.GeneratedConfig, configErr)
 	}
 
-	promoted, err := promoteMihomoCandidates(candidates, filepath.Dir(state.Paths.CorePath))
-	status.Promoted = promoted
+	targetDir := filepath.Dir(state.Paths.CorePath)
+	changed, err := mihomoCandidatesChanged(candidates, targetDir)
 	if err != nil {
 		return status, err
 	}
+	status.Changed = changed
+	if changed {
+		promoted, promoteErr := promoteMihomoCandidates(candidates, targetDir)
+		status.Promoted = promoted
+		if promoteErr != nil {
+			return status, promoteErr
+		}
+	}
 	for index := range status.Downloads {
-		status.Downloads[index].OutputPath = filepath.Join(filepath.Dir(state.Paths.CorePath), filepath.Base(status.Downloads[index].OutputPath))
+		status.Downloads[index].OutputPath = filepath.Join(targetDir, filepath.Base(status.Downloads[index].OutputPath))
 	}
 	return status, nil
+}
+
+func mihomoCandidatesChanged(candidates map[string]string, targetDir string) (bool, error) {
+	for name, candidate := range candidates {
+		target := filepath.Join(targetDir, name)
+		candidateSHA, err := mihomotest.ConfigSHA256(candidate)
+		if err != nil {
+			return false, fmt.Errorf("hash Mihomo update candidate %q: %w", candidate, err)
+		}
+		targetSHA, err := mihomotest.ConfigSHA256(target)
+		if os.IsNotExist(err) {
+			return true, nil
+		}
+		if err != nil {
+			return false, fmt.Errorf("hash managed Mihomo binary %q: %w", target, err)
+		}
+		if candidateSHA != targetSHA {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func checkedMihomoCandidates(downloads []coredownload.Result) (map[string]string, error) {

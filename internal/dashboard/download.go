@@ -40,7 +40,10 @@ type asset struct {
 	BrowserDownloadURL string `json:"browser_download_url"`
 }
 
-const defaultGitHubReleaseMirrors = "https://gh-proxy.com/https://github.com https://ghproxy.imciel.com/https://github.com https://gitproxy.mrhjx.cn/https://github.com https://gh.jasonzeng.dev/https://github.com https://gh.monlor.com/https://github.com https://gh.noki.icu/https://github.com https://ghfast.top/https://github.com"
+const (
+	defaultGitHubReleaseMirrors = "https://gh-proxy.com/https://github.com https://proxy.vvvv.ee/https://github.com https://cors.isteed.cc/https://github.com https://gh.ddlc.top/https://github.com https://gh.xmly.dev/https://github.com https://ghproxy.net/https://github.com https://ghfast.top/https://github.com"
+	defaultGitHubAPIMirrors     = "https://gh-proxy.com/https://api.github.com https://proxy.vvvv.ee/https://api.github.com"
+)
 
 const maxDownloadAttempts = 5
 
@@ -343,7 +346,7 @@ func mirroredURLs(url string) []string {
 	case strings.HasPrefix(url, "https://github.com/"):
 		return mirrorByPrefix(url, "https://github.com", envWords("LOCALCLASH_GITHUB_RELEASE_MIRRORS", defaultGitHubReleaseMirrors))
 	case strings.HasPrefix(url, "https://api.github.com/"):
-		return mirrorByPrefix(url, "https://api.github.com", envWords("LOCALCLASH_GITHUB_API_MIRRORS", strings.ReplaceAll(defaultGitHubReleaseMirrors, "https://github.com", "https://api.github.com")))
+		return mirrorByPrefix(url, "https://api.github.com", envWords("LOCALCLASH_GITHUB_API_MIRRORS", defaultGitHubAPIMirrors))
 	default:
 		return nil
 	}

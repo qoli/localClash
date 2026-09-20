@@ -6,6 +6,51 @@ import (
 	"testing"
 )
 
+func TestMihomoCandidatesChangedUsesContentNotDownloadOccurrence(t *testing.T) {
+	dir := t.TempDir()
+	targetDir := filepath.Join(dir, "managed")
+	candidateDir := filepath.Join(dir, "candidate")
+	candidates := map[string]string{}
+	for _, name := range []string{"lc-mihomo-meta", "lc-mihomo-smart"} {
+		contents := "same-" + name
+		writeUpdateTestFile(t, filepath.Join(targetDir, name), contents)
+		candidate := filepath.Join(candidateDir, name)
+		writeUpdateTestFile(t, candidate, contents)
+		candidates[name] = candidate
+	}
+
+	changed, err := mihomoCandidatesChanged(candidates, targetDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changed {
+		t.Fatal("byte-identical Mihomo pair was reported as changed")
+	}
+
+	writeUpdateTestFile(t, candidates["lc-mihomo-smart"], "new-smart")
+	changed, err = mihomoCandidatesChanged(candidates, targetDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !changed {
+		t.Fatal("changed Smart core was reported as unchanged")
+	}
+}
+
+func TestMihomoCandidatesChangedTreatsMissingTargetAsChange(t *testing.T) {
+	dir := t.TempDir()
+	candidate := filepath.Join(dir, "candidate", "lc-mihomo-meta")
+	writeUpdateTestFile(t, candidate, "meta")
+
+	changed, err := mihomoCandidatesChanged(map[string]string{"lc-mihomo-meta": candidate}, filepath.Join(dir, "managed"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !changed {
+		t.Fatal("missing managed core was reported as unchanged")
+	}
+}
+
 func TestPromoteMihomoCandidatesReplacesPair(t *testing.T) {
 	dir := t.TempDir()
 	targetDir := filepath.Join(dir, "managed")
