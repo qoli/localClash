@@ -18,8 +18,51 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
-| localClash Core | [v0.1.89](https://github.com/qoli/localClash/releases/tag/v0.1.89) | 2026-09-18 UTC+8 |
-| localclash-luci | [v0.1.0-81](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-81) | 2026-09-18 UTC+8 |
+| localClash Core | [v0.1.93](https://github.com/qoli/localClash/releases/tag/v0.1.93) | 2026-09-20 UTC+8 |
+| localclash-luci | [v0.1.0-82](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-82) | 2026-09-20 UTC+8 |
+
+## 2026-09-20
+
+### localclash-luci v0.1.0-82
+
+Changes:
+
+- 一鍵更新先完成 Mihomo、Dashboard、訂閱與配置的下載及驗證，最後只執行一次 restart 或
+  hot reload；已有可用核心時，Mihomo 下載失敗會保留現有核心並以 warning 完成。
+
+Release:
+
+[qoli/localclash-luci v0.1.0-82](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-82)
+
+Verification:
+
+- iStoreOS x86_64 QEMU 的 changed、identical、下載故障、缺核心與準備失敗轉移驗收通過；
+  changed path 只 restart 一次，identical pair 只 hot reload 一次，獨立 LAN TCP／UDP／DNS
+  連續探針均通過。LuCI UI／ubus dispatch 未在本輪重跑，故功能表如實記為 PARTIAL。
+- [Main CI 35509067652](https://github.com/qoli/localclash-luci/actions/runs/35509067652) 與
+  [Release workflow 35509136238](https://github.com/qoli/localclash-luci/actions/runs/35509136238)
+  成功；公開 IPK、APK 與兩架構 iStore `.run` 資產已發佈。
+
+### localClash Core v0.1.93
+
+Changes:
+
+- Smart Fork 的 UDP 路徑改為收到第一個回包後才確認 winner；無回應路徑會被冷卻並重新選擇，
+  避免只因 UDP association 建立成功就持久化錯誤出口。
+- WhatsApp 補充 Meta／IP 規則覆蓋，已分類的通信流量會先於泛用 UDP/443 QUIC 規則命中，
+  並新增 5222 端口 sniff，改善聊天連線的分流識別。
+
+Release:
+
+[qoli/localClash v0.1.93](https://github.com/qoli/localClash/releases/tag/v0.1.93)
+
+Verification:
+
+- Smart Fork `92844c60` 的 Test／Build workflow 成功，公開 `Prerelease-Alpha` tag 與資產均指向
+  `alpha-smart-92844c6`；WhatsApp／QUIC／sniff 三個 Core release workflow 均成功。這些證據驗證
+  規則、核心建置與發佈，不等同正式路由器上的 WhatsApp 實際通話／聊天驗收。
+- [Core Release workflow 35508841838](https://github.com/qoli/localClash/actions/runs/35508841838)
+  成功；7 項公開資產、checksums 與 manifest 已發佈。
 
 ## 2026-09-18
 
