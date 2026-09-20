@@ -65,6 +65,9 @@ and reuse applicable historical evidence; releasing does not require rerunning
 the whole table. Review coverage for the candidate before publishing either
 channel. CI/package checks do not replace selected QEMU functional assertions;
 Docker OpenWrt acceptance is retired.
+For QEMU functional work, build the real subscription/runtime/takeover scene with
+[`scripts/istoreos-real-scene.sh`](scripts/istoreos-real-scene.sh); fixtures may
+not replace the router-sourced subscription in positive acceptance.
 
 ## Main Bootstrap
 

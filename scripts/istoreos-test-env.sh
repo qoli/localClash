@@ -17,6 +17,7 @@ pid_path="${runtime_dir}/qemu.pid"
 monitor_path="${runtime_dir}/qemu-monitor.sock"
 serial_path="${runtime_dir}/serial-console.sock"
 qemu_log_path="${runtime_dir}/qemu.log"
+known_hosts_path="${runtime_dir}/known_hosts"
 
 luci_port="${LOCALCLASH_ISTOREOS_LUCI_PORT:-18089}"
 ssh_port="${LOCALCLASH_ISTOREOS_SSH_PORT:-12223}"
@@ -243,6 +244,7 @@ reset_overlay() {
 	stop
 	[ -f "$base_path" ] || prepare
 	rm -f "$overlay_path"
+	rm -f "$known_hosts_path"
 	qemu-img create -f qcow2 -F raw -b "$base_path" "$overlay_path"
 	printf 'Reset writable overlay; immutable firmware base was preserved\n'
 }

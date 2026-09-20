@@ -49,6 +49,41 @@ LuCI、rpcd、Mihomo、dnsmasq、procd、fw4、nft、iproute 或產品 helper。
 非透明代理 WAN，並建立獨立 router、LAN client 與受控 WAN endpoint；從 client 發出真實
 TCP、UDP、DNS 或應用請求，按功能契約在 endpoint 或回應端核對結果。
 
+### 真實產品現場
+
+可拋棄的是每次測試的 VM clone，不是正向驗收所需的產品狀態或輸入。首次安裝、舊版升級、
+一鍵更新、訂閱刷新、runtime、接管及 DNS 驗收必須在 VM 內建立與正式路由器相同的現場：
+
+1. 真實訂閱以正式路由器的 `/root/localclash/localclash-subscriptions.json` 為唯一來源；使用
+   [real-scene 腳本](../scripts/istoreos-real-scene.sh)在 router 端經正式 `subscription get` 讀取，
+   僅轉成既有 `uris` 輸入合約後串流到 VM SSH。host 不落盤、不輸出內容，再由 VM 內正式
+   `subscription set` 及 `subscription refresh` 入口建立狀態。若 router 中任何 source 無法無損
+   匯出為 URI，整次同步明確失敗，禁止只取可匯出部分。
+2. 每次建立或重置 VM clone 後重新執行 `subscription-sync`。來源不存在、VM 無法刷新或結果
+   沒有有效節點時明確失敗；腳本會記錄不含秘密的配置 SHA 證明，之後配置若被替換即失效。
+   正向驗收不得改用 fixture、cache、手寫 URI 或候選程式生成的輸入。
+3. 一鍵更新前執行 `assert-update-ready`，要求真實訂閱已刷新、Mihomo 正在運行、takeover
+   `effective=true`，且 router DNS path 為 `mihomo`。缺少任何一項時，該狀態轉移記 `NOT_RUN`。
+4. fixture 只可用於明列的負向輸入、受控故障或獨立 WAN endpoint，不得支持正向功能 PASS，
+   也不得取代正式路由器訂閱或運行中的產品狀態。
+
+標準使用順序：
+
+```bash
+scripts/istoreos-test-env.sh start
+scripts/istoreos-test-env.sh wait
+scripts/istoreos-real-scene.sh subscription-sync
+# 透過正式 LuCI 初始化／啟動 runtime／套用 takeover
+scripts/istoreos-real-scene.sh assert-update-ready
+# 從 LuCI 頁面執行一鍵更新，並在全部狀態轉移持續執行外部 oracle
+```
+
+`scripts/istoreos-test-env.sh reset` 會替換整個 writable overlay；它不是現場保存方式。需要多次
+attempt 時，從相同 immutable firmware 建立各自 clone，並由上述 router source 重建真實訂閱。
+測後只清理該 attempt 的 VM／暫存證據，不修改正式路由器訂閱，也不把秘密寫入版控證據。
+guest SSH 使用 `.runtime/istoreos-qemu/known_hosts` 的 VM 專用信任記錄；reset 只移除這份記錄，
+不得修改使用者的全域 `known_hosts`。正式路由器 SSH 仍使用使用者既有的嚴格信任設定。
+
 網路功能在正常、停止、恢復及所選故障轉移後都要重新跑相同資料面 oracle。內部狀態、
 log、counter、packet capture 只用於解釋外部成功或失敗。若外部 oracle 沒有執行，該資料面
 結果就是 NOT_RUN；若 oracle 失敗，即使內部狀態全部顯示正常仍是 FAIL。
