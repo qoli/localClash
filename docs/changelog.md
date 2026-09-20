@@ -18,8 +18,30 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
-| localClash Core | [v0.1.89](https://github.com/qoli/localClash/releases/tag/v0.1.89) | 2026-09-18 UTC+8 |
+| localClash Core | [v0.1.93](https://github.com/qoli/localClash/releases/tag/v0.1.93) | 2026-09-20 UTC+8 |
 | localclash-luci | [v0.1.0-81](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-81) | 2026-09-18 UTC+8 |
+
+## 2026-09-20
+
+### localClash Core v0.1.93
+
+Changes:
+
+- Mihomo 成對更新現在會比較候選與現有 managed core；內容完全相同時回報
+  `changed=false`，不再把無變更誤報為已更新。
+- 更新內置 GitHub Release、API 與 Raw 鏡像列表，移除失效來源並加入目前使用的來源。
+- 配合 LuCI 一鍵更新，Core 提供可供批量提交判斷的真實 Mihomo 變更狀態。
+
+Release:
+
+[qoli/localClash v0.1.93](https://github.com/qoli/localClash/releases/tag/v0.1.93)
+
+Verification:
+
+- `go test ./...` 與 iStoreOS `24.10.8-2026073111` x86_64 QEMU 影響範圍驗收通過；
+  changed path 在所有材料完成後只執行一次 process restart，identical pair 只執行一次 hot reload，
+  Mihomo 下載失敗且現有核心可用時以 warning 完成，缺少核心時則明確失敗。獨立 LAN TCP／UDP／DNS
+  連續探針均通過，證據見功能表 E18。未執行 ARM64 runtime，LuCI UI／ubus dispatch 沿用 E17。
 
 ## 2026-09-18
 
