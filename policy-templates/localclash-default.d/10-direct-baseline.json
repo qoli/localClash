@@ -21,6 +21,19 @@
         "boundary": "business_to_exit_layer"
       }
     },
+    "custom_rules": [
+      {
+        "id": "nvidia-download-direct",
+        "target": "DIRECT",
+        "reason": "Keep NVIDIA driver downloads direct without changing routing for other NVIDIA services.",
+        "rules": [
+          {
+            "type": "domain_suffix",
+            "value": "download.nvidia.com"
+          }
+        ]
+      }
+    ],
     "packs": [
       {
         "source": "v2fly-dlc",
