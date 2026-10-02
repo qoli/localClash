@@ -18,8 +18,54 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
-| localClash Core | [v0.1.93](https://github.com/qoli/localClash/releases/tag/v0.1.93) | 2026-09-20 UTC+8 |
-| localclash-luci | [v0.1.0-82](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-82) | 2026-09-20 UTC+8 |
+| localClash Core | [v0.1.94](https://github.com/qoli/localClash/releases/tag/v0.1.94) | 2026-10-02 UTC+8 |
+| localclash-luci | [v0.1.0-84](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-84) | 2026-10-02 UTC+8 |
+
+## 2026-10-02
+
+### localclash-luci v0.1.0-84
+
+Changes:
+
+- Mihomo 下載失敗時，一鍵更新保留原始錯誤並停止後續探測、配置及 runtime 切換，
+  避免因磁碟上有舊核心就繼續更新或嘗試重啟；下載成功仍依既有材料驗證流程完成切換。
+- 兩架構 iStoreOS 離線包固定包含 Core `v0.1.94`，使用修正後的基礎資源寫入方式。
+
+Release:
+
+[qoli/localclash-luci v0.1.0-84](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-84)
+
+Verification:
+
+- [Main CI 37000884350](https://github.com/qoli/localclash-luci/actions/runs/37000884350) 與
+  [Release workflow 37001068715](https://github.com/qoli/localclash-luci/actions/runs/37001068715)
+  在版本 commit `18c3b7c` 通過全部主機回歸、包建置與資產檢查；8 項公開資產和四份 sidecar
+  已重新下載校驗，兩架構 `.run` 均通過 `--info`、`--list`、`--check`、`--noexec`，
+  解包 Core／base assets 與 `v0.1.94` 官方 manifest 一致。
+- IPK 與兩個 `.run` 和 Main CI 候選逐位元一致；APK 的檔案時間戳與衍生封裝 hash 不同，
+  逐檔內容 hash 及安裝腳本一致，公開 APK 本身的 checksum 與驗包通過。
+- iStoreOS 功能回驗 **NOT_RUN**：VM 前置的 running runtime、effective takeover 與 Mihomo
+  DNS path 未建立，未執行一鍵更新或獨立 LAN oracle；ARM64 runtime 未驗證。詳見功能表 E19。
+
+### localClash Core v0.1.94
+
+Changes:
+
+- 基礎資源改為逐檔完整寫入同目錄暫存檔後原子替換，保留運行中 Mihomo 使用的 MMDB
+  映射，避免原地截斷造成 SIGBUS；某個檔案寫入失敗時保留該檔原件。
+- NVIDIA 驅動下載域名 `download.nvidia.com` 加入預設直連規則。
+
+Release:
+
+[qoli/localClash v0.1.94](https://github.com/qoli/localClash/releases/tag/v0.1.94)
+
+Verification:
+
+- `go test ./...`、既有 reader、跨頁 mmap 與不完整 tar 回歸通過。
+  [Core Release workflow 37000528474](https://github.com/qoli/localClash/actions/runs/37000528474)
+  成功；7 項公開資產、三份 sidecar 與 manifest 已重新下載校驗，兩架構 ELF build revision
+  均為 tag commit `6d6271a`；manifest SHA-256 為 `d3ff22af…13c3c`。
+- iStoreOS 功能回驗 **NOT_RUN**，正式路由器未部署修正；ARM64 runtime 未驗證，詳見功能表 E19。
 
 ## 2026-09-20
 

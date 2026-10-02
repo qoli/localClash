@@ -568,3 +568,11 @@ proxies=30；assert-update-ready 因 running runtime、effective takeover 與 Mi
 失敗，未執行一鍵更新或獨立 LAN oracle，兩個選測功能的候選回驗均記 NOT_RUN。
 [VM 選測紀錄](../.runtime/istoreos-acceptance/20261002-update-continuity/vm-verification.md)保存具體前置與
 證據；不提高最後實測版本。測試 VM 已停止、qcow2 check 通過；正式路由器未部署修正。
+
+本修正已發佈為 [Core v0.1.94](https://github.com/qoli/localClash/releases/tag/v0.1.94)
+（tag commit `6d6271a`）及 [LuCI v0.1.0-84](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-84)
+（tag commit `18c3b7c`）。Core Release `37000528474`、LuCI Main CI `37000884350` 與
+Release `37001068715` 均成功；公開資產／checksum／兩架構離線包已核對，詳細發布驗證見
+[更新日誌](changelog.md#2026-10-02)。LuCI 離線包的 Core manifest 固定 SHA-256 為
+`d3ff22af7d99b796436d5c2ca53d9a15de0239bfb1976b784a54188f8fe13c3c`。
+此處只補發布身分及資產證據，選測功能回驗仍為 **NOT_RUN**，不提高最後實測版本。
