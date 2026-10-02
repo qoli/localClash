@@ -86,7 +86,7 @@
 | 功能 ID | 功能／驗證內容 | 責任／核心範圍 | 最後實測版本；結果；證據 |
 | --- | --- | --- | --- |
 | COMPONENT-MIHOMO | **Mihomo 核心取得與更新**：依平台／架構取得選定來源的兩份核心，核對版本／SHA；成對更新與失敗恢復一致，preflight 使用活躍核心，更新後保留選擇並正常啟動。[實作入口](../product_mihomo_update.go) | Core／共用交易，按核心差異驗啟動 | Core `f23554d`／LuCI `a25a3cc`；PASS（本輪影響範圍，Meta active）；Meta／Smart 成對 SHA、changed／identical pair、現有核心保留、缺核心失敗及單一最終 runtime commit [E18](#e18)；其餘契約沿用 [E05](#e05) |
-| COMPONENT-ASSETS | **基礎資源更新**：取得並安裝基礎資源，版本／完整性正確；更新失敗不假報完成，之後配置生成可使用實際安裝的資源。[實作入口](../product_cli.go) | Core／共用 | v0.1.83／不適用；PASS；正式安裝、配置使用、錯誤 manifest／損壞 archive 拒絕及原 hash 保留 [E05](#e05) |
+| COMPONENT-ASSETS | **基礎資源更新**：取得並安裝基礎資源，版本／完整性正確；更新失敗不假報完成，保留正在使用的資料檔映射，之後配置生成可使用實際安裝的資源。[實作入口](../product_cli.go) | Core／共用 | 2026-10-02 更新至 Core v0.1.93／LuCI 0.1.0-83；FAIL；運行中 Smart 讀取 ASN.mmdb 時 SIGBUS，準備階段原地截斷資料檔；修正候選的主機回歸已通過，iStoreOS 功能回驗 NOT_RUN [E19](#e19)；歷史安裝範圍見 [E05](#e05) |
 | COMPONENT-DASHBOARD | **Dashboard 資源管理**：取得、更新及提供面板資源，檔案／入口與 controller 連接設定一致；能開啟面板，不驗 Dashboard 自身全部功能。[實作入口](../product_cli.go) | Core；LuCI 提供連結／共用 | Core `11ee263`／LuCI `2ac337f`；PASS；有效 archive 更新、component status、`external-ui`、controller `/ui/`，以及 5 次失敗後 optional skip／原 hash 保留 [E07](#e07) |
 
 <a id="access"></a>
@@ -114,7 +114,7 @@
 | --- | --- | --- | --- |
 | LUCI-INSTALL | **OpenWrt 安裝與版本管理**：離線包安裝、重裝、LuCI／Core 安裝更新及支援的舊版交接正常；架構／完整性錯誤拒絕，應保留資料不丟失。Core 自我更新未實作，實際由 helper 管理。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI／共用 | Core `591c357`／LuCI v0.1.0-81 候選；PASS（影響範圍）；候選 IPK 在 inactive task 同步 rpcd reload、active task 只寫延後標記，兩路均安裝成功且 rpcd／uhttpd PID 不變 [E17](#e17) |
 | LUCI-INIT | **初始化引導**：由頁面提供訂閱、模板及核心，完成 Core 呼叫、配置、啟動及接管；重新開頁顯示真實狀態，失敗可定位。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI 編排＋Core／按影響 | v0.1.83／0.1.0-76；PASS；空工作區 Meta／Smart 初始化、訂閱／模板／Core、UI 啟動並接管、重開讀回及可定位失敗後恢復 [E05](#e05) |
-| LUCI-UPDATE | **一鍵更新與資料保留**：從頁面更新，兩個檢查點、來源版本及結果可讀回；重跑／舊版升級保持訂閱、網站順序、偏好及核心選擇；原本停止或未初始化的狀態不擅自啟動。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI 編排＋Core／按影響 | Core `f23554d`／LuCI `a25a3cc`；PARTIAL（本輪正式 helper 任務，未重跑 UI／ubus-RPC dispatch）；完整真實訂閱 changed／identical／Mihomo 取得故障、準備失敗與缺核心轉移，單一 commit、資料保留及獨立 LAN TCP／UDP／DNS 通過 [E18](#e18)；UI／RPC session 證據沿用 [E17](#e17) |
+| LUCI-UPDATE | **一鍵更新與資料保留**：從頁面更新，兩個檢查點、來源版本及結果可讀回；重跑／舊版升級保持訂閱、網站順序、偏好及核心選擇；Mihomo 下載失敗時保留運行中程序並停止後續切換，原本停止或未初始化的狀態不擅自啟動。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI 編排＋Core／按影響 | 2026-10-02 更新至 Core v0.1.93／LuCI 0.1.0-83；FAIL；準備階段 runtime 崩潰，Mihomo 下載失敗仍繼續探測，最後無法恢復；修正候選的主機回歸已通過，iStoreOS 功能回驗 NOT_RUN [E19](#e19)；歷史範圍見 [E18](#e18)，其下載失敗後繼續更新行為不再採用；UI／RPC session 歷史證據見 [E17](#e17) |
 | LUCI-TASKS | **介面與長任務交互**：訂閱、網站、初始化及更新頁面操作與後端一致；日誌、取消、互斥、重新連接與終態可用，無重複交易／無限 busy；依各操作是否支援取消驗證。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI／共用 | Core `591c357`／LuCI v0.1.0-81 候選；PASS（影響範圍）；真 RPC session 從啟動追蹤至終態，active-task 重裝未建立重複交易，reload 後同 token、ubus method／ACL、HTTP／LuCI 均可用 [E17](#e17)；其他長任務交互沿用 [E05](#e05) |
 | LUCI-TAKEOVER | **OpenWrt 網路接管**：從正式入口套用及停止防火牆、策略路由與 DNS 接管；獨立 LAN client 的實際 TCP／UDP／DNS 請求按配置到達受控 WAN endpoint，停止後恢復原資料面，且非本產品規則保留。內部 effective、規則或 lease 只能解釋結果。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI／共用 | Core `8d573f3`／LuCI v0.1.0-79 source `005f59e`（QEMU 候選 IPK `a150ece`）；PASS（影響範圍回驗）；沿用 E05 非 DNS 資料面，新增 ingress lease active／到期後 router 與獨立 LAN UDP／TCP DNS、router-DNS bypass、狀態及 stop [E05](#e05) [E11](#e11) |
 | LUCI-RESTORE | **接管及服務恢復**：開機、WAN 事件、受管程序退出及依賴故障後，按使用者意圖恢復或撤回接管；每次轉移後由獨立 client 重跑相同資料面 oracle，明確停止後不自行重開。內部狀態與 lease 不代表服務可用。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI＋Core 生命週期／共用 | Core `8d573f3`／LuCI v0.1.0-79 source `005f59e`（QEMU 候選 IPK `a150ece`）；PASS（影響範圍回驗）；沿用 E05 開機／WAN 轉移，新增 guard 或 Mihomo 停止後無 userspace cleanup 的 lease 到期、獨立 LAN UDP／TCP dnsmasq fallback、重新授租及明確 stop [E05](#e05) [E11](#e11) |
@@ -535,3 +535,36 @@ Meta `v1.19.31`，並核對 Smart `alpha-smart-651ca46` 的成對 SHA。
   執行 final config-test 故障子項，因此 `LUCI-UPDATE` 本輪記 PARTIAL，不把 helper 任務冒充完整
   UI 驗收。測後正式停止 runtime/takeover，router/client QEMU、VDE、endpoint 與 fixtures 全部
   停止，兩個 qcow2 均通過 `qemu-img check`；正式路由器未修改。
+
+<a id="e19"></a>
+### E19
+
+2026-10-02 正式路由器的一鍵更新（Core v0.1.93／LuCI 0.1.0-83）出現準備階段
+runtime 崩潰；本次撤回 COMPONENT-ASSETS 與 LUCI-UPDATE 的現行通過結論，保留歷史
+證據的實際版本與覆蓋。使用者已確認儲存硬體會造成磁碟二進位 bytes 漂移，不能把舊檔存在
+當作可重新啟動的證據。
+
+- 更新日誌顯示 18:39:31–36 安裝基礎資源；路由器 mihomo.log 的最後運行日誌為
+  18:39:34，其後出現 SIGBUS，堆疊為 MaxMind MMDB → ASNReader.LookupASN。
+  該版本的 assets 解壓以 O_TRUNC 原地寫入 ASN.mmdb，與正在使用的 mmap 崩潰機制吻合。
+- 隨後 Mihomo、Dashboard 與訂閱請求出現 `[::1]:53 connection refused`。
+  18:39:40 watchdog 因 core_hash_mismatch 阻止恢復；18:39:48 的隔離 Smart 探測在初始化
+  要求約 24 GiB 記憶體而退出，kernel 亦記錄分配被拒絕。磁碟損壞的具體原因不以本輪
+  軟體回歸測試作硬體判定。
+- LuCI 原先把 Mihomo 下載失敗轉為 existing_core_preserved 後繼續更新，最後只輪詢
+  runtime 六次而無法恢復。修正候選直接保留原始失敗並停止後續探測、配置驗證、runtime
+  切換與接管恢復；下載成功仍按既有材料驗證及單一最終切換流程執行。
+- Core 修正候選對資產逐檔使用同目錄暫存檔、完整寫入與 sync 後 rename，保留舊 reader／mmap
+  的 inode；不宣稱整個資產包是單次原子交易。既有開檔、跨頁 mmap 與不完整 tar 回歸通過；
+  不完整 tar 測試在修正前版本能重現原檔被破壞。`go test ./...` 通過。
+- LuCI 一鍵更新及 helper 交接主機回歸、shell 語法、BusyBox ash 失敗分支與 IPK／APK 打包
+  通過。上述均為主機層證據，不能升格為 iStoreOS／正式路由器資料面驗收。
+
+本輪可拋棄 iStoreOS 的選測範圍為運行中基礎資源更新及 Mihomo 下載失敗時的程序／資料面
+持續性；候選身分與原始證據保存在 `.runtime/istoreos-acceptance/20261002-update-continuity/`。
+主機驗證與補丁 SHA 見[驗證紀錄](../.runtime/istoreos-acceptance/20261002-update-continuity/host-verification.md)。
+本輪 guest LuCI／SSH 可用，正式 subscription-sync 回報 configured=true、merged=true、sources=3、
+proxies=30；assert-update-ready 因 running runtime、effective takeover 與 Mihomo DNS path 未建立而
+失敗，未執行一鍵更新或獨立 LAN oracle，兩個選測功能的候選回驗均記 NOT_RUN。
+[VM 選測紀錄](../.runtime/istoreos-acceptance/20261002-update-continuity/vm-verification.md)保存具體前置與
+證據；不提高最後實測版本。測試 VM 已停止、qcow2 check 通過；正式路由器未部署修正。

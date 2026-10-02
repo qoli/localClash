@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -16,6 +17,86 @@ import (
 	"strings"
 	"testing"
 )
+
+func TestExtractIncompleteAssetPreservesExistingFile(t *testing.T) {
+	dir := t.TempDir()
+	const name = "ASN.mmdb"
+	target := filepath.Join(dir, name)
+	old := []byte("existing database used by the running runtime")
+	if err := os.WriteFile(target, old, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.Stat(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var archive bytes.Buffer
+	gz := gzip.NewWriter(&archive)
+	tw := tar.NewWriter(gz)
+	if err := tw.WriteHeader(&tar.Header{Name: name, Mode: 0o644, Size: 128}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tw.Write([]byte("incomplete")); err != nil {
+		t.Fatal(err)
+	}
+	// End the compressed stream before the declared tar entry is complete.
+	if err := gz.Close(); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "incomplete.tar.gz")
+	if err := os.WriteFile(path, archive.Bytes(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	count, err := extractTarGz(path, dir)
+	if err == nil || count != 0 {
+		t.Fatalf("extraction = %d, %v, want incomplete entry failure", count, err)
+	}
+	after, err := os.Stat(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !os.SameFile(before, after) || !bytes.Equal(got, old) {
+		t.Fatal("failed extraction replaced or modified the existing database")
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("temporary files leaked: entries=%v error=%v", entries, err)
+	}
+}
+
+func TestReplaceAssetPreservesOpenReader(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "ASN.mmdb")
+	old := []byte("existing database used by the running runtime")
+	if err := os.WriteFile(target, old, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	reader, err := os.Open(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	if err := replaceAsset(target, 0o640, strings.NewReader("new")); err != nil {
+		t.Fatal(err)
+	}
+	got, err := io.ReadAll(reader)
+	if err != nil || !bytes.Equal(got, old) {
+		t.Fatalf("existing reader = %q, %v, want unchanged database", got, err)
+	}
+	got, err = os.ReadFile(target)
+	if err != nil || string(got) != "new" {
+		t.Fatalf("new reader = %q, %v", got, err)
+	}
+	info, err := os.Stat(target)
+	if err != nil || info.Mode().Perm() != 0o640 {
+		t.Fatalf("replacement mode: info=%v error=%v", info, err)
+	}
+}
 
 func TestInstallDownloadsAndExtractsBaseAssets(t *testing.T) {
 	archive := testArchive(t)

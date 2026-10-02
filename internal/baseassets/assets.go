@@ -303,21 +303,37 @@ func extractTarGz(path, outputDir string) (int, error) {
 			if mode == 0 {
 				mode = 0o644
 			}
-			out, err := os.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, mode)
-			if err != nil {
+			if err := replaceAsset(target, mode, tr); err != nil {
 				return count, err
-			}
-			_, copyErr := io.Copy(out, tr)
-			closeErr := out.Close()
-			if copyErr != nil {
-				return count, copyErr
-			}
-			if closeErr != nil {
-				return count, closeErr
 			}
 			count++
 		}
 	}
+}
+
+// Replace the directory entry instead of truncating the old inode: a running
+// Mihomo may still have the previous MMDB open or memory-mapped.
+func replaceAsset(target string, mode os.FileMode, source io.Reader) error {
+	out, err := os.CreateTemp(filepath.Dir(target), ".localclash-asset-*")
+	if err != nil {
+		return err
+	}
+	tmpPath := out.Name()
+	defer os.Remove(tmpPath)
+	defer out.Close()
+	if _, err := io.Copy(out, source); err != nil {
+		return err
+	}
+	if err := out.Chmod(mode); err != nil {
+		return err
+	}
+	if err := out.Sync(); err != nil {
+		return err
+	}
+	if err := out.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpPath, target)
 }
 
 func safeJoin(base, name string) (string, error) {
