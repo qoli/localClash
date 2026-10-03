@@ -68,6 +68,9 @@
       ],
       "fallback-lazy-query": false,
       "nameserver-policy": {
+        "*": [
+          "192.168.6.1#DIRECT"
+        ],
         "geosite:private": [
           "192.168.6.1#DIRECT"
         ],

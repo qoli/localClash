@@ -126,8 +126,10 @@ func TestDefaultRouterProfileMatchesRouterReferencePreferences(t *testing.T) {
 	assertMainlandReachableDNS(t, mihomo, "0.0.0.0:7874", "router")
 	dns := mihomo["dns"].(map[string]any)
 	policy := dns["nameserver-policy"].(map[string]any)
-	if want := []any{"192.168.6.1#DIRECT"}; !reflect.DeepEqual(policy["geosite:private"], want) {
-		t.Fatalf("router private DNS policy = %#v, want %#v", policy["geosite:private"], want)
+	for _, key := range []string{"*", "geosite:private"} {
+		if want := []any{"192.168.6.1#DIRECT"}; !reflect.DeepEqual(policy[key], want) {
+			t.Fatalf("router DNS policy[%q] = %#v, want %#v", key, policy[key], want)
+		}
 	}
 	if dns["direct-nameserver-follow-policy"] != true {
 		t.Fatalf("router direct DNS must follow the private nameserver policy: %#v", dns)

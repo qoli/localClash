@@ -532,8 +532,10 @@ enabled_packs: []
 	if _, exists := policy["geosite:cn"]; exists {
 		t.Fatalf("builtin router unexpectedly injected broad mainland DNS authority: %#v", policy)
 	}
-	if got := policy["geosite:private"].([]any); len(got) != 1 || got[0] != "192.168.6.1#DIRECT" {
-		t.Fatalf("private DNS policy = %#v, want router DNS through builtin DIRECT", got)
+	for _, key := range []string{"*", "geosite:private"} {
+		if got := policy[key].([]any); len(got) != 1 || got[0] != "192.168.6.1#DIRECT" {
+			t.Fatalf("DNS policy[%q] = %#v, want router DNS through builtin DIRECT", key, got)
+		}
 	}
 	if dns["direct-nameserver-follow-policy"] != true {
 		t.Fatalf("direct DNS must follow the rendered private nameserver policy: %#v", dns)

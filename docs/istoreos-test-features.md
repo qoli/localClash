@@ -68,8 +68,8 @@
 | --- | --- | --- | --- |
 | CONFIG-TEMPLATE | **策略模板設定**：選取完整預設或 minimal 模板、配置 profile，產生相應補丁及 intent；重設模板只依明示選項處理既有補丁，不默默覆蓋自訂設定。[實作入口](../product_cli.go) | Core／共用 | v0.1.94／不適用；PARTIAL；本輪 baseline 完整模板交易在尚未安裝核心時以 invalid material path 失敗，正式非交易模板入口成功；v0.1.95 未回驗該交易分支 [E20](#e20)；v0.1.88 升級／user-owned state 歷史通過範圍見 [E15](#e15) |
 | CONFIG-PATCHES | **配置補丁管理**：讀取、預覽、套用、移除、啟停及排序補丁；預覽不落盤，套用後 registry／intent 一致，失效草稿或非法引用明確拒絕。[實作入口](../product_cli.go) | Core／共用 | v0.1.83／不適用；PASS；預覽／套用／移除／啟停／排序／tombstone、registry 恢復及非法／過期草稿拒絕 [E05](#e05) |
-| CONFIG-RENDER | **Mihomo 配置生成**：由訂閱、模板、補丁與 profile 生成正確配置。Meta 自動組為 url-test，Smart 為 smart 並移除 tolerance；Smart 參數、群組 priority 與 defaults 按 intent 傳遞且不覆蓋既有值；生成不等於已載入。[實作入口](../product_cli.go) | Core／按核心差異 | v0.1.95／不適用；PASS（本輪影響範圍）；同一 qcow2 由公開 v0.1.94 建立並驗證真實訂閱 workspace，升級後正式 router/Meta 生成 private DNS 策略與 follow-policy，未物化 DIRECT 群組 [E20](#e20)；Smart 殘留材料情境保留原實測版本 [E16](#e16) |
-| CONFIG-VALIDATION | **配置驗證**：用所選核心驗證生成配置，記錄對應 hash；非法配置不取得通過證明；驗證與活躍程序隔離，不爭用工作目錄。[實作入口](../product_cli.go) | Core／按核心差異 | v0.1.95／不適用；PASS（本輪影響範圍）；iStoreOS Meta v1.19.32 正式 isolated config-test 驗證升級後配置並記錄同一 hash [E20](#e20)；Smart 殘留材料情境保留原實測版本 [E16](#e16) |
+| CONFIG-RENDER | **Mihomo 配置生成**：由訂閱、模板、補丁與 profile 生成正確配置。Meta 自動組為 url-test，Smart 為 smart 並移除 tolerance；Smart 參數、群組 priority 與 defaults 按 intent 傳遞且不覆蓋既有值；生成不等於已載入。[實作入口](../product_cli.go) | Core／按核心差異 | Core `9881182` + 本輪未提交候選（binary SHA `596c797d…4d17`）／LuCI 候選 IPK `e5218681…ac7e`；PASS（本輪配置影響範圍）；同一 qcow2 由公開 v0.1.95／LuCI 0.1.0-84 建立真實訂閱 workspace，候選正式生成單節 `*` 與 private DNS 策略；107 proxies、64 rules [E21](#e21)；其他核心差異歷史範圍見 [E16](#e16) |
+| CONFIG-VALIDATION | **配置驗證**：用所選核心驗證生成配置，記錄對應 hash；非法配置不取得通過證明；驗證與活躍程序隔離，不爭用工作目錄。[實作入口](../product_cli.go) | Core／按核心差異 | Core `9881182` + 本輪未提交候選（binary SHA `596c797d…4d17`）／LuCI 候選 IPK `e5218681…ac7e`；PASS（本輪配置影響範圍）；iStoreOS Meta v1.19.32 正式 isolated config-test 通過，配置 SHA `58595e0f…9ef` [E21](#e21)；其他核心差異歷史範圍見 [E16](#e16) |
 | CONFIG-APPLY | **配置套用**：按所選入口核對候選檔提交或 runtime 載入；config-promote 是其中一個檔案提交入口，不是所有流程的前置。驗證 hash、實際載入規則／組及失敗結果符合契約，提交檔案不當成已熱載入，生成檔存在不當成已生效。[實作入口](../product_cli.go) | Core／按核心差異 | v0.1.88／不適用；PASS；正式 save/apply、hot reload、runtime start 及 controller rules／proxies read-back 通過，v0.1.87 user-owned state 保留 [E15](#e15) |
 
 <a id="cores"></a>
@@ -116,8 +116,8 @@
 | LUCI-INIT | **初始化引導**：由頁面提供訂閱、模板及核心，完成 Core 呼叫、配置、啟動及接管；重新開頁顯示真實狀態，失敗可定位。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI 編排＋Core／按影響 | v0.1.83／0.1.0-76；PASS；空工作區 Meta／Smart 初始化、訂閱／模板／Core、UI 啟動並接管、重開讀回及可定位失敗後恢復 [E05](#e05) |
 | LUCI-UPDATE | **一鍵更新與資料保留**：從頁面更新，兩個檢查點、來源版本及結果可讀回；重跑／舊版升級保持訂閱、網站順序、偏好及核心選擇；Mihomo 下載失敗時保留運行中程序並停止後續切換，原本停止或未初始化的狀態不擅自啟動。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI 編排＋Core／按影響 | 2026-10-02 更新至 Core v0.1.93／LuCI 0.1.0-83；FAIL；準備階段 runtime 崩潰，Mihomo 下載失敗仍繼續探測，最後無法恢復；修正候選的主機回歸已通過，iStoreOS 功能回驗 NOT_RUN [E19](#e19)；歷史範圍見 [E18](#e18)，其下載失敗後繼續更新行為不再採用；UI／RPC session 歷史證據見 [E17](#e17) |
 | LUCI-TASKS | **介面與長任務交互**：訂閱、網站、初始化及更新頁面操作與後端一致；日誌、取消、互斥、重新連接與終態可用，無重複交易／無限 busy；依各操作是否支援取消驗證。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI／共用 | Core `591c357`／LuCI v0.1.0-81 候選；PASS（影響範圍）；真 RPC session 從啟動追蹤至終態，active-task 重裝未建立重複交易，reload 後同 token、ubus method／ACL、HTTP／LuCI 均可用 [E17](#e17)；其他長任務交互沿用 [E05](#e05) |
-| LUCI-TAKEOVER | **OpenWrt 網路接管**：從正式入口套用及停止防火牆、策略路由與 DNS 接管；獨立 LAN client 的實際 TCP／UDP／DNS 請求按配置到達受控 WAN endpoint，停止後恢復原資料面，且非本產品規則保留。內部 effective、規則或 lease 只能解釋結果。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI／共用 | Core `8d573f3`／LuCI v0.1.0-79 source `005f59e`（QEMU 候選 IPK `a150ece`）；PASS（影響範圍回驗）；沿用 E05 非 DNS 資料面，新增 ingress lease active／到期後 router 與獨立 LAN UDP／TCP DNS、router-DNS bypass、狀態及 stop [E05](#e05) [E11](#e11) |
-| LUCI-RESTORE | **接管及服務恢復**：開機、WAN 事件、受管程序退出及依賴故障後，按使用者意圖恢復或撤回接管；每次轉移後由獨立 client 重跑相同資料面 oracle，明確停止後不自行重開。內部狀態與 lease 不代表服務可用。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI＋Core 生命週期／共用 | Core `8d573f3`／LuCI v0.1.0-79 source `005f59e`（QEMU 候選 IPK `a150ece`）；PASS（影響範圍回驗）；沿用 E05 開機／WAN 轉移，新增 guard 或 Mihomo 停止後無 userspace cleanup 的 lease 到期、獨立 LAN UDP／TCP dnsmasq fallback、重新授租及明確 stop [E05](#e05) [E11](#e11) |
+| LUCI-TAKEOVER | **OpenWrt 網路接管**：從正式入口套用及停止防火牆、策略路由與 DNS 接管；獨立 LAN client 的實際 TCP／UDP／DNS 請求按配置到達受控 WAN endpoint，停止後恢復原資料面，且非本產品規則保留。內部 effective、規則或 lease 只能解釋結果。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI／共用 | Core `9881182`／LuCI `18c3b7c` + 本輪未提交候選（binary `596c797d…4d17`、IPK `e5218681…ac7e`）；PARTIAL；獨立 LAN client 對路由器 IPv4 的 UDP／TCP DHCP 名稱、PTR 與公開域名成功，lo-only bypass 與租約 redirect 已讀回；補測受管理連線及受控 DNS 轉發阻塞，故障敏感度與 IPv6 資料面仍 NOT_RUN [E21](#e21)；歷史非 DNS 範圍見 [E05](#e05) [E11](#e11) |
+| LUCI-RESTORE | **接管及服務恢復**：開機、WAN 事件、受管程序退出及依賴故障後，按使用者意圖恢復或撤回接管；每次轉移後由獨立 client 重跑相同資料面 oracle，明確停止後不自行重開。內部狀態與 lease 不代表服務可用。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI＋Core 生命週期／共用 | Core `9881182`／LuCI `18c3b7c` + 本輪未提交候選（binary `596c797d…4d17`、IPK `e5218681…ac7e`）；PARTIAL；停止 Mihomo 後不清理 firewall，租約到期轉 dnsmasq，正式重新授租後完整 IPv4 UDP／TCP 查詢集成功；到期階段僅四項查詢、受控故障敏感度及 IPv6 尚未完整覆蓋 [E21](#e21)；開機／WAN 歷史範圍保留 [E05](#e05) [E11](#e11) |
 
 ## 舊記錄的保留方式
 
@@ -600,3 +600,43 @@ Release `37001068715` 均成功；公開資產／checksum／兩架構離線包�
 
 發布 CI、公開資產與正式路由器 Smart 隔離 `-t` 的補充證據見
 [更新日誌](changelog.md#2026-10-03)。CI 與隔離檢查不取代此處的 iStoreOS 操作範圍。
+
+<a id="e21"></a>
+### E21
+
+2026-10-03 修復路由器自身 DNS 地址的 LAN ingress 漏接管，以及混合大小寫單節 DHCP
+名稱的預設策略。候選為 Core base `98811829e5cf4418ffdcce4ba079e182ce8556c0` 與
+LuCI base `18c3b7c31f1d5e09fbdbb2ea3b9f77535db8d7ea` 加本輪未提交修正，尚未發布。
+[本輪完整紀錄](../.runtime/istoreos-acceptance/20261003-router-dns-ingress-fix/report.md)
+與 [主機驗證](../.runtime/istoreos-acceptance/20261003-router-dns-ingress-fix/host-verification.md)
+保留候選身分、操作及原始輸出。
+
+- 候選 Core binary SHA-256 `596c797d5186cd7ae7e4d87ca4c8b3264a0495ecaab320c518bad8ffaaaf4d17`；
+  IPK `e5218681a292cd4fdcb8189d26409d2eb76bb5cab531065aa6468c77d5d8ac7e`；
+  APK `a34ab07093734f892f981cffbbe011927adcac307fc02f54a0489bbb76690d49`。
+- 可拋棄 iStoreOS 24.10.8 QEMU 先用公開 Core v0.1.95／LuCI 0.1.0-84 正式建立並使用
+  workspace；從正式路由器只讀同步全部 3 個真實訂閱來源，刷新得到 107 proxies。
+  保留同一 workspace 後，只替換候選 Core／LuCI 資產，再由正式入口生成及驗證。
+- Meta v1.19.32 正式 config-test 通過；候選配置 SHA
+  `58595e0f11ded35ab40411c5e2beb4bdd6aefd5bd5f3e716de3ed77a1a4889ef`。
+  單節 `*`／`geosite:private` 指向 `192.168.6.1#DIRECT`，follow-policy 保留。
+- 獨立 VDE LAN client 的 DHCP 名稱為 `Mac`、IPv4 為 `192.168.6.174`。
+  租約有效時，直接查 `192.168.6.1:53` 的 UDP／TCP `Mac`、`MAC`、`Mac.lan`、PTR
+  及 `mcp.notion.com` 均成功；指定 UDP／TCP 探測前後 active redirect counter 由 10 增至 12。
+  本機回查 dnsmasq 的成功由上述 DHCP／PTR 外部回應佐證，dnsmasq 上游沒有改接 Mihomo。
+- 正式停止 runtime 而保留接管 firewall，15 秒租約到期後狀態轉 dnsmasq。
+  到期階段實際只驗證 MAC/UDP、Mac.lan/TCP、PTR/UDP、公開域名/TCP 四項，不能宣稱
+  完整等價類回驗；正式 runtime_start_takeover 重新授租後完整 IPv4 查詢集再度成功。
+- 首次準備出現 guest Core／opkg status 零位元組；原始錯誤保留，重裝公開 Core、
+  由 guest /rom 恢復 package database，再正式安裝 LuCI 與刷新後解除。其成因只記環境推測，
+  不當作候選缺陷或產品 PASS。受控 WAN `10.0.2.2:15353` refused 與 IPv6 未執行亦保留；
+  在補齊之前，主代理將 LUCI-TAKEOVER／RESTORE 記為 PARTIAL。
+- `go test ./...`、LuCI shell 語法、deadman／restore 主機回歸、IPK／APK 建置及驗證通過。
+  Mac checkout doctor 因未初始化 runtime／訂閱／配置而 fail，不列功能通過證據。
+  首次 QEMU overlays 經 qemu-img check 無錯誤後清理；正式路由器未修改。
+- [全新補測 attempt](../.runtime/istoreos-acceptance/20261003-router-dns-ingress-fix-supplement/report.md)
+  另建 router／LAN client／受控 WAN endpoint。router 直查 endpoint 的 UDP A／AAAA
+  可取得指定記錄，但 TCP 探測零位元組、dnsmasq／client 轉發 timeout，SSH 管理亦
+  timeout／reset。補測未進入公開 baseline 安裝、真實訂閱同步或候選 runtime，屬環境
+  ERROR，不能增加候選功能覆蓋，也不能算候選產品 FAIL；IPv6 與故障敏感度仍 NOT_RUN。
+  三個 overlays 均經 qemu-img check 無錯誤後清理；完整接管／恢復驗收維持 PARTIAL。

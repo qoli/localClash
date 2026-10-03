@@ -489,10 +489,12 @@ does not deep-merge or backfill DNS/TUN/runtime keys into it. That file is for
 advanced users and must not contain localClash-owned dynamic keys such as
 `proxies`, `proxy-groups`, `rule-providers`, `rules`, or `x-localclash*`.
 
-The builtin `router` profile sends `geosite:private` DNS queries to
-`192.168.6.1#DIRECT` and enables `direct-nameserver-follow-policy` so local DHCP
-names and private reverse lookups use the LAN DNS server during resolution and
-DIRECT re-resolution. This does not change dnsmasq upstreams or DNS takeover
+The builtin `router` profile sends single-label names (`*`) and `geosite:private`
+DNS queries to `192.168.6.1#DIRECT` and enables `direct-nameserver-follow-policy`
+so local DHCP names and private reverse lookups use the LAN DNS server during
+resolution and DIRECT re-resolution. The single-label wildcard also handles
+mixed-case bare hostnames without relying on geosite regex case matching; it
+does not match multi-label public domains. This does not change dnsmasq upstreams or DNS takeover
 leases. The LAN DNS address is a template value, not automatically discovered;
 networks with a different LAN DNS server must use their matching user profile.
 
