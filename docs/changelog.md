@@ -18,10 +18,55 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
-| localClash Core | [v0.1.95](https://github.com/qoli/localClash/releases/tag/v0.1.95) | 2026-10-03 UTC+8 |
-| localclash-luci | [v0.1.0-84](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-84) | 2026-10-02 UTC+8 |
+| localClash Core | [v0.1.96](https://github.com/qoli/localClash/releases/tag/v0.1.96) | 2026-10-03 UTC+8 |
+| localclash-luci | [v0.1.0-85](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-85) | 2026-10-03 UTC+8 |
 
 ## 2026-10-03
+
+### localClash Core v0.1.96
+
+Changes:
+
+- Router 預設 DNS 補上單節名稱 `*` 策略，讓 `Mac`／`MAC` 等 DHCP 名稱回查
+  `192.168.6.1#DIRECT`；保留 private 與 DIRECT follow-policy，多節公開域名維持加密 DNS。
+- 路由器自身 DNS 地址的 LAN 漏接管修正由 LuCI 提供，完整修復需搭配 LuCI `v0.1.0-85`。
+
+Release:
+
+[localClash v0.1.96](https://github.com/qoli/localClash/releases/tag/v0.1.96)
+
+Verification:
+
+- [Core Release workflow 37122590737](https://github.com/qoli/localClash/actions/runs/37122590737)
+  在 `d5506d9` 通過 Linux 全套測試、雙架構建置與發布；7 項公開資產的 GitHub digest、
+  sidecar、manifest size／SHA-256 一致，兩架構 binary revision 都是該 tag commit。
+- Manifest SHA-256 `01dea00b…8148`；發布 GeoSite 與 QEMU 候選相同，private 仍有 131 條規則。
+- 同一 iStoreOS workspace 從公開 Core v0.1.95／LuCI 0.1.0-84 升級候選，正式生成、
+  Meta v1.19.32 配置驗證與 IPv4 LAN UDP／TCP DHCP 名稱、PTR、公開域名成功。
+  完整接管／恢復仍為 **PARTIAL**：到期階段只有四項查詢，受控 WAN 故障敏感度與
+  IPv6 尚未完成；正式路由器及 ARM64 runtime 未在本輪驗證，詳見 [E21](istoreos-test-features.md#e21)。
+
+### localclash-luci v0.1.0-85
+
+Changes:
+
+- LAN 客戶端直接查路由器自身 DNS 地址時，租約有效的 UDP／TCP 53 查詢也會進入 Mihomo。
+  本地 DNS bypass 限定為 `lo`，保留 Mihomo 回查 dnsmasq 的路徑，避免循環。
+- 保留租約到期回 dnsmasq 的機制；兩個 iStoreOS 離線包固定包含 Core `v0.1.96`。
+
+Release:
+
+[localclash-luci v0.1.0-85](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-85)
+
+Verification:
+
+- [Main CI 37122789309](https://github.com/qoli/localclash-luci/actions/runs/37122789309) 與
+  [Release workflow 37122912906](https://github.com/qoli/localclash-luci/actions/runs/37122912906)
+  在 `d24de8e` 通過全部主機回歸、包建置與資產檢查；8 項公開資產及四份 checksum
+  已下載校驗，兩架構 `.run` 均通過 `--info`、`--list`、`--check` 與 `--noexec`。
+- 離線包內 Core／base assets 與 `v0.1.96` 官方 manifest 一致；公開 IPK 的 DNS helper
+  與 iStoreOS 實測候選逐位元一致。功能覆蓋沿用上述相同候選程式的 [E21](istoreos-test-features.md#e21)，
+  完整接管／恢復仍為 **PARTIAL**；發布 CI 與資產校驗不補齊未完成的網絡驗收。
 
 ### localClash Core v0.1.95
 
