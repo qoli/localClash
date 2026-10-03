@@ -532,6 +532,15 @@ enabled_packs: []
 	if _, exists := policy["geosite:cn"]; exists {
 		t.Fatalf("builtin router unexpectedly injected broad mainland DNS authority: %#v", policy)
 	}
+	if got := policy["geosite:private"].([]any); len(got) != 1 || got[0] != "192.168.6.1#DIRECT" {
+		t.Fatalf("private DNS policy = %#v, want router DNS through builtin DIRECT", got)
+	}
+	if dns["direct-nameserver-follow-policy"] != true {
+		t.Fatalf("direct DNS must follow the rendered private nameserver policy: %#v", dns)
+	}
+	if renderedProxyGroupNames(config["proxy-groups"])["DIRECT"] {
+		t.Fatal("builtin DIRECT must not be materialized as a proxy group")
+	}
 	if got := dns["proxy-server-nameserver"].([]any); len(got) != 2 || got[0] != "https://223.5.5.5/dns-query" || got[1] != "https://doh.pub/dns-query" {
 		t.Fatalf("proxy-server-nameserver changed: %#v", got)
 	}

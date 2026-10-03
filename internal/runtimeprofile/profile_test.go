@@ -124,6 +124,14 @@ func TestDefaultRouterProfileMatchesRouterReferencePreferences(t *testing.T) {
 	assertGitHubProxyGeoxURL(t, geoxURL, "router")
 
 	assertMainlandReachableDNS(t, mihomo, "0.0.0.0:7874", "router")
+	dns := mihomo["dns"].(map[string]any)
+	policy := dns["nameserver-policy"].(map[string]any)
+	if want := []any{"192.168.6.1#DIRECT"}; !reflect.DeepEqual(policy["geosite:private"], want) {
+		t.Fatalf("router private DNS policy = %#v, want %#v", policy["geosite:private"], want)
+	}
+	if dns["direct-nameserver-follow-policy"] != true {
+		t.Fatalf("router direct DNS must follow the private nameserver policy: %#v", dns)
+	}
 	if _, ok := mihomo["interface-name"]; ok {
 		t.Fatalf("router default must not pin Ronnie's WAN device: %+v", mihomo["interface-name"])
 	}

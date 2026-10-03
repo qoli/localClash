@@ -58,6 +58,7 @@
       "direct-nameserver": [
         "https://223.5.5.5/dns-query"
       ],
+      "direct-nameserver-follow-policy": true,
       "default-nameserver": [
         "https://223.5.5.5/dns-query"
       ],
@@ -67,6 +68,9 @@
       ],
       "fallback-lazy-query": false,
       "nameserver-policy": {
+        "geosite:private": [
+          "192.168.6.1#DIRECT"
+        ],
         "geosite:gfw": [
           "https://1.1.1.1/dns-query#DNSProxy",
           "https://8.8.8.8/dns-query#DNSProxy"

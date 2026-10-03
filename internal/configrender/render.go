@@ -347,6 +347,9 @@ func dnsProxyGroupReference(value string) string {
 	if cut := strings.IndexAny(ref, "&?"); cut >= 0 {
 		ref = strings.TrimSpace(ref[:cut])
 	}
+	if ref == "DIRECT" {
+		return ""
+	}
 	return ref
 }
 

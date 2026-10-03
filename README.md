@@ -489,6 +489,13 @@ does not deep-merge or backfill DNS/TUN/runtime keys into it. That file is for
 advanced users and must not contain localClash-owned dynamic keys such as
 `proxies`, `proxy-groups`, `rule-providers`, `rules`, or `x-localclash*`.
 
+The builtin `router` profile sends `geosite:private` DNS queries to
+`192.168.6.1#DIRECT` and enables `direct-nameserver-follow-policy` so local DHCP
+names and private reverse lookups use the LAN DNS server during resolution and
+DIRECT re-resolution. This does not change dnsmasq upstreams or DNS takeover
+leases. The LAN DNS address is a template value, not automatically discovered;
+networks with a different LAN DNS server must use their matching user profile.
+
 When `core: smart` is active, rendered proxy groups with localClash `auto`
 intent are materialized as Mihomo `type: smart` groups. With `core: meta`, the
 same `auto` intent remains `url-test`.
