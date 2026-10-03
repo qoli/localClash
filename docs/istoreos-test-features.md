@@ -66,10 +66,10 @@
 
 | 功能 ID | 功能／驗證內容 | 責任／核心範圍 | 最後實測版本；結果；證據 |
 | --- | --- | --- | --- |
-| CONFIG-TEMPLATE | **策略模板設定**：選取完整預設或 minimal 模板、配置 profile，產生相應補丁及 intent；重設模板只依明示選項處理既有補丁，不默默覆蓋自訂設定。[實作入口](../product_cli.go) | Core／共用 | v0.1.88／不適用；PASS；同一 qcow2 由公開 v0.1.87 正式 full reset 建立並使用預設模板 workspace，升級候選後正式刷新模板且 user-owned state 保留 [E15](#e15) |
+| CONFIG-TEMPLATE | **策略模板設定**：選取完整預設或 minimal 模板、配置 profile，產生相應補丁及 intent；重設模板只依明示選項處理既有補丁，不默默覆蓋自訂設定。[實作入口](../product_cli.go) | Core／共用 | v0.1.94／不適用；PARTIAL；本輪 baseline 完整模板交易在尚未安裝核心時以 invalid material path 失敗，正式非交易模板入口成功；v0.1.95 未回驗該交易分支 [E20](#e20)；v0.1.88 升級／user-owned state 歷史通過範圍見 [E15](#e15) |
 | CONFIG-PATCHES | **配置補丁管理**：讀取、預覽、套用、移除、啟停及排序補丁；預覽不落盤，套用後 registry／intent 一致，失效草稿或非法引用明確拒絕。[實作入口](../product_cli.go) | Core／共用 | v0.1.83／不適用；PASS；預覽／套用／移除／啟停／排序／tombstone、registry 恢復及非法／過期草稿拒絕 [E05](#e05) |
-| CONFIG-RENDER | **Mihomo 配置生成**：由訂閱、模板、補丁與 profile 生成正確配置。Meta 自動組為 url-test，Smart 為 smart 並移除 tolerance；Smart 參數、群組 priority 與 defaults 按 intent 傳遞且不覆蓋既有值；生成不等於已載入。[實作入口](../product_cli.go) | Core／按核心差異 | `591c357`／不適用；PASS（影響範圍）；iStoreOS Smart/router 在 `dnsqualify.json` 不存在、有效、損壞三種狀態正式生成 byte-for-byte 相同配置，SHA `64ce99…14f0` [E16](#e16) |
-| CONFIG-VALIDATION | **配置驗證**：用所選核心驗證生成配置，記錄對應 hash；非法配置不取得通過證明；驗證與活躍程序隔離，不爭用工作目錄。[實作入口](../product_cli.go) | Core／按核心差異 | `591c357`／不適用；PASS（影響範圍）；三種殘留 JSON 狀態均由 isolated Smart Mihomo `-t` 驗證通過 [E16](#e16) |
+| CONFIG-RENDER | **Mihomo 配置生成**：由訂閱、模板、補丁與 profile 生成正確配置。Meta 自動組為 url-test，Smart 為 smart 並移除 tolerance；Smart 參數、群組 priority 與 defaults 按 intent 傳遞且不覆蓋既有值；生成不等於已載入。[實作入口](../product_cli.go) | Core／按核心差異 | v0.1.95／不適用；PASS（本輪影響範圍）；同一 qcow2 由公開 v0.1.94 建立並驗證真實訂閱 workspace，升級後正式 router/Meta 生成 private DNS 策略與 follow-policy，未物化 DIRECT 群組 [E20](#e20)；Smart 殘留材料情境保留原實測版本 [E16](#e16) |
+| CONFIG-VALIDATION | **配置驗證**：用所選核心驗證生成配置，記錄對應 hash；非法配置不取得通過證明；驗證與活躍程序隔離，不爭用工作目錄。[實作入口](../product_cli.go) | Core／按核心差異 | v0.1.95／不適用；PASS（本輪影響範圍）；iStoreOS Meta v1.19.32 正式 isolated config-test 驗證升級後配置並記錄同一 hash [E20](#e20)；Smart 殘留材料情境保留原實測版本 [E16](#e16) |
 | CONFIG-APPLY | **配置套用**：按所選入口核對候選檔提交或 runtime 載入；config-promote 是其中一個檔案提交入口，不是所有流程的前置。驗證 hash、實際載入規則／組及失敗結果符合契約，提交檔案不當成已熱載入，生成檔存在不當成已生效。[實作入口](../product_cli.go) | Core／按核心差異 | v0.1.88／不適用；PASS；正式 save/apply、hot reload、runtime start 及 controller rules／proxies read-back 通過，v0.1.87 user-owned state 保留 [E15](#e15) |
 
 <a id="cores"></a>
@@ -576,3 +576,27 @@ Release `37001068715` 均成功；公開資產／checksum／兩架構離線包�
 [更新日誌](changelog.md#2026-10-02)。LuCI 離線包的 Core manifest 固定 SHA-256 為
 `d3ff22af7d99b796436d5c2ca53d9a15de0239bfb1976b784a54188f8fe13c3c`。
 此處只補發布身分及資產證據，選測功能回驗仍為 **NOT_RUN**，不提高最後實測版本。
+
+<a id="e20"></a>
+### E20
+
+2026-10-03 在可拋棄 iStoreOS 24.10.8 x86_64 QEMU，選測 Core v0.1.95
+（tag commit `fa94540`）的 CONFIG-RENDER 與 CONFIG-VALIDATION；完整報告與原始證據見
+[private DNS 配置升級驗收](../.runtime/istoreos-acceptance/20261003-private-dns-v0195/report.md)。
+
+- 先以公開 v0.1.94（binary SHA-256 `d05b3140…fa95`）正式建立並使用 workspace；
+  由正式路由器只讀匯出全部真實訂閱，guest 正式 set／refresh 回報 3 sources、30 proxies。
+  baseline router/Meta 配置正式生成及 isolated config-test 通過，SHA `73e1f62b…f241`。
+- 保留 workspace，只替換公開 v0.1.95 binary（SHA `c06bc08c…95a7`）及官方 base assets。
+  正式刷新與生成成功；獨立讀回確認 `geosite:private -> 192.168.6.1#DIRECT`、
+  `direct-nameserver-follow-policy: true`，且沒有物化 DIRECT proxy group。
+- Mihomo Meta v1.19.32（SHA `6de24119…3819`）正式 isolated config-test 對候選配置
+  SHA `9a4dcbee…e350` 回報 passed=true。兩項功能僅就上述配置生成／驗證範圍記 PASS；
+  未啟動接管、租約轉移或獨立 LAN DNS oracle，不宣稱實際 DNS 行為驗收。
+- 初次舊版完整模板交易出現 `material transaction path "." is invalid or duplicated`，
+  改由正式非交易模板入口建立；缺少核心／能力快照的前置錯誤在正式 core download 及
+  refresh 後解除，原始錯誤保留，沒有算入候選通過證據。
+- QEMU 已停止，本輪 qcow2 經 check 確認無錯誤後清理；正式路由器未修改。
+
+發布 CI、公開資產與正式路由器 Smart 隔離 `-t` 的補充證據見
+[更新日誌](changelog.md#2026-10-03)。CI 與隔離檢查不取代此處的 iStoreOS 操作範圍。

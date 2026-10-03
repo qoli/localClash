@@ -18,8 +18,35 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
-| localClash Core | [v0.1.94](https://github.com/qoli/localClash/releases/tag/v0.1.94) | 2026-10-02 UTC+8 |
+| localClash Core | [v0.1.95](https://github.com/qoli/localClash/releases/tag/v0.1.95) | 2026-10-03 UTC+8 |
 | localclash-luci | [v0.1.0-84](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-84) | 2026-10-02 UTC+8 |
+
+## 2026-10-03
+
+### localClash Core v0.1.95
+
+Changes:
+
+- Router 預設 DNS 新增 `geosite:private` 策略，將標準 DHCP 主機名稱、`.lan` 與私網反向解析
+  交給 LAN DNS `192.168.6.1#DIRECT`；DIRECT 重新解析也遵循同一策略。
+- 修正配置生成器對內建 `#DIRECT` 的識別。此版本未修改 LuCI 的 DNS 劫持範圍或租約機制；
+  LAN DNS 位址不同的環境需使用相符的 user profile。
+
+Release:
+
+[localClash v0.1.95](https://github.com/qoli/localClash/releases/tag/v0.1.95)
+
+Verification:
+
+- `go test ./...`、預設 profile／生成回歸及 diff 檢查通過；正式路由器 Smart
+  `alpha-smart-dc90210` 對新版預設執行隔離 `-t` 成功，載入 private 131 條規則，未重載 runtime。
+- [Core Release workflow 37082130182](https://github.com/qoli/localClash/actions/runs/37082130182)
+  在 `fa94540` 通過 Linux 全套測試、雙架構建置與發布；7 個公開資產重新下載後，
+  GitHub digest、三份 sidecar 及 manifest 的 size／SHA-256 全部一致，二進位 build revision
+  均為 `fa945404aac8d6ebeabdf1f5a177b27d9cc5c78f`。
+- iStoreOS QEMU 由 v0.1.94 真實訂閱 workspace 升級公開 v0.1.95，正式配置生成、
+  private DNS 策略讀回與 Meta v1.19.32 isolated config-test 通過；未執行 LAN DNS
+  資料面驗收，正式路由器未套用此版本，詳見功能表 [E20](istoreos-test-features.md#e20)。
 
 ## 2026-10-02
 
