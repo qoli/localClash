@@ -116,7 +116,7 @@
 | LUCI-INIT | **初始化引導**：由頁面提供訂閱、模板及核心，完成 Core 呼叫、配置、啟動及接管；重新開頁顯示真實狀態，失敗可定位。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI 編排＋Core／按影響 | v0.1.83／0.1.0-76；PASS；空工作區 Meta／Smart 初始化、訂閱／模板／Core、UI 啟動並接管、重開讀回及可定位失敗後恢復 [E05](#e05) |
 | LUCI-UPDATE | **一鍵更新與資料保留**：從頁面更新，兩個檢查點、來源版本及結果可讀回；重跑／舊版升級保持訂閱、網站順序、偏好及核心選擇；Mihomo 下載失敗時保留運行中程序並停止後續切換，原本停止或未初始化的狀態不擅自啟動。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI 編排＋Core／按影響 | 2026-10-02 更新至 Core v0.1.93／LuCI 0.1.0-83；FAIL；準備階段 runtime 崩潰，Mihomo 下載失敗仍繼續探測，最後無法恢復；修正候選的主機回歸已通過，iStoreOS 功能回驗 NOT_RUN [E19](#e19)；歷史範圍見 [E18](#e18)，其下載失敗後繼續更新行為不再採用；UI／RPC session 歷史證據見 [E17](#e17) |
 | LUCI-TASKS | **介面與長任務交互**：訂閱、網站、初始化及更新頁面操作與後端一致；日誌、取消、互斥、重新連接與終態可用，無重複交易／無限 busy；依各操作是否支援取消驗證。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI／共用 | Core `591c357`／LuCI v0.1.0-81 候選；PASS（影響範圍）；真 RPC session 從啟動追蹤至終態，active-task 重裝未建立重複交易，reload 後同 token、ubus method／ACL、HTTP／LuCI 均可用 [E17](#e17)；其他長任務交互沿用 [E05](#e05) |
-| LUCI-TAKEOVER | **OpenWrt 網路接管**：從正式入口套用及停止防火牆、策略路由與 DNS 接管；獨立 LAN client 的實際 TCP／UDP／DNS 請求按配置到達受控 WAN endpoint，停止後恢復原資料面，且非本產品規則保留。內部 effective、規則或 lease 只能解釋結果。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI／共用 | Core `9881182`／LuCI `18c3b7c` + 發布前候選（binary `596c797d…4d17`、IPK `e5218681…ac7e`）；PARTIAL；獨立 LAN client 對路由器 IPv4 的 UDP／TCP DHCP 名稱、PTR 與公開域名成功，lo-only bypass 與租約 redirect 已讀回；補測受管理連線及受控 DNS 轉發阻塞，故障敏感度與 IPv6 資料面仍 NOT_RUN [E21](#e21)；歷史非 DNS 範圍見 [E05](#e05) [E11](#e11) |
+| LUCI-TAKEOVER | **OpenWrt 網路接管**：從正式入口套用及停止防火牆、策略路由與 DNS 接管；獨立 LAN client 的實際 TCP／UDP／DNS 請求按配置到達受控 WAN endpoint，停止後恢復原資料面，且非本產品規則保留。內部 effective、規則或 lease 只能解釋結果。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI／共用 | Core v0.1.96 `d5506d9`／LuCI v0.1.0-85 `d24de8e`；PARTIAL；正式 ARM64 路由器 Smart 的 IPv4 UDP／TCP DNS 接管、Mac 混合大小寫／PTR 與公開 A／AAAA 通過，TCP socket 歸屬證明 53→7874；IPv6 GUA／link-local 通過；正式 LAN 開啟 SLAAC 後原生 Mac ULA UDP／TCP 14/14 與本地 PTR 通過，53→7874 接管及 LAN 回程已確認 [E26](#e26)，取代 [E22](#e22) 的自動來源 ULA FAIL；診斷與 VM 原生 RA 對照見 [E23](#e23)／[E24](#e24)／[E25](#e25)；歷史狀態轉移保留 [E21](#e21) |
 | LUCI-RESTORE | **接管及服務恢復**：開機、WAN 事件、受管程序退出及依賴故障後，按使用者意圖恢復或撤回接管；每次轉移後由獨立 client 重跑相同資料面 oracle，明確停止後不自行重開。內部狀態與 lease 不代表服務可用。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI＋Core 生命週期／共用 | Core `9881182`／LuCI `18c3b7c` + 發布前候選（binary `596c797d…4d17`、IPK `e5218681…ac7e`）；PARTIAL；停止 Mihomo 後不清理 firewall，租約到期轉 dnsmasq，正式重新授租後完整 IPv4 UDP／TCP 查詢集成功；到期階段僅四項查詢、受控故障敏感度及 IPv6 尚未完整覆蓋 [E21](#e21)；開機／WAN 歷史範圍保留 [E05](#e05) [E11](#e11) |
 
 ## 舊記錄的保留方式
@@ -648,3 +648,156 @@ SHA 相同；LuCI 公開 IPK 的 `takeover-apply` 與 QEMU 候選逐位元一致
 `6c017ee8904349a6f7d30e8bd846e681b2514a3b77fa92ea060298a732564207`。
 LuCI 版本號與離線包 Core pin 的變更只作發布身分及資產校驗，不提升功能結果。
 發布驗證見 [更新日誌](changelog.md#2026-10-03)；正式路由器未在本輪部署。
+
+<a id="e22"></a>
+### E22
+
+2026-10-03 使用者更新正式路由器後，依明示要求驗收正式 ARM64 現場的 DNS 鏈路。
+這輪為正常運行中的只讀檢查，使用獨立 Mac LAN client；沒有改用 QEMU、重建產品現場、
+停止 runtime、改 UCI／配置／firewall／route、清 cache、讓租約到期或做故障注入。
+[完整正式路由器驗收](../.runtime/dns-private-acceptance/20261003-live-v0196/report.md)
+保留 client raw、nft、socket ownership、選定 DNS 封包與失敗解釋；client 測試由 Luna High 執行。
+
+- 安裝 Core v0.1.96 arm64 的 SHA `2ca54d19…bfb28` 與公開資產相同，LuCI 為 0.1.0-85，
+  helper SHA `6c017ee8…64207` 與發布／QEMU 候選相同。Core MCP 確認 Smart
+  `alpha-smart-dc90210` PID 3831，builtin router profile 無 user override。
+  配置 SHA `40037288…e2fb`，包含單節 `*`／private 及 direct follow-policy；
+  正式 nft 為 lo-only bypass，IPv4／IPv6 lease active，7874 雙棧 UDP／TCP listener 存在。
+- Mac `192.168.6.119`／en1 的系統 DNS 為 `192.168.6.1`。直接查 router :53 的 UDP／TCP
+  `mcp.notion.com` A／AAAA 均 NOERROR、各四筆地址，UDP 86.7–91.6 ms、TCP 7.7–7.8 ms。
+  `Mac`／`mac`／`MAC`／`Mac.lan` 均回 `.119`，PTR 回 `Mac.lan`，與租約一致。
+- 獨立持續中的 TCP probe 地址仍為 `192.168.6.1:53`；router /proc/net/tcp6 上同一
+  remote IP／client port 的 accepted socket 是 :7874，其 inode 歸屬 Mihomo PID 3831。
+  選定封包亦確認本地域名/PTR 經 router loopback :53 回查 dnsmasq 後返回 client，沒有循環。
+  此 capture 沒有觀察到選定 Notion／nonce 查詢送向兩個電訊商 resolver 的 port 53；
+  未解密或逐筆辨認 DoH 交易，不把配置意圖代替上游封包證據。
+- 系統 getaddrinfo 五次成功，約 2.8–22.3 ms；HTTPS root HEAD 回 HTTP/2 404，證明
+  DNS／connect／TLS／HTTP 可達，不聲稱 Notion 應用 API 已驗收。
+  原本 IPv4 router DNS 漏接管／本輪系統解析逾時問題就上述範圍記 observed PASS。
+- IPv6 router GUA 與 link-local 上的 UDP／TCP Mac A 與 Notion A 共八次成功，4.4–11.1 ms。
+  ULA 上四次實際查詢逾時，必須記 observed FAIL，不能記 NOT_RUN。Mac 使用 fd82 前綴，
+  router LAN route 為 fd0a；選定 UDP DNS 回包已產生但從 PPPoE WAN 送出，route lookup
+  回 Mac ULA 則 Network unreachable。這是已觀察的回程失敗，尚未確定該前綴來源或
+  選 WAN 的具體 policy；未擅自改 route。初次 client report 的 NOT_RUN 分類已撤回。
+- `neakasa-M1`／`.lan` 回 `.244`，但 lease file 列為 `.128`；router 本機直接查 dnsmasq
+  亦回 `.244`。此名稱的權威映射不一致仍保留，不能宣稱該 lease-IP 斷言通過。
+- LUCI-TAKEOVER 整項保留 PARTIAL，列出上述 ULA FAIL 與未驗狀態轉移；LUCI-RESTORE
+  未在正式現場重測，保留 E21 的實際版本及限制。使用者的更新交易本身未被觀察，
+  本輪不改 LUCI-UPDATE 的歷史分類。ARM64 現場 DNS 運行證據不代表全功能 ARM 驗收。
+  臨時 AF_PACKET observer 到時退出，/tmp binary 已移除，正式配置 SHA 前後相同。
+
+### E23
+
+2026-10-03 至 10-04，依使用者要求在既有 iStoreOS QEMU 測試環境建立獨立 ULA
+對照；重用 managed router overlay，新增獨立 VDE LAN client，未修改正式路由器。
+[對照報告及原始證據](../.runtime/istoreos-acceptance/20261003-ula-comparison/report-attempt2.md)。
+此為回程路由診斷，補充 E22，不撤回正式現場已觀察到的 ULA FAIL，亦不升格
+LUCI-TAKEOVER 整項 PASS。
+
+- VM 安裝公開 Core v0.1.96 amd64（SHA `34ba6c9e…f3f3f86a94`）與 LuCI
+  v0.1.0-85（IPK SHA `65362536…839aad30`）。Smart 為乾淨 `dc9021073025`
+  原始碼的 Linux amd64 診斷 build，Go 1.26.0、`with_gvisor`、`vcs.modified=false`，
+  SHA `082fa511…38b0ded`；與正式現場 source revision 相同，但不是公開 Smart
+  資產或 ARM64 binary 的等同性驗收。
+- 測試 ULA 為靜態別名：router `fd0a:67b1:7933::1`；client 同前綴
+  `fd0a:67b1:7933::119`／不同前綴 `fd82:eade:488e:44bd::119`。實際獨立
+  client 固定來源，經 IPv6 kernel／VDE 傳送 UDP／TCP，未聲稱 DHCPv6／RA
+  自動分配這些測試地址。
+- dnsmasq 關閉接管的同前綴矩陣 12/12、Smart lease 生效後同前綴矩陣 12/12
+  均為非空 NOERROR；包括 Mac 混合大小寫、本地受控 host-record 與 Notion A。
+  不同前綴有明確 LAN 回程時，第一輪 dnsmasq 與第二輪 Smart 各 6/6 成功；
+  移除回程時各 6/6 逾時。Smart 恢復路由後 6/6 成功，最後 dnsmasq 與 Smart
+  的 Mac UDP／TCP 恢復探測亦均成功。不同前綴的 dnsmasq 對照在 VM 暫時
+  設 `localservice=0`，區分其本地來源 ACL 與回程失敗。
+- 正式 helper 的 active lease／`dns.path=mihomo`、7874 listener 與 DNS redirect
+  counter 已記錄。最初尚未證明 lease 的成功矩陣不單獨作 Mihomo 證據；
+  client 地址仍 tentative／未可 bind 的錯誤與 LAN bridge 未接妥的逾時，均保留
+  為測試前置錯誤，修正後重測。
+- 刻意把 client 回程設為 WAN 後，Smart 同一 UDP DNS ID `65530`／client port
+  `44598` 在 br-lan 僅見 request，在 eth0 見正確 `Mac A 192.168.6.119` reply；
+  同時 utun capture 無匹配封包且三處均無 kernel drop。另見 WAN TCP SYN-ACK，
+  不能算 TCP DNS answer。支持本機 DNS 回覆直接選錯出口；這個 QEMU 模型不能
+  單獨確認正式路由器究竟哪項 policy／路由造成選 WAN。dnsmasq 的錯誤 WAN
+  路由探測只有 client 逾時證據，沒有相同 UDP WAN 回包的 capture 證明。
+- 測試工作區原有 12 個空模板 patch 已備份及隔離，再透過公開 base-assets／
+  正式 apply-template 重建。正式 subscription-sync 匯入全部 3 個 configured
+  sources；後續刷新明示 source 02 HTTP 403 且無有效 cache、被跳過。
+  因此完整 all-source 正向產品現場前提仍為 NOT_RUN，不能以 configured count
+  或 CLI success 宣稱全部 sources 刷新成功。本地 host-record 也不是受控 WAN DNS
+  endpoint，完整 WAN oracle／release upgrade acceptance 未在本輪完成。
+- guest sync 後關閉測試 VM；兩個 overlay 的 qemu-img check 均無錯誤，僅移除
+  本輪新增 client overlay，保留原 managed router 及全部原始失敗／恢復證據。
+
+### E24
+
+2026-10-04，依使用者同意繼續只讀定位正式 LAN 的 ULA 來源及實際 DNS 回程。
+[完整來源／NAT／回程報告](../.runtime/dns-private-acceptance/20261004-ula-origin/report.md)。
+本輪是診斷取證，未修復或撤回 E22 的正式 ULA FAIL；不改 LUCI-TAKEOVER 的
+PARTIAL、RESTORE／UPDATE 的歷史分類。
+
+- Mac `ndp` 直接列出 fd82 前綴的三個 RA 宣告者；mDNS Thread border-router
+  service、host AAAA 與 link-local／MAC 一一對應到 Apple `客廳`、`客廳電視`、
+  `睡房`。主路由器宣告 fd0a 與 GUA，但實際 RA 的 prefix option 沒有 A flag，
+  與 `ra_slaac=0` 相同。Mac fd82 為 en1 SLAAC，不是 TUN 位址。
+- 最新 Mac DHCPv6 REPLY 同時提供 GUA 與 fd0a 地址，stateful address 卻只有
+  前面的 GUA，與 Apple 公開 client 選第一個有效 IAADDR 的實作一致。公開源碼
+  未作本機 OS binary 的精確版本 attestation。不能把缺少 fd0a 簡化為 DHCP server
+  沒有提供 ULA，或假設再等 lease 刷新即可修復；原始 reply／RA／地址狀態均保留。
+- Router `br-lan accept_ra=0, forwarding=1`，當前全路由表沒有 fd82 LAN 回程。
+  先前以線上來源 fd0a 的 route lookup 是 unreachable，但 NAT 前 GUA source
+  的 lookup 走 source-specific PPPoE WAN default。
+- 55 秒臨時只讀 observer 以 pidfd duplicate 取得 PID 3831 fd 8 metadata：
+  UDP `:::7874`、SO_MARK 0、未 connect；沒有讀寫原 socket 佇列或暫停 runtime。
+  新的 Mac／Notion UDP 查詢與正確回覆逐筆對上 DNS ID／port，回覆在 WAN 出現，
+  沒有匹配 utun 封包。未綁 source 的額外查詢亦自行選中 fd82 並逾時。
+- 決定性 conntrack tuple：原目的 `fd0a:67b1:7933::1:53`，reply source 卻是
+  `240e:3b5:d07c:da30::1:7874`，mark 0；client port 53160 雙向都有封包計數。
+  Linux 6.12.9 IPv6 REDIRECT 會改目的地址及 port；此現場選中 LAN GUA。
+  因此先以 GUA 回覆走 WAN，再由 reverse NAT 還原為 fd0a:53，完整解釋了之前
+  capture 與普通 route lookup 的差異。不再保留 TUN／fwmark 或 UDP cache 為此
+  已確認鏈路的必要解釋。
+- 未改正式路由器設定、route、firewall、RA、lease 或 runtime；PID 3831、配置 SHA
+  `40037288…fe2fb` 前後相同，observer 已退出及移除。建議的 `ra_slaac=1`
+  修復候選尚未套用或測試，不列 PASS。後續正式授權修復與回驗見 E26。
+
+### E25
+
+2026-10-04 在既有 iStoreOS QEMU 做 `ra_slaac=0→1→0→1` 原生對照，
+[報告及原始證據](../.runtime/istoreos-acceptance/20261004-slaac-toggle/report.md)。
+router 原生 prefix 為 fd92，獨立 Linux client 由實際 odhcpd RA 的 `/64` PIO
+產生 `dynamic proto kernel_ra` 地址；沒有手動加入目標 ULA。
+
+- 候選 1 的 PIO 為 onlink+auto，未綁 source 的 UDP／TCP DNS 與 PTR 成功；
+  client／router LAN capture 含完整 request／response，WAN 沒有匹配 DNS packet。
+- 回退 0 的 RA 移除 A flag，但 client 已取得的地址保留至 valid lifetime，DNS
+  仍能成功；重開 1 後恢復 A。未把手動刪地址當作自動 rollback。
+- 初期 client 的 factory netifd 角色及 firewall／RA 接收設定問題保留為環境錯誤，
+  修正後回驗；管理 slirp 的 fec0 RA 是模型差異，不是主 router 的 fd92 ULA。
+- 本輪 VM DNS oracle 是 stock dnsmasq 的受控本地域名；Smart supplement 未作
+  takeover probe，保持 NOT_RUN。沒有全來源刷新／受控 WAN／發布 PASS 宣稱。
+  guest sync 後停止，兩個 overlays check 無錯，只刪本輪 client，保留原 router。
+  後續正式 Mac／Smart 證據獨立列於 E26，不回填為 QEMU Smart PASS。
+
+### E26
+
+2026-10-04 使用者明示授權測試包含正式路由器與 Mac。正式 `dhcp.lan.ra_slaac`
+由 0 改為 1、commit 並僅 reload odhcpd；外部驗證成功後設定保留 1。
+[正式修復與原生 Mac 驗收](../.runtime/dns-private-acceptance/20261004-slaac-live/report.md)。
+這輪修復是現場 LAN IPv6 設定，不是 Core／LuCI source 或版本變更。
+
+- DHCP UCI export 前後語義僅這一 option 變動，套用前沒有其他 pending changes。
+  Mihomo PID 3831、配置 SHA `40037288…fe2fb` 與 Core v0.1.96／LuCI v0.1.0-85
+  都維持。未重啟 proxy／network／dnsmasq、改 DNS 上游、路由、lease 或接管規則。
+- 原生 Mac 自動產生 `fd0a:67b1:7933:0:dc:b2cc:839d:ffb9/64 autoconf secured`；
+  NDP prefix 為 ALO。fd82 仍存在但 deprecated，未由測試程式手動移除。
+- Luna High 執行未指定 source 的 14 項 router ULA DNS：UDP 7/7、TCP 7/7
+  均為非空 NOERROR，source 全是新 fd0a；Mac 大小寫／.lan A／PTR 與 Notion
+  A／AAAA 都符合預期。系統 getaddrinfo 公開及本地各 3/3 成功。
+- 代表性 native UDP DNS ID 42085／port 57396 的 request／answer 都在 LAN，
+  沒有匹配 WAN／utun 封包。另兩筆 primary UDP／TCP query 的 52696／60642
+  conntrack 原目的 fd0a:53、reply GUA:7874，status active lease/path=mihomo。
+  NAT 前 GUA source 回新 Mac fd0a 的 lookup 選 br-lan，確認回程缺口已避開。
+- E22 的正式 Mac 自動來源 ULA DNS FAIL 已由上述 observed PASS 取代；E22
+  保留為歷史失敗。固定綁 fd82／任意第三方 ULA 回程、lease expiry、restore／
+  upgrade 與 WAN endpoint 等未驗場景不升格，所以 LUCI-TAKEOVER 整項仍 PARTIAL。
+  臨時 observer／backup 已清理，沒有 Git commit 或 release。
