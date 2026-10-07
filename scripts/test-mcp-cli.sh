@@ -63,7 +63,7 @@ tools_output="$(
 )"
 printf '%s\n' "${tools_output}" | grep -o '"name": "[^"]*"' | sed 's/^/  /'
 
-for expected_tool in doctor tools_list config_render subscriptions_status; do
+for expected_tool in doctor tools_list config_render subscriptions_status custom_sites_list custom_sites_transact; do
   if ! grep -q "\"name\": \"${expected_tool}\"" <<<"${tools_output}"; then
     echo "error: mcp-cli tools output did not include ${expected_tool}" >&2
     printf '%s\n' "${tools_output}" >&2

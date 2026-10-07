@@ -50,6 +50,28 @@ the patch registry and compiled intent say should happen.
 `routing_explain` is intent evidence. It does not prove Mihomo loaded the
 config or that current traffic used the route.
 
+### Durable custom-site overrides
+
+Use `custom_sites_list` and `custom_sites_transact` only when the user wants the
+narrow proxy/direct website-routing layer shared with LuCI. This layer is
+outside the patch registry: it survives `reset_patches` and default-policy
+synchronization, coexists with policy-template and user patches, and renders
+after the non-disableable local safety baseline but before optional/default
+rules.
+
+Read the list before mutation and explain any exact or overlapping existing
+decision. The newest successfully added custom-site decision has the highest
+priority inside this layer. Adding a matching decision preserves older entries;
+deleting the newest by stable id can reveal an older behavior. Do not treat
+LuCI's same-pattern yellow warning as a Core conflict or persist it.
+
+`custom_sites_transact` is confirmation-required because an active runtime is
+hot reloaded inside the atomic transaction. It validates and tests a candidate,
+promotes it, semantically reads the loaded rules and reserved groups back, and
+restores prior files and runtime on failure. A stopped runtime remains stopped
+and reports pending-next-start. Do not ask callers for local paths or split this
+transaction into unverified file writes and a later reload.
+
 ### Loaded Mihomo runtime
 
 Use `runtime_status` only to establish process health. Use bounded

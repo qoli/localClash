@@ -93,6 +93,11 @@ func Transact(ctx context.Context, opts TransactionOptions) (TransactionResult, 
 	if err := validateTransactionOptions(opts); err != nil {
 		return TransactionResult{}, err
 	}
+	releaseLock, err := acquireTransactionLock(ctx, opts.Paths)
+	if err != nil {
+		return TransactionResult{}, err
+	}
+	defer releaseLock()
 	report("load", "Reading durable custom-site state.")
 	pair, err := customsites.Load(opts.Paths)
 	if err != nil {

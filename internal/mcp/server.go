@@ -540,6 +540,10 @@ func (s *Server) callTool(ctx context.Context, params json.RawMessage) (toolResu
 		return s.callMaybeAsyncTool(ctx, "config_patch_draft", args, s.callConfigPatchDraft)
 	case "config_patch_apply":
 		return s.callMaybeAsyncTool(ctx, "config_patch_apply", args, s.callConfigPatchApply)
+	case "custom_sites_list":
+		return s.callCustomSitesList(args)
+	case "custom_sites_transact":
+		return s.callMaybeAsyncTool(ctx, "custom_sites_transact", args, s.callCustomSitesTransact)
 	case "doctor":
 		return s.callDoctor(ctx, args)
 	case "environment_inspect":

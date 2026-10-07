@@ -74,6 +74,8 @@ func Registry() []Tool {
 		{Name: "config_patch_draft", SafetyLevel: SafeWrite, Description: "Preview patch-registry operations in one in-memory current draft slot. Supports upsert_patch, remove_patch, set_patch_status, and reorder_patch; writes no files until config_patch_apply."},
 		{Name: "config_patch_get", SafetyLevel: SafeRead, Description: "Read one durable patches/*.json patch by patch_id with full overlay, sha256, provides, and registry_hash for safe modification."},
 		{Name: "config_render", SafetyLevel: SafeWrite, Description: "Compile patches/*.json into localclash-intent.json when a patch registry exists, then render .runtime/mihomo/config.yaml from the compiled intent, subscription, policy template graph, and runtime profile. Does not start runtime."},
+		{Name: "custom_sites_list", SafetyLevel: SafeRead, Description: "Read the durable custom-site routing layer shared with LuCI. Custom-site proxy/direct entries are stored outside the patch registry, survive reset_patches and default-policy synchronization, and coexist with policy-template and user patches instead of replacing them. They render after the non-disableable local safety baseline and before optional/default rules, with the newest custom-site decision first. This reports durable intent; use runtime read-back to prove loaded behavior."},
+		{Name: "custom_sites_transact", SafetyLevel: ConfirmRequired, Description: "Atomically add or delete one entry in the durable custom-site routing layer shared with LuCI. Custom-site entries remain independent of the patch registry, survive reset_patches and default-policy synchronization, and coexist with default and user policy patches. Existing entries are preserved; the newest successfully added custom-site decision has the highest priority within this layer, and deleting it reveals any older matching decision. The transaction validates input, renders and tests a candidate config, atomically promotes it, and, when the runtime is active, hot reloads and semantically reads back the result or restores the prior state."},
 		{Name: "custom_rules_build", SafetyLevel: SafeWrite, Description: "Build and validate user custom routing rules for domains, CIDRs, or GEOIP tags before adding them to a config patch."},
 		{Name: "pack_rules_prefetch", SafetyLevel: SafeWrite, Description: "Download provider rules for selected packs into local provider-cache so pack_rules_query can search them locally."},
 		{Name: "pack_rules_read", SafetyLevel: SafeWrite, Description: "Read rules for one exact source/pack pair, downloading missing provider-cache entries for that pack only, and return source/pack/type/render_strategy/component metadata."},
@@ -177,6 +179,27 @@ func inputSchemaForTool(name string) map[string]any {
 				"force":      map[string]any{"type": "boolean", "description": "Overwrite generated output. Defaults to true because .runtime/mihomo/config.yaml is a build artifact."},
 				"background": map[string]any{"type": "boolean", "description": "Run as a background task and immediately return task_id/log_file. Defaults to true for write tools that may render or test Mihomo config."},
 				"wait":       map[string]any{"type": "boolean", "description": "Set true to wait synchronously for completion. Equivalent to background=false."},
+			},
+		}
+	case "custom_sites_list":
+		return map[string]any{
+			"type":                 "object",
+			"additionalProperties": false,
+			"properties":           map[string]any{},
+		}
+	case "custom_sites_transact":
+		return map[string]any{
+			"type":                 "object",
+			"additionalProperties": false,
+			"required":             []string{"version", "operation"},
+			"properties": map[string]any{
+				"version":    map[string]any{"type": "integer", "enum": []int{1}, "description": "Custom-site transaction schema version. Use 1."},
+				"operation":  map[string]any{"type": "string", "enum": []string{"add", "delete"}, "description": "Add one durable decision or delete exactly one existing decision by id."},
+				"pattern":    map[string]any{"type": "string", "description": "For add: one durable host-pattern override. Plain hosts compile to DOMAIN-SUFFIX; patterns containing * or ? compile to DOMAIN-WILDCARD. URLs, ports, paths, IP addresses, CIDRs, and regular expressions are not accepted."},
+				"route":      map[string]any{"type": "string", "enum": []string{"proxy", "direct"}, "description": "For add: route through the reserved 自訂代理網站 policy group or 自訂直連網站. This does not modify default policy patches."},
+				"id":         map[string]any{"type": "string", "description": "For delete: stable entry id returned by custom_sites_list. Delete targets exactly this decision; older matching decisions remain and may become effective again."},
+				"background": map[string]any{"type": "boolean", "description": "Run as a background task and immediately return task_id/log_file. Defaults to true because the transaction may render, test, hot reload, read back, or roll back runtime state."},
+				"wait":       map[string]any{"type": "boolean", "description": "Set true to wait synchronously for the complete transaction result. Equivalent to background=false."},
 			},
 		}
 	case "routing_explain":

@@ -144,10 +144,18 @@ update read-back.
 
 Core owns JSON schema, locking, sequence allocation, normalization, reserved
 names, compilation, candidate validation, artifact promotion, and runtime
-read-back. LuCI is an adapter: it collects one decision, calls the Core
-transaction, lists/deletes entries, and computes the yellow warning.
+read-back. LuCI and MCP are adapters over the same Core transaction. LuCI
+collects one decision, calls the Core transaction, lists/deletes entries, and
+computes the yellow warning. MCP exposes `custom_sites_list` plus the
+confirmation-required `custom_sites_transact`; callers never provide artifact,
+runtime, core, controller, or attestation paths.
 
-Neither layer edits `.runtime/mihomo/config.yaml` directly.
+Custom-site transactions take a Core-owned cross-process lock before reading
+or allocating the next global sequence. This serializes LuCI's short-lived CLI
+processes with the long-running MCP server for the complete candidate,
+promotion, runtime read-back, and possible rollback interval.
+
+Neither adapter edits `.runtime/mihomo/config.yaml` directly.
 
 ## Acceptance
 
@@ -160,6 +168,12 @@ Neither layer edits `.runtime/mihomo/config.yaml` directly.
 - `reset_patches` never modifies the custom-site documents.
 - Reserved policy-group names are rejected at every MCP mutation seam.
 - Candidate `mihomo -t` failure leaves durable and active state unchanged.
+- `custom_sites_list` reports the authoritative durable snapshot without local
+  artifact paths; `custom_sites_transact` returns promotion, reload, read-back,
+  pending-next-start, and rollback evidence.
+- Concurrent CLI/LuCI and MCP custom-site transactions serialize across
+  processes rather than allocating the same sequence or promoting competing
+  candidates.
 - LuCI warnings are yellow, non-blocking, JS-only, and absent from persisted
   state.
 - LuCI reports whether a successful save is active now or pending next start.

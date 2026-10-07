@@ -1,4 +1,4 @@
-目前 localClash MCP 工具可以理解成 6 組，核心目標是讓 Agent 能「先觀察、再規劃、再生成、最後執行」，避免一上來就動路由器網路。
+目前 localClash MCP 工具可以理解成 7 組，核心目標是讓 Agent 能「先觀察、再規劃、再生成、最後執行」，避免一上來就動路由器網路。
 
 MCP 產品工具的傳入原則：Agent 傳「意圖、查詢、操作」，不傳本地 artifact
 位置。`config`、`subscription`、`runtime_dir`、`cache`、`provider_cache`、
@@ -64,7 +64,14 @@ server state 決定。
 path、subscription artifact path、runtime dir 或 core binary path。Agent 只能傳
 產品意圖、查詢開關與 reviewed operations。
 
-**5. 路由解釋與可理解性**
+**5. 與 LuCI 共用的持久自訂網站層**
+
+- `custom_sites_list`：讀取自訂代理／直連網站的權威 durable snapshot、stable id、全域 newest-first sequence、數量與 hash。這是 durable intent evidence，不代表 runtime 已載入。
+- `custom_sites_transact`：以 stable id 刪除一筆決策，或新增一個 proxy/direct host pattern。它是 `confirm_required` 且預設背景執行；active runtime 會在同一原子交易裡 hot reload、semantic read-back，失敗則恢復舊狀態。
+
+這個狹窄層位於 patch registry 之外，不會被 `reset_patches` 或預設策略同步刪除；它與 policy-template／user patches 共存，渲染位置在 non-disableable local safety baseline 之後、optional/default rules 之前。最後成功加入的自訂網站決策在此層優先；刪除它後，較舊的 matching decision 可能重新生效。這不是 `custom_rules_build` 的別名，也不要求 Agent 傳任何 artifact path。
+
+**6. 路由解釋與可理解性**
 
 - `routing_explain`：解釋某個服務、域名、pack、policy group、出口在 localClash compiled intent 裡應該怎麼路由。這是 config/intent evidence，不證明 Mihomo runtime 已載入，也不證明當前流量正在使用。
 - `runtime_profile_status`：看當前 Meta/Smart、normal/router 等 runtime profile。
@@ -74,7 +81,7 @@ path、subscription artifact path、runtime dir 或 core binary path。Agent 只
 服務場景：回答配置意圖、已載入 runtime 與當前連線。OpenWrt 接管狀態不屬於
 Core MCP；由 localclash-luci 的 OpenWrt manager 回報。
 
-**6. Mihomo Runtime API 與執行型工具**
+**7. Mihomo Runtime API 與執行型工具**
 
 - `run_runtime`：啟動 Mihomo。
 - `mihomo_config_test`：顯式驗證 server state 中的 generated config，通過後記錄 config SHA256 attestation，供 hot reload 校對使用。MCP caller 不傳 config path、runtime dir、core binary 或 attestation path；非標準路徑檢查應走 CLI/SSH 診斷。
@@ -99,7 +106,9 @@ OpenWrt firewall、DNS hijack 或 policy-routing 操作。
 1. `tools_list` + `environment_inspect`
 2. `subscriptions_status` / `config_status` / `runtime_status`
 3. 需要規則證據時走 `packs_list` / `pack_rules_prefetch` / `pack_rules_query`，pack 參數使用 `{source, pack}`
-4. 需要修改配置時走 `proxy_group_build` / `policy_group_build` / `custom_rules_build`
+4. 需要修改配置時走 `proxy_group_build` / `policy_group_build` / `custom_rules_build`；若使用者明確要求不受預設策略同步覆蓋的簡單 proxy/direct 網站 override，先
+   `custom_sites_list` 說明既有決策與 newest-first 影響，再經確認呼叫
+   `custom_sites_transact`
 5. 用 `config_patch_draft` 產生 current draft
 6. 用 `config_patch_apply` 套用
 7. 用 `config_render` 或直接由 apply 產生 `.runtime/mihomo/config.yaml`

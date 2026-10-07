@@ -69,6 +69,22 @@ func TestRegistryIncludesSafetyLevels(t *testing.T) {
 	if byName["config_render"].SafetyLevel != SafeWrite {
 		t.Fatalf("config_render safety = %q, want %q", byName["config_render"].SafetyLevel, SafeWrite)
 	}
+	if byName["custom_sites_list"].SafetyLevel != SafeRead {
+		t.Fatalf("custom_sites_list safety = %q, want %q", byName["custom_sites_list"].SafetyLevel, SafeRead)
+	}
+	if byName["custom_sites_transact"].SafetyLevel != ConfirmRequired {
+		t.Fatalf("custom_sites_transact safety = %q, want %q", byName["custom_sites_transact"].SafetyLevel, ConfirmRequired)
+	}
+	for _, fragment := range []string{"outside the patch registry", "survive reset_patches", "coexist", "non-disableable local safety baseline", "before optional/default rules"} {
+		if !strings.Contains(byName["custom_sites_list"].Description, fragment) {
+			t.Fatalf("custom_sites_list description missing %q: %q", fragment, byName["custom_sites_list"].Description)
+		}
+	}
+	for _, fragment := range []string{"independent of the patch registry", "survive reset_patches", "coexist", "newest successfully added", "hot reloads", "restores the prior state"} {
+		if !strings.Contains(byName["custom_sites_transact"].Description, fragment) {
+			t.Fatalf("custom_sites_transact description missing %q: %q", fragment, byName["custom_sites_transact"].Description)
+		}
+	}
 	if byName["mihomo_logs_read"].SafetyLevel != SafeRead {
 		t.Fatalf("mihomo_logs_read safety = %q, want %q", byName["mihomo_logs_read"].SafetyLevel, SafeRead)
 	}
@@ -139,6 +155,19 @@ func TestRegistryIncludesSafetyLevels(t *testing.T) {
 		if byName[name].Name != "" {
 			t.Fatalf("removed tool %q should not be registered", name)
 		}
+	}
+}
+
+func TestCustomSitesTransactSchemaDescribesDurableCoexistingLayer(t *testing.T) {
+	schema := inputSchemaForTool("custom_sites_transact")
+	properties := schema["properties"].(map[string]any)
+	route := properties["route"].(map[string]any)
+	if description, _ := route["description"].(string); !strings.Contains(description, "does not modify default policy patches") {
+		t.Fatalf("route description = %q", description)
+	}
+	id := properties["id"].(map[string]any)
+	if description, _ := id["description"].(string); !strings.Contains(description, "older matching decisions remain") {
+		t.Fatalf("id description = %q", description)
 	}
 }
 

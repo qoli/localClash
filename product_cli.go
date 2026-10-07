@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -30,7 +29,6 @@ import (
 	"localclash/internal/dashboard"
 	"localclash/internal/localconfig"
 	"localclash/internal/materialtxn"
-	"localclash/internal/mihomoapi"
 	"localclash/internal/mihomotest"
 	"localclash/internal/policytemplate"
 	"localclash/internal/reset"
@@ -626,7 +624,9 @@ func runProductCustomSites(args []string, state appinit.RuntimeState) error {
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
 		defer cancel()
-		result, err := customsitesapply.Transact(ctx, customSitesTransactionOptions(state, paths, input))
+		result, err := customsitesapply.TransactRuntime(ctx, state, input, func(stage, message string) {
+			fmt.Fprintf(os.Stderr, "custom-sites stage=%s message=%s\n", stage, message)
+		})
 		if err != nil {
 			return customSitesTransactionError{cause: err, result: result}
 		}
@@ -649,212 +649,6 @@ func runProductCustomSites(args []string, state appinit.RuntimeState) error {
 	default:
 		return fmt.Errorf("unknown custom-sites subcommand %q", args[0])
 	}
-}
-
-func customSitesTransactionOptions(state appinit.RuntimeState, paths customsites.Paths, input customsitesapply.TransactionInput) customsitesapply.TransactionOptions {
-	attestationPath := mihomotest.DefaultAttestationPath(state.Paths.MihomoRuntimeDir)
-	return customsitesapply.TransactionOptions{
-		Paths:           paths,
-		GeneratedConfig: state.Paths.GeneratedConfig,
-		AttestationPath: attestationPath,
-		Input:           input,
-		Hooks: customsitesapply.TransactionHooks{
-			Progress: func(stage, message string) {
-				fmt.Fprintf(os.Stderr, "custom-sites stage=%s message=%s\n", stage, message)
-			},
-			Render: func(ctx context.Context, candidatePaths customsites.Paths, output string) error {
-				_, err := configrender.Render(configrender.Options{
-					SourcePath:         state.Paths.SubscriptionPath,
-					OutputPath:         output,
-					PacksSelectionPath: state.Paths.PacksSelectionPath,
-					RulesCacheDir:      state.Paths.RulesCacheDir,
-					RuntimeProfilePath: state.Paths.RuntimeProfilePath,
-					CustomSitesProxy:   candidatePaths.Proxy,
-					CustomSitesDirect:  candidatePaths.Direct,
-					Force:              true,
-				})
-				return err
-			},
-			Validate: func(ctx context.Context, configPath, candidateAttestation string) (customsitesapply.ValidationStatus, error) {
-				result, err := mihomotest.Test(ctx, mihomotest.TestOptions{
-					ValidationOptions: mihomotest.ValidationOptions{
-						CorePath:   state.Paths.CorePath,
-						ConfigPath: configPath,
-						WorkDir:    state.Paths.MihomoRuntimeDir,
-						CachePath:  mihomotest.DefaultCachePath(state.Paths.MihomoRuntimeDir),
-						Force:      true,
-					},
-					Record:             true,
-					AttestationPath:    candidateAttestation,
-					PromotedConfigPath: state.Paths.GeneratedConfig,
-				})
-				return customsitesapply.ValidationStatus{ConfigSHA256: result.ConfigSHA256}, err
-			},
-			RuntimeStatus: func() (customsitesapply.RuntimeStatus, error) {
-				status := corerun.Status(runtimeStatusOptions(state))
-				return customsitesapply.RuntimeStatus{Running: status.Running}, nil
-			},
-			Reload: func(ctx context.Context, configSHA256 string) (customsitesapply.ReloadStatus, error) {
-				validation, err := mihomotest.ValidateCached(ctx, mihomotest.ValidationOptions{
-					CorePath:   state.Paths.CorePath,
-					ConfigPath: state.Paths.GeneratedConfig,
-					WorkDir:    state.Paths.MihomoRuntimeDir,
-					CachePath:  mihomotest.DefaultCachePath(state.Paths.MihomoRuntimeDir),
-					Force:      true,
-				})
-				if err != nil {
-					return customsitesapply.ReloadStatus{}, fmt.Errorf("validate promoted config before hot reload: %w", err)
-				}
-				if validation.ConfigSHA256 != configSHA256 {
-					return customsitesapply.ReloadStatus{}, fmt.Errorf("promoted config hash %s does not match transaction hash %s", validation.ConfigSHA256, configSHA256)
-				}
-				opts := runtimeRestartOptions(state)
-				opts.Strategy = corerun.RestartStrategyHotReload
-				opts.ConfigSHA256 = configSHA256
-				result, err := corerun.Restart(ctx, opts)
-				if err != nil {
-					return customsitesapply.ReloadStatus{}, err
-				}
-				if result.Error != "" {
-					return customsitesapply.ReloadStatus{}, errors.New(result.Error)
-				}
-				if !result.Reloaded {
-					return customsitesapply.ReloadStatus{}, errors.New("Mihomo hot reload did not report success")
-				}
-				client, err := mihomoapi.NewFromConfig(state.Paths.GeneratedConfig)
-				if err != nil {
-					return customsitesapply.ReloadStatus{Reloaded: true}, err
-				}
-				pair, err := customsites.Load(paths)
-				if err != nil {
-					return customsitesapply.ReloadStatus{Reloaded: true}, fmt.Errorf("load promoted custom site state for runtime read-back: %w", err)
-				}
-				if err := waitForCustomSitesRuntimeReadBack(ctx, pair, client.Request, 10*time.Second, 150*time.Millisecond); err != nil {
-					return customsitesapply.ReloadStatus{Reloaded: true}, err
-				}
-				status := corerun.Status(runtimeStatusOptions(state))
-				if !status.Running {
-					return customsitesapply.ReloadStatus{Reloaded: true}, errors.New("runtime stopped before hot reload read-back completed")
-				}
-				return customsitesapply.ReloadStatus{Reloaded: true, ReadBack: true}, nil
-			},
-		},
-	}
-}
-
-type mihomoRequestFunc func(context.Context, mihomoapi.RequestOptions) (mihomoapi.Response, error)
-
-func waitForCustomSitesRuntimeReadBack(ctx context.Context, pair customsites.Pair, request mihomoRequestFunc, timeout, interval time.Duration) error {
-	if timeout <= 0 {
-		timeout = 10 * time.Second
-	}
-	if interval <= 0 {
-		interval = 150 * time.Millisecond
-	}
-	readBackCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-	var lastErr error
-	attempt := 0
-	for {
-		attempt++
-		rulesResponse, err := request(readBackCtx, mihomoapi.RequestOptions{Method: "GET", Path: "/rules", Timeout: 2 * time.Second, MaxBytes: 4 * 1024 * 1024})
-		if err != nil {
-			lastErr = fmt.Errorf("read back Mihomo rules after hot reload: %w", err)
-		} else {
-			proxiesResponse, proxiesErr := request(readBackCtx, mihomoapi.RequestOptions{Method: "GET", Path: "/proxies", Timeout: 2 * time.Second, MaxBytes: 2 * 1024 * 1024})
-			if proxiesErr != nil {
-				lastErr = fmt.Errorf("read back Mihomo proxies after hot reload: %w", proxiesErr)
-			} else if verifyErr := verifyCustomSitesRuntimeReadBack(pair, rulesResponse, proxiesResponse); verifyErr == nil {
-				fmt.Fprintf(os.Stderr, "custom-sites stage=read_back message=Runtime semantics converged after %d attempt(s).\n", attempt)
-				return nil
-			} else {
-				lastErr = verifyErr
-			}
-		}
-
-		timer := time.NewTimer(interval)
-		select {
-		case <-readBackCtx.Done():
-			timer.Stop()
-			if lastErr == nil {
-				lastErr = readBackCtx.Err()
-			}
-			return fmt.Errorf("custom site runtime read-back did not converge within %s: %w", timeout, lastErr)
-		case <-timer.C:
-		}
-	}
-}
-
-func verifyCustomSitesRuntimeReadBack(pair customsites.Pair, rulesResponse, proxiesResponse mihomoapi.Response) error {
-	if rulesResponse.Truncated || proxiesResponse.Truncated {
-		return errors.New("custom site runtime read-back response was truncated")
-	}
-	proxiesDoc, ok := proxiesResponse.JSON.(map[string]any)
-	if !ok {
-		return errors.New("Mihomo /proxies read-back is not a JSON object")
-	}
-	proxyMap, ok := proxiesDoc["proxies"].(map[string]any)
-	if !ok {
-		return errors.New("Mihomo /proxies read-back is missing proxies")
-	}
-	for _, name := range []string{customsites.ProxyPolicyGroup, customsites.DirectPolicyGroup} {
-		_, exists := proxyMap[name]
-		if pair.Initialized && !exists {
-			return fmt.Errorf("Mihomo /proxies read-back is missing reserved policy group %q", name)
-		}
-		if !pair.Initialized && exists {
-			return fmt.Errorf("Mihomo /proxies read-back unexpectedly retains reserved policy group %q", name)
-		}
-	}
-	rulesDoc, ok := rulesResponse.JSON.(map[string]any)
-	if !ok {
-		return errors.New("Mihomo /rules read-back is not a JSON object")
-	}
-	rawRules, ok := rulesDoc["rules"].([]any)
-	if !ok {
-		return errors.New("Mihomo /rules read-back is missing rules")
-	}
-	actual := make([]map[string]any, 0)
-	for _, raw := range rawRules {
-		rule, ok := raw.(map[string]any)
-		if !ok {
-			return errors.New("Mihomo /rules read-back contains a non-object rule")
-		}
-		proxy, _ := rule["proxy"].(string)
-		if proxy == customsites.ProxyPolicyGroup || proxy == customsites.DirectPolicyGroup {
-			actual = append(actual, rule)
-		}
-	}
-	expected := append([]customsites.Entry{}, pair.Proxy.Entries...)
-	for index := range expected {
-		expected[index].Route = customsites.RouteProxy
-	}
-	direct := append([]customsites.Entry{}, pair.Direct.Entries...)
-	for index := range direct {
-		direct[index].Route = customsites.RouteDirect
-	}
-	expected = append(expected, direct...)
-	sort.SliceStable(expected, func(i, j int) bool { return expected[i].Sequence > expected[j].Sequence })
-	if len(actual) != len(expected) {
-		return fmt.Errorf("Mihomo /rules custom site count %d does not match durable count %d", len(actual), len(expected))
-	}
-	for index, entry := range expected {
-		wantType := "DomainSuffix"
-		if entry.Match == customsites.MatchWildcard {
-			wantType = "DomainWildcard"
-		}
-		wantProxy := customsites.DirectPolicyGroup
-		if entry.Route == customsites.RouteProxy {
-			wantProxy = customsites.ProxyPolicyGroup
-		}
-		gotType, _ := actual[index]["type"].(string)
-		gotPayload, _ := actual[index]["payload"].(string)
-		gotProxy, _ := actual[index]["proxy"].(string)
-		if gotType != wantType || gotPayload != entry.Pattern || gotProxy != wantProxy {
-			return fmt.Errorf("Mihomo /rules custom site rule %d mismatch: got type=%q payload=%q proxy=%q, want type=%q payload=%q proxy=%q", index+1, gotType, gotPayload, gotProxy, wantType, entry.Pattern, wantProxy)
-		}
-	}
-	return nil
 }
 
 func runProductRuntime(args []string, state appinit.RuntimeState) error {

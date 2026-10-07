@@ -139,20 +139,28 @@ runtime startup, or conversation through an MCP-capable agent for management.
 ### Custom Website Routing
 
 LuCI's simple website-routing page uses a strict Core transaction rather than
-editing generated Mihomo YAML. The same operations are available for adapter
-and diagnostic use through the CLI:
+editing generated Mihomo YAML. The same durable layer is available through the
+CLI and MCP:
 
 ```bash
 localclash custom-sites list --json
 localclash custom-sites transact --input request.json --json
 ```
 
+MCP exposes `custom_sites_list` and the confirmation-required
+`custom_sites_transact`. The MCP transaction is asynchronous by default and
+accepts `wait=true` for a synchronous result. Callers provide only the versioned
+add/delete intent; server bootstrap state owns artifact, runtime, core, and
+attestation paths.
+
 An add request contains `{"version":1,"operation":"add","pattern":"example.com","route":"proxy"}`;
 a delete request contains `{"version":1,"operation":"delete","id":"<entry-id>"}`.
 Inputs containing `*` or `?` compile to `DOMAIN-WILDCARD`; all other accepted
 hosts compile to `DOMAIN-SUFFIX`. The durable documents live under `custom-sites/`,
-outside the policy patch registry, so default-policy synchronization preserves
-them. See [Custom Site Routing](docs/custom-site-routing.md) for the complete
+outside the policy patch registry. They coexist with policy-template and user
+patches, survive `reset_patches` and default-policy synchronization, and render
+after the non-disableable local safety baseline but before optional/default
+rules. See [Custom Site Routing](docs/custom-site-routing.md) for the complete
 ordering and transaction contract.
 
 ## Codex Companion Skill
@@ -264,6 +272,8 @@ Current MCP tool map:
 - Config intent and patch registry: `config_configure`, `config_status`,
   `config_render`, `routing_explain`, `config_patch_get`,
   `config_patch_draft`, and `config_patch_apply`.
+- Durable custom-site routing shared with LuCI: `custom_sites_list` and
+  `custom_sites_transact`.
 - Patch-building helpers: `proxy_group_build`, `policy_group_build`,
   `custom_rules_build`, and `rule_provider_build`.
 - Runtime profile, process, and network-fact observation:
@@ -465,6 +475,23 @@ MCP config tools:
 - `config_patch_apply`: apply reviewed operations by mutating `patches/*.json`,
   compiling `localclash-intent.json`, deriving `localclash-packs.gob`, and
   regenerating `.runtime/mihomo/config.yaml`.
+
+MCP custom-site tools:
+
+- `custom_sites_list`: read the durable proxy/direct website decisions shared
+  with LuCI, including stable ids, newest-first sequence, counts, and hashes.
+  This is durable intent evidence, not proof that Mihomo loaded the rules.
+- `custom_sites_transact`: add one proxy/direct host pattern or delete exactly
+  one decision by stable id. Custom-site state is independent of the patch
+  registry, survives `reset_patches` and default-policy synchronization, and
+  coexists with default and user patches. The confirmation-required transaction
+  renders and tests a candidate, promotes it atomically, and hot reloads plus
+  semantically reads back an active runtime or restores the prior state.
+
+The newest successfully added custom-site decision has the highest priority
+inside this layer. Deleting it may reveal an older matching decision. Plain
+hosts compile to `DOMAIN-SUFFIX`; patterns containing `*` or `?` compile to
+`DOMAIN-WILDCARD`.
 
 Config and patch tools expose product intent parameters and reviewed operations,
 not artifact paths. MCP callers do not choose `patches_dir`, compiled intent

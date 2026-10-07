@@ -25,6 +25,7 @@ import (
 	"localclash/internal/configpatch"
 	"localclash/internal/coredownload"
 	"localclash/internal/customsites"
+	"localclash/internal/customsitesapply"
 	"localclash/internal/dashboard"
 	"localclash/internal/localconfig"
 	"localclash/internal/mihomoapi"
@@ -180,18 +181,18 @@ func TestVerifyCustomSitesRuntimeReadBackRequiresSemanticOrderAndGroups(t *testi
 		map[string]any{"type": "DomainWildcard", "payload": "abc.*cdn.com", "proxy": customsites.ProxyPolicyGroup},
 		map[string]any{"type": "DomainSuffix", "payload": "abc.com", "proxy": customsites.DirectPolicyGroup},
 	}}}
-	if err := verifyCustomSitesRuntimeReadBack(pair, rules, proxies); err != nil {
+	if err := customsitesapply.VerifyRuntimeReadBack(pair, rules, proxies); err != nil {
 		t.Fatal(err)
 	}
 	raw := rules.JSON.(map[string]any)["rules"].([]any)
 	plainRule := raw[1].(map[string]any)
 	plainRule["type"] = "Domain"
-	if err := verifyCustomSitesRuntimeReadBack(pair, rules, proxies); err == nil || !strings.Contains(err.Error(), "rule 2 mismatch") {
+	if err := customsitesapply.VerifyRuntimeReadBack(pair, rules, proxies); err == nil || !strings.Contains(err.Error(), "rule 2 mismatch") {
 		t.Fatalf("error = %v, want stale exact-domain type mismatch", err)
 	}
 	plainRule["type"] = "DomainSuffix"
 	raw[0], raw[1] = raw[1], raw[0]
-	if err := verifyCustomSitesRuntimeReadBack(pair, rules, proxies); err == nil || !strings.Contains(err.Error(), "rule 1 mismatch") {
+	if err := customsitesapply.VerifyRuntimeReadBack(pair, rules, proxies); err == nil || !strings.Contains(err.Error(), "rule 1 mismatch") {
 		t.Fatalf("error = %v, want semantic order mismatch", err)
 	}
 }
@@ -200,11 +201,11 @@ func TestVerifyCustomSitesRuntimeReadBackAcceptsUninitializedAbsence(t *testing.
 	pair := customsites.Pair{Initialized: false}
 	proxies := mihomoapi.Response{JSON: map[string]any{"proxies": map[string]any{}}}
 	rules := mihomoapi.Response{JSON: map[string]any{"rules": []any{}}}
-	if err := verifyCustomSitesRuntimeReadBack(pair, rules, proxies); err != nil {
+	if err := customsitesapply.VerifyRuntimeReadBack(pair, rules, proxies); err != nil {
 		t.Fatal(err)
 	}
 	proxies.JSON.(map[string]any)["proxies"].(map[string]any)[customsites.ProxyPolicyGroup] = map[string]any{}
-	if err := verifyCustomSitesRuntimeReadBack(pair, rules, proxies); err == nil || !strings.Contains(err.Error(), "unexpectedly retains") {
+	if err := customsitesapply.VerifyRuntimeReadBack(pair, rules, proxies); err == nil || !strings.Contains(err.Error(), "unexpectedly retains") {
 		t.Fatalf("error = %v, want stale reserved group failure", err)
 	}
 }
@@ -235,7 +236,7 @@ func TestWaitForCustomSitesRuntimeReadBackRetriesStaleControllerState(t *testing
 			return mihomoapi.Response{}, fmt.Errorf("unexpected path %q", opts.Path)
 		}
 	}
-	if err := waitForCustomSitesRuntimeReadBack(context.Background(), pair, request, 100*time.Millisecond, time.Millisecond); err != nil {
+	if _, err := customsitesapply.WaitForRuntimeReadBack(context.Background(), pair, request, 100*time.Millisecond, time.Millisecond); err != nil {
 		t.Fatal(err)
 	}
 	if proxyReads != 2 {
@@ -252,7 +253,7 @@ func TestWaitForCustomSitesRuntimeReadBackFailsWhenStateNeverConverges(t *testin
 		}
 		return mihomoapi.Response{JSON: map[string]any{"proxies": map[string]any{}}}, nil
 	}
-	err := waitForCustomSitesRuntimeReadBack(context.Background(), pair, request, 5*time.Millisecond, time.Millisecond)
+	_, err := customsitesapply.WaitForRuntimeReadBack(context.Background(), pair, request, 5*time.Millisecond, time.Millisecond)
 	if err == nil || !strings.Contains(err.Error(), "did not converge") || !strings.Contains(err.Error(), "missing reserved policy group") {
 		t.Fatalf("error = %v, want bounded semantic read-back failure", err)
 	}

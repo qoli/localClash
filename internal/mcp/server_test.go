@@ -132,7 +132,7 @@ func TestToolsListIncludesCoreTools(t *testing.T) {
 	for _, tool := range result.Tools {
 		byName[tool.Name] = tool
 	}
-	for _, name := range []string{"doctor", "environment_inspect", "config_configure", "config_status", "config_render", "config_patch_apply", "config_patch_draft", "config_patch_get", "proxy_group_build", "policy_group_build", "custom_rules_build", "rule_provider_build", "nl_file", "pack_rules_query", "pack_rules_prefetch", "pack_rules_read", "packs_list", "packs_get", "routing_explain", "subscription_nodes_list", "subscription_nodes_search", "runtime_profile_status", "runtime_status", "runtime_facts", "mihomo_api_request", "mihomo_connections_read", "mihomo_config_test", "mihomo_logs_read", "subscriptions_status", "tools_list", "subscriptions_configure", "subscriptions_refresh", "run_runtime", "restart_runtime", "sed_file", "stop_runtime"} {
+	for _, name := range []string{"doctor", "environment_inspect", "config_configure", "config_status", "config_render", "config_patch_apply", "config_patch_draft", "config_patch_get", "custom_sites_list", "custom_sites_transact", "proxy_group_build", "policy_group_build", "custom_rules_build", "rule_provider_build", "nl_file", "pack_rules_query", "pack_rules_prefetch", "pack_rules_read", "packs_list", "packs_get", "routing_explain", "subscription_nodes_list", "subscription_nodes_search", "runtime_profile_status", "runtime_status", "runtime_facts", "mihomo_api_request", "mihomo_connections_read", "mihomo_config_test", "mihomo_logs_read", "subscriptions_status", "tools_list", "subscriptions_configure", "subscriptions_refresh", "run_runtime", "restart_runtime", "sed_file", "stop_runtime"} {
 		if byName[name].Name == "" {
 			t.Fatalf("missing tool %q", name)
 		}
@@ -171,6 +171,8 @@ func TestRegistrySafetyLevels(t *testing.T) {
 		"config_patch_draft":        SafeWrite,
 		"config_patch_get":          SafeRead,
 		"config_render":             SafeWrite,
+		"custom_sites_list":         SafeRead,
+		"custom_sites_transact":     ConfirmRequired,
 		"mihomo_api_request":        SafeWrite,
 		"mihomo_config_test":        SafeWrite,
 		"proxy_group_build":         SafeWrite,
