@@ -64,6 +64,14 @@
       "image_sha256": "11018262a0f222640a7db45d1699531fa2552d51b22b582878bd67608fab6b81",
       "fingerprint": "2fa1074a0c827465fa026cfe2f4e1fa984bf3374aca9e323d7e9000059b01f99",
       "verified": true
+    },
+    {
+      "account": "@llqoli",
+      "status_url": "https://x.com/llqoli/status/2108493599700889827",
+      "text_sha256": "46b600a7608eb0f6ac2e882177c0955e9cfccdcba75554c3a5d149ad9c5bf817",
+      "image_sha256": "e4eac8ec0792466c241ef171579b0f13e5c82cd64a74348892b58631ee889f64",
+      "fingerprint": "926f3ecab741524a55a287b565faad0efbf6674e358d40dbde7633e4511220ad",
+      "verified": true
     }
   ]
 }
