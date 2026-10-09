@@ -55,7 +55,7 @@
 
 | 功能 ID | 功能／驗證內容 | 責任／核心範圍 | 最後實測版本；結果；證據 |
 | --- | --- | --- | --- |
-| SITE-ROUTING | **自訂網站分流**：新增、刪除普通域名與萬用字元，設定直連／代理並重新開頁；保存、生成規則、熱載入及 controller 讀回一致；合法 DomainSuffix 不被誤判回滾。另驗衝突順序及非法輸入不破壞既有設定。[實作入口](../internal/customsitesapply/transaction.go) | Core；LuCI 提供頁面／共用 | v0.1.83／0.1.0-76；PASS；UI 與 Core 增刪／重開、DomainSuffix、衝突順序、熱載入、controller 及非法輸入保留 [E05](#e05) |
+| SITE-ROUTING | **自訂網站分流**：新增、刪除普通域名與萬用字元，設定直連／代理並重新開頁；保存、生成規則、熱載入及 controller 讀回一致；合法 DomainSuffix 不被誤判回滾。另驗衝突順序及非法輸入不破壞既有設定。[實作入口](../internal/customsitesapply/transaction.go) | Core；LuCI 提供頁面／共用 | v0.1.97／0.1.0-76；PARTIAL；MCP 普通／萬用字元增刪、active hot reload／controller 讀回、newest-first、非法輸入保留、停止狀態 pending-next-start 及模板同步保留通過；獨立 LAN client 資料面 NOT_RUN [E27](#e27)；LuCI UI 歷史範圍見 [E05](#e05) |
 | RULE-PACKS | **規則包查詢與材料取得**：搜尋目錄、查看指定規則包、預取及查詢其規則；來源／類型／快取缺口如實顯示，目錄建議出口不當成已啟用設定。[實作入口](../internal/mcp/registry.go) | Core／共用 | v0.1.83／不適用；PASS；目錄搜尋／查看／預取／讀取／查詢、來源型別、快取缺口及建議出口界線 [E05](#e05) |
 | RULE-CUSTOM | **自訂規則與外部規則來源**：建立域名、CIDR、GEOIP 規則及外部 rule-provider 設定，經配置補丁保存並生成；拒絕非法值或無效引用，順序與目標正確。[實作入口](../internal/mcp/registry.go) | Core／共用 | v0.1.83／不適用；PASS；Domain／CIDR／GEOIP／provider 生成、順序與目標、非法值／引用拒絕 [E05](#e05) |
 | PROXY-GROUPS | **代理群組設定**：由精確節點或 selector 建立群組，經補丁保存／修改／移除；查詢解析結果及生成成員正確，builder 預覽不冒充已保存或已載入。[實作入口](../internal/mcp/registry.go) | Core／共用 | v0.1.83／不適用；PASS；精確節點／selector builder、保存／修改／移除、解析成員及預覽界線 [E05](#e05) |
@@ -66,11 +66,11 @@
 
 | 功能 ID | 功能／驗證內容 | 責任／核心範圍 | 最後實測版本；結果；證據 |
 | --- | --- | --- | --- |
-| CONFIG-TEMPLATE | **策略模板設定**：選取完整預設或 minimal 模板、配置 profile，產生相應補丁及 intent；重設模板只依明示選項處理既有補丁，不默默覆蓋自訂設定。[實作入口](../product_cli.go) | Core／共用 | v0.1.94／不適用；PARTIAL；本輪 baseline 完整模板交易在尚未安裝核心時以 invalid material path 失敗，正式非交易模板入口成功；v0.1.95 未回驗該交易分支 [E20](#e20)；v0.1.88 升級／user-owned state 歷史通過範圍見 [E15](#e15) |
+| CONFIG-TEMPLATE | **策略模板設定**：選取完整預設或 minimal 模板、配置 profile，產生相應補丁及 intent；重設模板只依明示選項處理既有補丁，不默默覆蓋自訂設定。[實作入口](../product_cli.go) | Core／共用 | v0.1.97／不適用；PARTIAL；同一 qcow2 從 v0.1.96 正式 workspace 升級，完整預設模板同步加入 DegYax 並保留 user-owned custom-site 狀態；minimal 未重跑 [E27](#e27)；其他歷史範圍見 [E15](#e15) [E20](#e20) |
 | CONFIG-PATCHES | **配置補丁管理**：讀取、預覽、套用、移除、啟停及排序補丁；預覽不落盤，套用後 registry／intent 一致，失效草稿或非法引用明確拒絕。[實作入口](../product_cli.go) | Core／共用 | v0.1.83／不適用；PASS；預覽／套用／移除／啟停／排序／tombstone、registry 恢復及非法／過期草稿拒絕 [E05](#e05) |
-| CONFIG-RENDER | **Mihomo 配置生成**：由訂閱、模板、補丁與 profile 生成正確配置。Meta 自動組為 url-test，Smart 為 smart 並移除 tolerance；Smart 參數、群組 priority 與 defaults 按 intent 傳遞且不覆蓋既有值；生成不等於已載入。[實作入口](../product_cli.go) | Core／按核心差異 | Core `9881182` + 發布前候選（binary SHA `596c797d…4d17`）／LuCI 候選 IPK `e5218681…ac7e`；PASS（本輪配置影響範圍）；同一 qcow2 由公開 v0.1.95／LuCI 0.1.0-84 建立真實訂閱 workspace，候選正式生成單節 `*` 與 private DNS 策略；107 proxies、64 rules [E21](#e21)；其他核心差異歷史範圍見 [E16](#e16) |
-| CONFIG-VALIDATION | **配置驗證**：用所選核心驗證生成配置，記錄對應 hash；非法配置不取得通過證明；驗證與活躍程序隔離，不爭用工作目錄。[實作入口](../product_cli.go) | Core／按核心差異 | Core `9881182` + 發布前候選（binary SHA `596c797d…4d17`）／LuCI 候選 IPK `e5218681…ac7e`；PASS（本輪配置影響範圍）；iStoreOS Meta v1.19.32 正式 isolated config-test 通過，配置 SHA `58595e0f…9ef` [E21](#e21)；其他核心差異歷史範圍見 [E16](#e16) |
-| CONFIG-APPLY | **配置套用**：按所選入口核對候選檔提交或 runtime 載入；config-promote 是其中一個檔案提交入口，不是所有流程的前置。驗證 hash、實際載入規則／組及失敗結果符合契約，提交檔案不當成已熱載入，生成檔存在不當成已生效。[實作入口](../product_cli.go) | Core／按核心差異 | v0.1.88／不適用；PASS；正式 save/apply、hot reload、runtime start 及 controller rules／proxies read-back 通過，v0.1.87 user-owned state 保留 [E15](#e15) |
+| CONFIG-RENDER | **Mihomo 配置生成**：由訂閱、模板、補丁與 profile 生成正確配置。Meta 自動組為 url-test，Smart 為 smart 並移除 tolerance；Smart 參數、群組 priority 與 defaults 按 intent 傳遞且不覆蓋既有值；生成不等於已載入。[實作入口](../product_cli.go) | Core／按核心差異 | v0.1.97／不適用；PASS（Meta／預設模板影響範圍）；同一 qcow2 由公開 v0.1.96 建立 3-source／107-proxy workspace，候選生成 65 rules，DegYax 位於 `GEOSITE,cn,DIRECT` 前，自訂網站維持 newest-first [E27](#e27)；其他核心差異歷史範圍見 [E16](#e16) [E21](#e21) |
+| CONFIG-VALIDATION | **配置驗證**：用所選核心驗證生成配置，記錄對應 hash；非法配置不取得通過證明；驗證與活躍程序隔離，不爭用工作目錄。[實作入口](../product_cli.go) | Core／按核心差異 | v0.1.97／不適用；PASS（Meta）；iStoreOS Meta v1.19.32 正式 isolated config-test 對候選配置 SHA `8da8d8bf…3b8df` 通過並記錄 attestation [E27](#e27)；其他核心差異歷史範圍見 [E16](#e16) [E21](#e21) |
+| CONFIG-APPLY | **配置套用**：按所選入口核對候選檔提交或 runtime 載入；config-promote 是其中一個檔案提交入口，不是所有流程的前置。驗證 hash、實際載入規則／組及失敗結果符合契約，提交檔案不當成已熱載入，生成檔存在不當成已生效。[實作入口](../product_cli.go) | Core／按核心差異 | v0.1.97／不適用；PASS（本輪變更範圍）；正式 runtime start、active custom-site hot reload／語義讀回、停止狀態 pending-next-start 及 controller rules 讀回通過 [E27](#e27)；其他歷史範圍見 [E15](#e15) |
 
 <a id="cores"></a>
 ## 核心管理
@@ -97,7 +97,7 @@
 | STATUS-INSPECT | **產品狀態查詢**：查配置、元件、訂閱及 runtime facts，未初始化／停止／運行／錯誤狀態與實際資料一致；唯讀不改狀態，版本化 facts 不把宿主接管當 Core 所有。[實作入口](../internal/mcp/registry.go) | Core／共用 | v0.1.83／不適用；PASS；未初始化／停止／運行／錯誤、元件／訂閱／runtime facts、唯讀 hash 與接管責任界線 [E05](#e05) |
 | DIAG-ROUTING | **路由設定解釋**：按域名、服務或出口查詢編譯 intent 的規則、群組及來源；能對照自訂網站及補丁變更，不把 intent 解釋當活躍流量證據。[實作入口](../internal/mcp/registry.go) | Core／共用 | v0.1.83／不適用；PASS；domain／service／exit 查詢、自訂規則／patch provenance 及 intent／流量證據界線 [E05](#e05) |
 | DIAG-HEALTH | **診斷與日誌取得**：執行 doctor／環境檢查、收集產品日誌及讀取受限 controller 日誌／連線；診斷可定位問題、讀取有界且不洩漏秘密，不由缺少連線推論未來路由。[實作入口](../internal/mcp/registry.go) | Core／共用 | v0.1.83／不適用；PASS；doctor、受限日誌／controller／connections、redaction 與空連線推論界線 [E05](#e05) |
-| MCP-SERVICE | **MCP 服務與工具存取**：連接正確服務並完成協定初始化、工具發現與呼叫；工具結果／錯誤／權限符合入口契約。檔案讀改與 controller 存取受限定，不把 MCP 當任意路徑或任意 URL 代理。[實作入口](../internal/mcp/registry.go) | Core；LuCI 管理 procd／共用 | v0.1.83／0.1.0-76；PASS；協定初始化／發現／呼叫／服務啟停、controller allowlist、URL／路徑 traversal／寫入拒絕 [E05](#e05) |
+| MCP-SERVICE | **MCP 服務與工具存取**：連接正確服務並完成協定初始化、工具發現與呼叫；工具結果／錯誤／權限符合入口契約。檔案讀改與 controller 存取受限定，不把 MCP 當任意路徑或任意 URL 代理。[實作入口](../internal/mcp/registry.go) | Core；LuCI 管理 procd／共用 | v0.1.97／0.1.0-76；PASS（本輪變更範圍）；實際 MCP initialize／tools/list、`custom_sites_list`／`custom_sites_transact`、結構化錯誤及服務停止敏感度／恢復通過 [E27](#e27)；完整安全矩陣歷史範圍見 [E05](#e05) |
 
 <a id="workspace"></a>
 ## 工作區管理
@@ -801,3 +801,38 @@ router 原生 prefix 為 fd92，獨立 Linux client 由實際 odhcpd RA 的 `/64
   保留為歷史失敗。固定綁 fd82／任意第三方 ULA 回程、lease expiry、restore／
   upgrade 與 WAN endpoint 等未驗場景不升格，所以 LUCI-TAKEOVER 整項仍 PARTIAL。
   臨時 observer／backup 已清理，沒有 Git commit 或 release。
+
+<a id="e27"></a>
+### E27
+
+2026-10-09 在可拋棄 iStoreOS 24.10.8 x86_64 QEMU，選測 Core v0.1.97
+候選 `5ecc27cb839abc4d525dc4ae4c07d425246d3a8a` 的 SITE-ROUTING、MCP-SERVICE、
+CONFIG-TEMPLATE、CONFIG-RENDER、CONFIG-VALIDATION 與 CONFIG-APPLY。
+[完整報告與原始證據](../.runtime/istoreos-acceptance/20261009-v0197-site-routing/report.md)
+保留候選身分、產品操作、首次失敗與限制。
+
+- 同一 qcow2 先以公開 v0.1.96 binary（SHA `34ba6c9e…f3f86a94`）及官方 assets
+  正式建立 workspace；由正式路由器只讀同步全部 3 個真實訂閱來源，取得 107 proxies，
+  啟動 Meta runtime 後保留 workspace，只替換候選 binary／assets。候選 binary SHA
+  `556ed171…0175da`；Meta v1.19.32 SHA `6de24119…73819`。
+- 實際 MCP initialize／tools/list 及 `custom_sites_list`／`custom_sites_transact` 通過。
+  普通域名與 wildcard 的 active 交易均完成候選驗證、原子提升、hot reload 與 controller
+  語義讀回；相同 pattern 的新 proxy 決策優先於舊 direct，刪除後舊決策重新顯現，恢復後
+  sequence／順序正確。非法 schema version 保持兩份 durable hash／數量不變；runtime 停止時
+  新增回報 pending-next-start，正式啟動後 controller 讀回規則。
+- 預設策略同步保留全部 user-owned custom-site 決策與 hash，並加入
+  `DOMAIN-SUFFIX,degyax.com,🌍 非中國網站`。候選生成 107 proxies／65 rules，DegYax
+  位於 `GEOSITE,cn,DIRECT` 前；Meta isolated config-test 對 SHA
+  `8da8d8bf…3b8df` 通過，runtime／controller 亦讀回 DegYax 與自訂網站規則。
+- 受控停止 MCP 後，forwarded initialize 以 connection reset 失敗；重啟服務後恢復，
+  證明入口 oracle 對服務中斷敏感。首次誤複製 macOS host binary 到 guest 的 syntax error
+  已保留，改用明示 Linux amd64 build 後重走候選流程；沒有把錯誤 binary 算作產品結果。
+- SITE-ROUTING 記 **PARTIAL**：此 QEMU port-map 沒有獨立 LAN client／受控 endpoint。
+  guest-local `degyax.com` DNS 與 HTTPS 200 只作可達性補充，不升格資料面 PASS。
+  CONFIG-TEMPLATE 亦因 minimal 未重跑記 **PARTIAL**；LuCI UI、完整 MCP safety matrix
+  與 Smart 差異不在本輪變更範圍。
+- 候選後續發布為 [v0.1.97](https://github.com/qoli/localClash/releases/tag/v0.1.97)。
+  [Release workflow 37910863951](https://github.com/qoli/localClash/actions/runs/37910863951)
+  通過；7 項公開資產的 GitHub digest、sidecar、manifest size／SHA 一致，雙架構 binary
+  revision 均為 `5ecc27c`。公開 base-assets 已讀回相同 DegYax 模板語義。QEMU 停止、
+  qcow2 check 無錯並清理；正式路由器未修改。

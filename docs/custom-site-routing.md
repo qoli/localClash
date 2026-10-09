@@ -1,15 +1,19 @@
 # Custom Site Routing
 
-Status: implemented and locally verified on `codex/custom-site-routing`;
-OpenWrt router deployment and live-runtime acceptance remain unverified.
+Status: published in Core v0.1.97; Core/MCP transaction and live-runtime QEMU
+acceptance completed. LuCI UI and independent LAN-client data-plane acceptance
+remain.
 
 ## Current Status
 
 The product and persistence contracts are implemented across Core and
 `../localclash-luci`. Automated tests cover storage, rendering, transactions,
 reserved names, RPC transport, browser-only warnings, update preservation, and
-package assembly. Router installation and live Mihomo reload/read-back still
-require an explicit deployment acceptance run.
+package assembly. Core v0.1.97 QEMU acceptance covered MCP add/list/delete,
+active Mihomo hot reload/read-back, stopped-runtime pending-next-start,
+newest-first overlap, invalid-input preservation, and default-template sync.
+LuCI UI and an independent LAN-client routing oracle still require a separate
+acceptance run.
 
 ## Problem
 

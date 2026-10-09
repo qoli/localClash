@@ -18,8 +18,39 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
-| localClash Core | [v0.1.96](https://github.com/qoli/localClash/releases/tag/v0.1.96) | 2026-10-03 UTC+8 |
+| localClash Core | [v0.1.97](https://github.com/qoli/localClash/releases/tag/v0.1.97) | 2026-10-09 UTC+8 |
 | localclash-luci | [v0.1.0-85](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-85) | 2026-10-03 UTC+8 |
+
+## 2026-10-09
+
+### localClash Core v0.1.97
+
+Changes:
+
+- MCP 新增 `custom_sites_list`／`custom_sites_transact`，共用 LuCI 自訂網站層，
+  支援原子 hot reload、讀回與回復。
+- `degyax.com` 與子網域預設歸入 `🌍 非中國網站`，優先於中國網域直連。
+
+Release:
+
+[localClash v0.1.97](https://github.com/qoli/localClash/releases/tag/v0.1.97)
+
+Verification:
+
+- [Core Release workflow 37910863951](https://github.com/qoli/localClash/actions/runs/37910863951)
+  在 `5ecc27c` 通過 Linux 全套測試、雙架構建置與發布。
+- 7 項公開資產重新下載後，GitHub digest、三份 sidecar、manifest size／SHA-256
+  全部一致；manifest SHA-256 為 `001d3067…6504`，amd64／arm64 binary revision
+  都是 `5ecc27c` 且 `vcs.modified=false`。公開 base-assets 已讀回 DegYax 預設規則。
+- 同一 iStoreOS 24.10.8 QEMU workspace 從公開 v0.1.96、3 個真實訂閱來源及
+  107 個代理升級候選；MCP 初始化／工具發現、自訂網站 active hot reload、
+  newest-first、刪除揭示舊決策、非法輸入保留、停止狀態 pending-next-start、
+  預設策略同步保留自訂狀態均通過。Meta v1.19.32 對 65 條候選規則的隔離
+  config-test 通過，controller 讀回 DegYax 與自訂規則。
+- `SITE-ROUTING` 保持 **PARTIAL**：本輪沒有獨立 LAN client／受控 endpoint，
+  guest-local DegYax DNS 與 HTTPS 200 只作可達性補充；`CONFIG-TEMPLATE` 亦因未重跑
+  minimal 模板保持 **PARTIAL**。其餘本輪變更範圍與剩餘風險見
+  [E27](istoreos-test-features.md#e27)。
 
 ## 2026-10-03
 
