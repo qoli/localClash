@@ -53,6 +53,19 @@
         "boundary": "business_to_exit_layer"
       }
     },
+    "custom_rules": [
+      {
+        "id": "degyax-non-china",
+        "target": "🌍 非中國網站",
+        "reason": "Route degyax.com and its subdomains through the default non-China website selector.",
+        "rules": [
+          {
+            "type": "domain_suffix",
+            "value": "degyax.com"
+          }
+        ]
+      }
+    ],
     "packs": [
       {
         "source": "v2fly-dlc",

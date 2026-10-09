@@ -210,8 +210,8 @@ func TestRealLocalClashDefaultTemplateIsLayered(t *testing.T) {
 	if summary.ID != TemplateLocalClashDefault || config.Version != localconfig.ConfigSchemaVersion {
 		t.Fatalf("template = %+v config version = %d, want current localclash default", summary, config.Version)
 	}
-	if len(config.ProxyGroups) != 9 || len(config.PolicyGroups) != 32 || len(config.Packs) != 37 || len(config.TransportRules) != 1 || len(config.CustomRules) != 4 {
-		t.Fatalf("default template counts: proxy_groups=%d policy_groups=%d packs=%d transport_rules=%d custom_rules=%d, want 9/32/37/1/4", len(config.ProxyGroups), len(config.PolicyGroups), len(config.Packs), len(config.TransportRules), len(config.CustomRules))
+	if len(config.ProxyGroups) != 9 || len(config.PolicyGroups) != 32 || len(config.Packs) != 37 || len(config.TransportRules) != 1 || len(config.CustomRules) != 5 {
+		t.Fatalf("default template counts: proxy_groups=%d policy_groups=%d packs=%d transport_rules=%d custom_rules=%d, want 9/32/37/1/5", len(config.ProxyGroups), len(config.PolicyGroups), len(config.Packs), len(config.TransportRules), len(config.CustomRules))
 	}
 	if hasPack(config.Packs, "blackmatrix7", "Crypto") {
 		t.Fatal("default template must not include the broad Crypto pack")
@@ -403,6 +403,13 @@ func TestRealLocalClashDefaultTemplateIsLayered(t *testing.T) {
 	}
 	if len(cloudflareRule.Rules) != 1 || cloudflareRule.Rules[0].Type != "geoip" || cloudflareRule.Rules[0].Value != "cloudflare" || !cloudflareRule.Rules[0].NoResolve {
 		t.Fatalf("Cloudflare GEOIP custom rule lines = %+v, want geoip cloudflare no-resolve", cloudflareRule.Rules)
+	}
+	degyaxRule := customRuleByID(config.CustomRules, "degyax-non-china")
+	if degyaxRule == nil || degyaxRule.Target != "🌍 非中國網站" {
+		t.Fatalf("DegYax custom rule = %+v, want 🌍 非中國網站", degyaxRule)
+	}
+	if len(degyaxRule.Rules) != 1 || degyaxRule.Rules[0].Type != "domain_suffix" || degyaxRule.Rules[0].Value != "degyax.com" || degyaxRule.Rules[0].NoResolve {
+		t.Fatalf("DegYax custom rule lines = %+v, want domain_suffix degyax.com", degyaxRule.Rules)
 	}
 	if hasPack(config.Packs, "v2fly-dlc", "cloudflare") {
 		t.Fatal("default template must not add GEOSITE,cloudflare")
