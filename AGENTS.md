@@ -18,7 +18,7 @@ The local source checkout for the Mihomo Meta core is `/Volumes/Data/Github/miho
 - `go run . mcp`: start the MCP HTTP server.
 - `go run . doctor` or `go run . doctor --json`: inspect local runtime prerequisites and generated config health.
 - `go run . core download --dry-run`: verify Mihomo release asset selection without writing binaries.
-- `go run . config render --force`: render `.runtime/mihomo/config.yaml` from local subscription, policy-template intent, and pack inputs.
+- `go run . config render --json`: render `.runtime/mihomo/config.yaml` through the product flow using patch-registry intent, local subscriptions, and pack inputs.
 - `go run . mihomo config-test --json`: run explicit `mihomo -t` validation and record the config hash attestation used by hot reload.
 - `scripts/test-mcp-http.sh`: run the local HTTP MCP doctor smoke test.
 - `scripts/test-mcp-cli.sh`: run the third-party MCP client compatibility smoke test.
@@ -29,7 +29,7 @@ Use standard Go formatting: tabs via `gofmt`, short package names, and table-dri
 
 ## Testing Guidelines
 
-Place tests next to implementation as `*_test.go` files. Cover both success paths and safety/error boundaries, especially for config rendering, MCP inputs, filesystem writes, and secret-bearing local data. Run `go test ./...` before handoff; use `go run . doctor --json` when validating runtime-facing changes.
+Place tests next to implementation as `*_test.go` files. Cover both success paths and safety/error boundaries, especially for config rendering, MCP inputs, filesystem writes, and secret-bearing local data. For Go code changes, run `go test ./...` before handoff. For runtime-facing changes, use `go run . doctor --json` in the relevant initialized runtime environment. Documentation-only changes do not require Go tests or runtime diagnostics.
 
 ## Commit & Pull Request Guidelines
 
@@ -37,7 +37,7 @@ Recent commits use short imperative subjects such as `Add MCP config plan render
 
 ## Agent-Specific Instructions
 
-Use commands available directly in the current shell. For debugging, inspect logs, config state, diagnostics, or MCP responses before changing code. For browser automation, prefer the existing ARC CDP endpoint at `http://localhost:9222` after a quick availability check.
+Use commands available directly in the current shell. For debugging, inspect relevant logs, config state, diagnostics, or MCP responses before changing code unless the root cause is already directly evident. For browser automation, prefer the existing ARC CDP endpoint at `http://localhost:9222` after a quick availability check.
 
 For iStoreOS test planning or release acceptance, start with
 `docs/istoreos-test-features.md` and `docs/istoreos-release-test-sop.md`.
