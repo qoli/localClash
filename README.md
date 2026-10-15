@@ -941,6 +941,11 @@ localClash 是免費項目。
 
 [支持 localClash / Support localClash](./SUPPORT.md)
 
+## Community
+
+Thanks to [LINUX DO](https://linux.do/) for providing a community for sharing
+and discussing open-source projects.
+
 ## License
 
 localClash is released under the MIT License. See [LICENSE](LICENSE).
