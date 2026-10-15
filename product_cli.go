@@ -34,6 +34,7 @@ import (
 	"localclash/internal/reset"
 	"localclash/internal/runtimefacts"
 	"localclash/internal/runtimeprofile"
+	"localclash/internal/runtimeverify"
 	"localclash/internal/subscriptions"
 	"localclash/internal/workspace"
 )
@@ -197,7 +198,7 @@ func runProductStatus(args []string, state appinit.RuntimeState) error {
 
 func runProductSubscription(args []string, state appinit.RuntimeState) error {
 	if len(args) == 0 {
-		return fmt.Errorf("subscription subcommand is required: status, get, set, or refresh")
+		return fmt.Errorf("subscription subcommand is required: status, get, set, refresh, or verify-runtime")
 	}
 	switch args[0] {
 	case "status":
@@ -267,6 +268,24 @@ func runProductSubscription(args []string, state appinit.RuntimeState) error {
 		}
 		status := productSubscriptionRefreshStatus{RefreshResult: result, Capabilities: capabilities}
 		return printProductOK(productEnvelope{OK: true, Changed: true, Summary: "Subscription artifacts and configured capabilities refreshed.", Status: status, Changes: []string{"subscriptions_refreshed"}, Warnings: result.Warnings})
+	case "verify-runtime":
+		fs := flag.NewFlagSet("subscription verify-runtime", flag.ContinueOnError)
+		jsonOutput := fs.Bool("json", false, "print machine-readable result")
+		checkSupport := fs.Bool("check-support", false, "check verification support without inspecting runtime")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if !*jsonOutput || fs.NArg() != 0 {
+			return errors.New("usage: localclash subscription verify-runtime [--check-support] --json")
+		}
+		if *checkSupport {
+			return printProductOK(productEnvelope{OK: true, Summary: "Subscription runtime verification is supported.", Status: map[string]bool{"supported": true}, Changes: []string{}, Warnings: []string{}})
+		}
+		result, err := runtimeverify.Proxies(context.Background(), state.Paths.GeneratedConfig)
+		if err != nil {
+			return codedProductError{code: "subscription_runtime_verification_failed", message: err.Error(), details: result}
+		}
+		return printProductOK(productEnvelope{OK: true, Summary: "Loaded subscription nodes and groups match the generated config.", Status: result, Changes: []string{}, Warnings: []string{}})
 	default:
 		return fmt.Errorf("unknown subscription subcommand %q", args[0])
 	}

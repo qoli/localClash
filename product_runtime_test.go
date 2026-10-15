@@ -2,6 +2,8 @@ package main
 
 import (
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,6 +12,32 @@ import (
 	"localclash/internal/appinit"
 	"localclash/internal/corerun"
 )
+
+func TestProductSubscriptionVerifyRuntime(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"proxies":{"Old":{"name":"Old"}}}`))
+	}))
+	defer server.Close()
+	config := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(config, []byte("external-controller: "+strings.TrimPrefix(server.URL, "http://")+"\nproxies: [{name: New}]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	state := appinit.RuntimeState{Paths: appinit.RuntimePaths{GeneratedConfig: config}}
+	output, err := captureStdoutAllowError(t, func() error {
+		_, err := runProductCommand([]string{"subscription", "verify-runtime", "--json"}, state)
+		return err
+	})
+	if err == nil || !strings.Contains(output, `"code": "subscription_runtime_verification_failed"`) || !strings.Contains(output, `"New"`) || !strings.Contains(output, `"Old"`) {
+		t.Fatalf("failure lost verification details: %v: %s", err, output)
+	}
+	output, err = captureStdoutAllowError(t, func() error {
+		_, err := runProductCommand([]string{"subscription", "verify-runtime", "--check-support", "--json"}, appinit.RuntimeState{})
+		return err
+	})
+	if err != nil || !strings.Contains(output, `"supported": true`) {
+		t.Fatalf("support check requires runtime or config: %v: %s", err, output)
+	}
+}
 
 func TestProductRestartFailurePreservesResult(t *testing.T) {
 	for _, strategy := range []string{"process_restart", "hot_reload"} {

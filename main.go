@@ -32,6 +32,7 @@ Usage:
   localclash subscription get --json
   localclash subscription set --input subscriptions.json --json
   localclash subscription refresh --json
+  localclash subscription verify-runtime --json
   localclash component status --json
   localclash component update assets --json
   localclash component update mihomo --json

@@ -1,5 +1,24 @@
 # Subscription Inputs
 
+## Runtime readback
+
+`localclash subscription verify-runtime --json` is a read-only product command
+for the LuCI Save and Apply Subscription pipeline. It compares generated proxy
+and group names with the controller's `/proxies` response, rejecting missing
+names and retired names that remain loaded. Mihomo built-ins and nodes from
+explicitly configured proxy providers are accounted for separately. Its result
+contains the generated config SHA256, counts, and missing/unexpected names;
+proxy credentials and raw controller payloads are never returned. A config
+change during readback, incomplete controller JSON, or an unavailable controller
+is an explicit verification failure.
+
+`--check-support --json` reports interface support without requiring config or a
+running controller. LuCI uses it before saving sources because Core and LuCI are
+released independently. This pipeline requires a Core that implements this
+command; older Core versions are rejected before any subscription mutation.
+
+## Accepted inputs
+
 localClash subscription input is a list of whitelisted URIs. Each URI must be
 one of:
 

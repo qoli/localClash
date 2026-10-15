@@ -70,6 +70,48 @@ func NewFromConfig(configPath string) (*Client, error) {
 	return New(endpoints.ExternalController, endpoints.Secret)
 }
 
+// ReadJSON decodes a complete controller document into a typed destination.
+// Unlike Request's tool-output envelope, semantic readback must also work for
+// large proxy inventories; unused fields are discarded rather than published.
+func (c *Client) ReadJSON(ctx context.Context, path string, target any) error {
+	path, err := validateAPIPath(path)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(ctx, DefaultTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.requestURL(path, nil), nil)
+	if err != nil {
+		return err
+	}
+	if c.Secret != "" {
+		req.Header.Set("Authorization", "Bearer "+c.Secret)
+	}
+	client := c.HTTPClient
+	if client == nil {
+		client = http.DefaultClient
+	}
+	response, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return fmt.Errorf("mihomo api request failed with status %d", response.StatusCode)
+	}
+	decoder := json.NewDecoder(response.Body)
+	if err := decoder.Decode(target); err != nil {
+		return fmt.Errorf("decode controller JSON: %w", err)
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err == nil {
+		return errors.New("controller response is not one complete JSON document")
+	} else if err != io.EOF {
+		return fmt.Errorf("complete controller JSON response: %w", err)
+	}
+	return nil
+}
+
 func (c *Client) Request(ctx context.Context, opts RequestOptions) (Response, error) {
 	if c == nil {
 		return Response{}, errors.New("mihomo api client is nil")
