@@ -70,10 +70,10 @@
 | 功能 ID | 功能／驗證內容 | 責任／核心範圍 | 最後實測版本；結果；證據 |
 | --- | --- | --- | --- |
 | CONFIG-TEMPLATE | **策略模板設定**：選取完整預設或 minimal 模板、配置 profile，產生相應補丁及 intent；重設模板只依明示選項處理既有補丁，不默默覆蓋自訂設定。[實作入口](../product_cli.go) | Core／共用 | v0.1.97／不適用；PARTIAL；同一 qcow2 從 v0.1.96 正式 workspace 升級，完整預設模板同步加入 DegYax 並保留 user-owned custom-site 狀態；minimal 未重跑 [E27](#e27)；其他歷史範圍見 [E15](#e15) [E20](#e20) |
-| CONFIG-PATCHES | **配置補丁管理**：讀取、預覽、套用、移除、啟停及排序補丁；預覽不落盤，套用後 registry／intent 一致，失效草稿或非法引用明確拒絕。[實作入口](../product_cli.go) | Core／共用 | v0.1.83／不適用；PASS；預覽／套用／移除／啟停／排序／tombstone、registry 恢復及非法／過期草稿拒絕 [E05](#e05) |
-| CONFIG-RENDER | **Mihomo 配置生成**：由訂閱、模板、補丁與 profile 生成正確配置。Meta 自動組為 url-test，Smart 為 smart 並移除 tolerance；Smart 參數、群組 priority 與 defaults 按 intent 傳遞且不覆蓋既有值；生成不等於已載入。[實作入口](../product_cli.go) | Core／按核心差異 | v0.1.98／不適用；PARTIAL（Smart／ChatGPT 資格群組範圍）；公開舊版 workspace 升級，候選生成 36 名、官方 binary 生成 35 名 v8 群組；未展開模板／參數完整契約 [E29](#e29)；先前完整矩陣與 Meta／其他核心歷史見 [E28](#e28) [E27](#e27) [E16](#e16) [E21](#e21) |
-| CONFIG-VALIDATION | **配置驗證**：用所選核心驗證生成配置，記錄對應 hash；非法配置不取得通過證明；驗證與活躍程序隔離，不爭用工作目錄。[實作入口](../product_cli.go) | Core／按核心差異 | v0.1.98／不適用；PARTIAL（Smart／ChatGPT 資格群組範圍）；公開舊版升級及官方 binary 的正式 isolated config-test／attestation 通過；本輪未重跑非法配置／Meta 類別 [E29](#e29)；歷史範圍 [E28](#e28) [E27](#e27) [E16](#e16) [E21](#e21) |
-| CONFIG-APPLY | **配置套用**：按所選入口核對候選檔提交或 runtime 載入；config-promote 是其中一個檔案提交入口，不是所有流程的前置。驗證 hash、實際載入規則／組及失敗結果符合契約，提交檔案不當成已熱載入，生成檔存在不當成已生效。[實作入口](../product_cli.go) | Core／按核心差異 | v0.1.98／不適用；PARTIAL（Smart／ChatGPT 資格群組範圍）；候選 controller 36 名、官方 binary controller 35 名，各與對應 v8 快照完全一致，主代理 SSH 獨立讀回；未展開 hot reload／停止狀態契約 [E29](#e29)；歷史範圍 [E28](#e28) [E27](#e27) [E15](#e15) |
+| CONFIG-PATCHES | **配置補丁管理**：讀取、預覽、套用、移除、啟停及排序補丁；預覽不落盤，套用後 registry／intent 一致，失效草稿或非法引用明確拒絕。[實作入口](../product_cli.go) | Core／共用 | v0.1.99 候選 `2817ab6`／不適用；PARTIAL（MCP／能力快照範圍）；同一 v0.1.98 workspace 升級，無關 DIRECT 補丁新增／修改／移除／啟停／排序及 fresh MCP 讀回通過；過期草稿、缺快照保留原設定及恢復重試通過；真實零合格節點未測 [E30](#e30)；完整歷史範圍保留 [E05](#e05) |
+| CONFIG-RENDER | **Mihomo 配置生成**：由訂閱、模板、補丁與 profile 生成正確配置。Meta 自動組為 url-test，Smart 為 smart 並移除 tolerance；Smart 參數、群組 priority 與 defaults 按 intent 傳遞且不覆蓋既有值；生成不等於已載入。[實作入口](../product_cli.go) | Core／按核心差異 | v0.1.99 候選 `2817ab6`／不適用；PARTIAL（Smart／MCP 能力群組範圍）；公開 v0.1.98 workspace 升級，保留真實 v8／12 名快照並生成 Smart 配置；未展開模板／參數完整契約 [E30](#e30)；先前實測版本與完整矩陣見 [E29](#e29) [E28](#e28) [E27](#e27) [E16](#e16) [E21](#e21) |
+| CONFIG-VALIDATION | **配置驗證**：用所選核心驗證生成配置，記錄對應 hash；非法配置不取得通過證明；驗證與活躍程序隔離，不爭用工作目錄。[實作入口](../product_cli.go) | Core／按核心差異 | v0.1.99 候選 `2817ab6`／不適用；PARTIAL（Smart／MCP 能力群組範圍）；MCP patch apply 與正式 isolated config-test／attestation 通過；本輪未重跑非法配置／Meta 類別 [E30](#e30)；歷史範圍 [E29](#e29) [E28](#e28) [E27](#e27) [E16](#e16) [E21](#e21) |
+| CONFIG-APPLY | **配置套用**：按所選入口核對候選檔提交或 runtime 載入；config-promote 是其中一個檔案提交入口，不是所有流程的前置。驗證 hash、實際載入規則／組及失敗結果符合契約，提交檔案不當成已熱載入，生成檔存在不當成已生效。[實作入口](../product_cli.go) | Core／按核心差異 | v0.1.99 候選 `2817ab6`／不適用；PARTIAL（Smart／MCP 能力群組範圍）；MCP patch 提交及 runtime start 後，controller Smart 12 名與保留的真實 v8 快照一致，主代理獨立讀回；未展開 hot reload／停止狀態契約 [E30](#e30)；歷史範圍 [E29](#e29) [E28](#e28) [E27](#e27) [E15](#e15) |
 
 <a id="cores"></a>
 ## 核心管理
@@ -911,6 +911,37 @@ Smart CONFIG-RENDER／VALIDATION／APPLY 的資格群組範圍。候選 commit
 - 全部來源成功、其他模板、Meta 差異、hot reload／停止狀態、LuCI 一鍵更新／接管、手機
   登入／真實對話及完整 ARM64 runtime 驗收未涵蓋；完整功能列維持 **PARTIAL**。
   官方首次傳輸失敗與恢復，以及 E28 首次 h2 transport 失敗／修復回驗均保留原始證據。
+
+<a id="e30"></a>
+### E30
+
+2026-10-16 為 Core v0.1.99 選測 MCP CONFIG-PATCHES，以及共用的 Smart
+CONFIG-RENDER／VALIDATION／APPLY 能力快照範圍。候選 commit
+`2817ab679c23b08b49595fb25e6e790b17e4836a`、binary SHA `5b845972…e62a9e`。
+[G99 報告](../.runtime/istoreos-acceptance/20261016-v0199-release/report.md)及
+[功能摘要](../.runtime/istoreos-acceptance/20261016-v0199-release/functional-summary.json)
+保存完整身分、狀態轉移與原始證據索引。
+
+- 同一可拋棄 iStoreOS 24.10.8 x86_64 qcow2 先安裝官方 v0.1.98 binary
+  （SHA `34e25708…9746a`）及匹配 base assets（SHA `ce90c3b3…c494`），由正式入口
+  匯入正式路由器全部 3 個訂閱來源、套用完整預設模板、刷新及使用 workspace。
+  來源 01 成功；02 HTTP 403、03 transport reset，兩者無 cache；合併 30 proxies。
+  保留整個 workspace 後僅替換候選 binary，沿用真實 v8 快照／12 名合格節點，未手寫正向輸入。
+- MCP 無關 DIRECT 補丁完成新增、修改、停用、啟用、排序、移除及重新加入；draft 的
+  `test=false`／`test=true` 與 apply 的 `test=true` 均通過，測試草稿未改 durable files；
+  另以 fresh initialize／get／status 讀回持久結果。該群組未被規則引用，只宣稱 registry／intent 保存，
+  不宣稱它已載入 runtime。過期 generation 明確拒絕；暫時移走真實快照後 apply 明確失敗，
+  intent／generated config／patch 的前後 hash 不變；恢復後同一 generation 重試成功。
+- 正式 render、Smart isolated config-test／attestation 及 runtime start 通過。
+  核心 `alpha-smart-dc90210`（SHA `6d2eafb7…9475e`）；主代理從 controller 獨立讀回
+  ChatGPT-available Smart 組，12 名與快照集合完全一致。另以舊 MCP handler 對照重現原缺陷
+  的主機端回歸只作程式敏感度證據，不替代 QEMU 功能驗收。
+- v0.1.98 至候選未變更資格判定三份 Go source、模板與規則輸入；[E29](#e29) 引用的
+  52 名／156 例 OAuth／IP 矩陣維持原實測版本。本輪 30 proxies 不是歷史相同輸入，
+  沒有把沿用矩陣記成候選新測。首次 QEMU socket 路徑過長及訂閱來源失敗均保留。
+- 本輪受影響範圍通過；全部來源成功、真實零合格節點、Meta、hot reload／停止狀態、
+  LuCI 一鍵更新／接管及完整 ARM64 runtime 未涵蓋，完整功能列維持 **PARTIAL**。
+  公開 v0.1.99 官方 binary／base assets 的同 workspace 回驗待發布後補記。
 
 <a id="pending-incidents"></a>
 ## 待核對事故與證據缺口

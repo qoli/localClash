@@ -18,10 +18,31 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
-| localClash Core | [v0.1.98](https://github.com/qoli/localClash/releases/tag/v0.1.98) | 2026-10-16 UTC+8 |
+| localClash Core | [v0.1.99](https://github.com/qoli/localClash/releases/tag/v0.1.99) | 2026-10-16 UTC+8 |
 | localclash-luci | [v0.1.0-85](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-85) | 2026-10-03 UTC+8 |
 
 ## 2026-10-16
+
+### localClash Core v0.1.99
+
+Changes:
+
+- 修復 MCP `config_patch_apply` 與 `config_patch_draft(test=true)` 漏讀能力快照，
+  導致已有 ChatGPT-available 群組時，新增直連群組等無關修改也被 `unresolved capability` 阻擋。
+- Patch 重建現在會使用已刷新取得的合格節點；快照缺失或無效時仍明確拒絕套用，
+  保留原有補丁與設定產物。修復來自 [PR #10](https://github.com/qoli/localClash/pull/10)。
+
+Release:
+
+[localClash v0.1.99](https://github.com/qoli/localClash/releases/tag/v0.1.99)
+
+Verification:
+
+- 合併後完整 Go 測試、go vet、建置與 MCP 回歸通過；舊 handler 對照可重現原缺陷。
+- iStoreOS QEMU 同一 workspace 從官方 v0.1.98 升級，使用真實 v8 能力快照，
+  MCP 補丁管理、過期草稿拒絕、快照缺失保留原設定及恢復重試通過；Smart 實載 12 名與快照一致。
+- 本輪選測範圍通過；兩個訂閱來源刷新失敗，完整功能列維持 PARTIAL。
+  真實零合格節點、Meta 與 hot reload 未重跑，詳見 [E30 驗收紀錄](istoreos-test-features.md#e30)。
 
 ### localClash Core v0.1.98
 
