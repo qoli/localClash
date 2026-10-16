@@ -40,6 +40,23 @@ Recent commits use short imperative subjects such as `Add MCP config plan render
 Use commands available directly in the current shell. For debugging, inspect relevant logs, config state, diagnostics, or MCP responses before changing code unless the root cause is already directly evident. For browser automation, prefer the existing ARC CDP endpoint at `http://localhost:9222` after a quick availability check.
 
 For iStoreOS test planning or release acceptance, start with
-`docs/istoreos-test-features.md` and `docs/istoreos-release-test-sop.md`.
+[the feature table](docs/istoreos-test-features.md) and
+[the test Skill](.codex/skills/localclash-istoreos-test/SKILL.md).
 Track each feature's last tested version and select tests by change impact;
 do not treat a release as an instruction to rerun the full feature table.
+
+## Durable Policy Constraints
+
+Keep subscriptions as proxy inputs, patches as routing intent, and generated
+intent/packs/YAML as derived artifacts. The local safety baseline cannot be
+disabled. Preserve explicit DIRECT semantics and the default direct fallback
+needed for game-accelerator coexistence. Do not rebuild the reserved custom-site
+groups through patch builders; custom-site decisions are user-owned state
+independent of template patches. Template reset must preserve that layer.
+Validate configs through the isolated product config-test path; do not run
+Mihomo validation against the live runtime directory or copy its cache.db.
+
+Use code, schemas, templates, and workflows for implementation facts. Keep user
+entry points in README, test method in the test Skill, actual test history in
+the feature table, and release operations in the release Skill. Documentation
+cleanup alone must not promote historical tests to a newer PASS.

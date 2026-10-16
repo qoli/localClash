@@ -30,6 +30,9 @@
 - **按核心差異**：變更涉及 flavor、binary、配置驗證／啟動參數時，驗相應核心；
   兩邊都受影響才測兩邊。表中實際測過哪個核心仍如實記錄。
 
+共用測試方法與代理執行方式集中在
+[測試 Skill](../.codex/skills/localclash-istoreos-test/SKILL.md)。
+
 ## 記錄規則
 
 最後版本依序為 **localClash Core／LuCI**；CLI／MCP 測試不涉及 LuCI 時記不適用。
@@ -866,3 +869,29 @@ CONFIG-TEMPLATE、CONFIG-RENDER、CONFIG-VALIDATION 與 CONFIG-APPLY。
   不將本輪局部通過升格整項 PASS，也不沿用歷史版本作為候選已測證據。
 - 本輪 clone、runtime、WG、測試 bridge、SSH tunnel 與憑證副本已清理；正式路由器、既有
   peer／管理 profile 與原始持久 qcow2 保留。手機登入與真實對話不在本輪驗證範圍。
+
+<a id="pending-incidents"></a>
+## 待核對事故與證據缺口
+
+下列摘錄保留尚未結案的歷史問題，不是本次文件整理取得的新測試結果。
+既有功能列、最後實測版本及 PASS／FAIL／PARTIAL 不因合併而改變。
+完整原始紀錄保留於 [刪除前版本的事故登記](https://github.com/qoli/localClash/blob/1478e7b667c4b115ad2d8a1cd6b06388e10194d4/docs/router-incident-register.md)。
+
+- **2026-09-01 watchdog 與接管恢復**：故障注入時 Mihomo 從 PID 29711 恢復至 2916，
+  controller 健康但 takeover 無效；LuCI `633c1e1` 的一鍵更新失敗收尾曾修復該狀態，
+  證明的是更新範圍緩解。現行已有 DNS deadman／生命週期整合，不能沿用舊文
+  「完全沒有恢復擁有者」作現況結論；一般意外退出的完整 takeover 恢復仍須重新核對。
+  診斷需同時對齊 task/transaction ID、watchdog event、PID、同 boot 修復意圖及實際接管，
+  覆蓋 idle、更新、明確 restart、取消及 stop；驗證延遲／重複／遺失事件與兩倉庫獨立升級。
+  Core 不得直接操作 LuCI/fw4，也不得新增會覆蓋明確 stop 的未協調輪詢。
+- **2026-05-25 localClash CPU**：正式路由器曾回報接近 100%，移除後的 CPU 採樣及
+  Docker 未重現都不能結案。下次重現需同時間窗的 PID、完整 command、CPU／memory、
+  MCP tool／耗時／錯誤、runtime／takeover 轉移與 procd 重啟記錄，才能歸因。
+- **2026-05-25 Mihomo CPU 與 warning**：曾回報約 14% CPU；warning 批次未完整保存，
+  Telegram timeout／DNS 錯誤等片段不構成根因。需同窗 warning 分類速率、Mihomo CPU、
+  實際配置與 DNS／規則命中證據。[warning collector](../scripts/collect-mihomo-warnings.py)
+  可作只讀收集入口；輸出仍需脫敏，且不能代替外部網路 oracle。
+- **歷史日誌缺口**：Claude/MCP client debug log 不能代表 router server 決策。
+  舊 LuCI 部署未保存 stderr 的說明須按現行 service 實測核對，不能直接宣稱仍缺失或已修復。
+  優先保存既有 stderr 與針對性、有界的生命週期證據；不要新增重複通用 log-file 機制，
+  或把開發觀測變成發布預設的無界日誌、昂貴輪詢。

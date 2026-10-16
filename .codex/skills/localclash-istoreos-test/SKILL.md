@@ -5,12 +5,137 @@ description: Select and execute affected localClash and LuCI tests, and maintain
 
 # localClash 功能測試
 
-讀取 [功能測試表](../../../docs/istoreos-test-features.md)，以它作為功能範圍與實測歷史的唯一依據。
+以 [功能測試表](../../../docs/istoreos-test-features.md)定義能力及保存最後實測結果。
+本 Skill 集中測試方法與代理分工；文件變更只做相關文件檢查，不新增產品實測紀錄。
 
-- 主代理按本輪變更選定功能、共享依賴、必要狀態轉移及獨立外部 oracle，說明範圍及沿用理由；需要沿用時核對原實測版本至候選的累積差異。不要求全表或所有功能雙核心重測。
-- 測試交由子代理執行，明確指定 `model: gpt-5.6-luna`、`reasoning_effort: high`。主代理提供候選身分、所選功能、授權範圍、環境與證據位置，核對結果並統一回寫；子代理不再派代理。無需第三方選測審查。
-- 功能測試使用本輪授權的可拋棄 iStoreOS QEMU，走真實入口並以產品外部可觀察結果判定；涉及網路時使用獨立 LAN client、非透明代理 WAN 及受控 endpoint。mock、fake、stub、內部 readiness、單元測試或 CI 不得作功能 PASS 證據。只準備所選功能需要的環境；文件變更只做相關文件檢查。
-- 可拋棄的是 VM attempt，不是正向驗收的產品現場。每個新／重置 clone 以 `scripts/istoreos-real-scene.sh subscription-sync` 從正式路由器經正式 `subscription get` 只讀匯出全部真實訂閱，無法無損匯出任一 source 即失敗；資料直接串流並經 VM 內正式入口 set／refresh。禁止把 fixture、cache、手寫 URI、部分來源或候選生成狀態當替代。來源缺失或刷新失敗時明確記 `NOT_RUN`。一鍵更新前必須由 `assert-update-ready` 證明真實訂閱、running runtime、effective takeover 及 Mihomo DNS path；測後只清理本輪 clone，不修改路由器來源。
-- 候選變更涉及持久資料、模板、能力快照、配置或遷移時，發布驗收預設先跑真實升級路徑：在同一個 qcow2 以受支援舊版 binary／資產經正式入口建立並實際使用狀態，保留完整工作區後只升級版本擁有的程式／資產，再以候選入口讀取、刷新及套用。空白工作區、複製現成 workspace、直接編輯 JSON／YAML 或用候選程式偽造舊格式，只能算首次安裝或 synthetic regression，不能算升級證據。
-- 保留實際版本／SHA、核心、操作、結果及原始證據；產品 FAIL 與環境 ERROR／NOT_RUN 分開。發現缺陷後依授權修復並回驗，獨立功能繼續執行。
-- 回寫受測功能的最後實測版本、等價類、狀態轉移、外部 oracle 與具體覆蓋；沿用保留原版本，部分通過不升格整項 PASS。後來發現的同功能失敗須撤回或取代舊 PASS。收尾說明測過什麼、問題與回驗、未完成項及剩餘風險。
+## 選測與分工
+
+- 主代理按變更選定功能、共享依賴、等價類、必要狀態轉移及獨立外部 oracle。
+  沿用時核對原實測版本至候選的累積差異，保留原實測版本；不要求全表或所有功能雙核心重測。
+- 功能測試交由子代理，指定 `model: gpt-5.6-luna`、`reasoning_effort: high`。
+  主代理提供候選身分、所選契約、授權、環境及證據位置，核對結果並統一回寫；
+  子代理不再派代理，無需第三方選測審查。
+- 一列代表完整產品能力，CLI／MCP／LuCI 不因入口不同重複列功能。新能力才新增穩定 ID，
+  核對 Core／LuCI／Mihomo 責任；Bug 回歸不能取代完整能力契約。
+
+## 驗收原則
+
+功能驗收以使用者從產品外部可觀察的結果為準，不以產品自己回報的 readiness 代替。
+PID、HTTP 200、RPC 成功、task 完成、controller ready、狀態 JSON、配置檔、nft 規則、
+lease 或資產存在，都只能解釋結果，不能單獨構成 PASS。
+
+主機端 mock、fake、stub、靜態 grep、單元測試及 CI 可以檢查純函式、錯誤傳遞、格式、
+建置及交易邊界，但不得列入 iStoreOS 功能驗收證據，也不得提高功能表的實測版本或結果。
+受控外部服務可以提供訂閱、下載、DNS 回應及網路 endpoint；不得替換被驗收的 localClash、
+LuCI、rpcd、Mihomo、dnsmasq、procd、fw4、nft、iproute 或產品 helper。
+
+## 測試模型
+
+每個功能列都必須先寫成可執行契約，至少包含：
+
+1. 前置產品狀態及由正式入口建立狀態的方法。
+2. 使用者操作或真實事件。
+3. 與被測元件獨立的結果 oracle，例如另一台 LAN client 的回應、實際出口 endpoint、
+   重新開頁後的持久資料，或重啟後重新讀回的產品行為。
+4. 功能宣稱包含的狀態轉移，例如首次執行、重複執行、停止、恢復、更新或重啟。
+5. 失敗後應保持或恢復的使用者行為。只有功能本身宣稱管理該失敗時才列為必要轉移。
+
+不窮舉所有硬件、網路供應商或配置排列。按產品支援契約劃分等價類，至少採用產品預設、
+支援的舊版升級狀態、目前正式使用方式及變更涉及的輸入類別；用狀態轉移及組合覆蓋選例。
+新 Bug 的專用回歸只能防止重現，不能取代上述功能契約或被稱為完整驗收。
+
+### 升級狀態的來源
+
+發布候選涉及持久資料、模板、能力快照、配置生成或遷移時，舊版升級是主要驗收路徑，
+首次安裝只作補充。必須在同一個 qcow2 先安裝受支援的已發布舊版 binary 及匹配資產，並由
+該舊版透過正式入口建立、套用及實際使用 workspace；記錄舊版／候選 binary 與資產 SHA、
+升級前狀態 hash 及使用者可觀察基線。停止舊 runtime 後保留完整 workspace，只替換版本
+擁有的程式與資產，再由候選正式入口完成刷新、遷移、生成、驗證、套用及讀回。
+
+空白 workspace、由候選新建的狀態、從另一個測試複製的 workspace、直接修改 JSON／YAML，
+或以候選程式偽造舊欄位，都沒有舊版狀態來源，只能標為首次安裝或 synthetic regression。
+這些結果不得稱為升級、不得填補升級狀態轉移，也不得把受影響功能升格為發布 PASS。
+
+## QEMU 環境
+
+功能交互一律使用本輪授權的可拋棄 iStoreOS QEMU，透過正式 LuCI／rpcd／Core 入口操作。
+[VM 腳本](../../../scripts/istoreos-test-env.sh)只管理 VM。涉及路由、DNS 或接管時，使用已打通的
+非透明代理 WAN，並建立獨立 router、LAN client 與受控 WAN endpoint；從 client 發出真實
+TCP、UDP、DNS 或應用請求，按功能契約在 endpoint 或回應端核對結果。
+
+### 真實產品現場
+
+可拋棄的是每次測試的 VM clone，不是正向驗收所需的產品狀態或輸入。首次安裝、舊版升級、
+一鍵更新、訂閱刷新、runtime、接管及 DNS 驗收必須在 VM 內建立與正式路由器相同的現場：
+
+1. 真實訂閱以正式路由器的 `/root/localclash/localclash-subscriptions.json` 為唯一來源；使用
+   [real-scene 腳本](../../../scripts/istoreos-real-scene.sh)在 router 端經正式 `subscription get` 讀取，
+   僅轉成既有 `uris` 輸入合約後串流到 VM SSH。host 不落盤、不輸出內容，再由 VM 內正式
+   `subscription set` 及 `subscription refresh` 入口建立狀態。若 router 中任何 source 無法無損
+   匯出為 URI，整次同步明確失敗，禁止只取可匯出部分。
+2. 每次建立或重置 VM clone 後重新執行 `subscription-sync`。來源不存在、VM 無法刷新或結果
+   沒有有效節點時明確失敗；腳本會記錄不含秘密的配置 SHA 證明，之後配置若被替換即失效。
+   正向驗收不得改用 fixture、cache、手寫 URI 或候選程式生成的輸入。
+3. 一鍵更新前執行 `assert-update-ready`，要求真實訂閱已刷新、Mihomo 正在運行、takeover
+   `effective=true`，且 router DNS path 為 `mihomo`。缺少任何一項時，該狀態轉移記 `NOT_RUN`。
+4. fixture 只可用於明列的負向輸入、受控故障或獨立 WAN endpoint，不得支持正向功能 PASS，
+   也不得取代正式路由器訂閱或運行中的產品狀態。
+
+標準使用順序：
+
+```bash
+scripts/istoreos-test-env.sh start
+scripts/istoreos-test-env.sh wait
+scripts/istoreos-real-scene.sh subscription-sync
+# 透過正式 LuCI 初始化／啟動 runtime／套用 takeover
+scripts/istoreos-real-scene.sh assert-update-ready
+# 從 LuCI 頁面執行一鍵更新，並在全部狀態轉移持續執行外部 oracle
+```
+
+`scripts/istoreos-test-env.sh reset` 會替換整個 writable overlay；它不是現場保存方式。需要多次
+attempt 時，從相同 immutable firmware 建立各自 clone，並由上述 router source 重建真實訂閱。
+測後只清理該 attempt 的 VM／暫存證據，不修改正式路由器訂閱，也不把秘密寫入版控證據。
+guest SSH 使用 `.runtime/istoreos-qemu/known_hosts` 的 VM 專用信任記錄；reset 只移除這份記錄，
+不得修改使用者的全域 `known_hosts`。正式路由器 SSH 仍使用使用者既有的嚴格信任設定。
+
+網路功能在正常、停止、恢復及所選故障轉移後都要重新跑相同資料面 oracle。內部狀態、
+log、counter、packet capture 只用於解釋外部成功或失敗。若外部 oracle 沒有執行，該資料面
+結果就是 NOT_RUN；若 oracle 失敗，即使內部狀態全部顯示正常仍是 FAIL。
+
+驗收前先在同一可拋棄環境破壞一項必要路徑，確認 oracle 確實會失敗，再恢復候選進行正式
+操作。這是測試敏感度檢查，不得把破壞後的預期失敗冒充產品負向能力 PASS。
+
+## 執行
+
+1. 比較候選與基準，列出受影響功能、共享依賴及必要交互；完整功能核對則展開功能表全部
+   契約及適用狀態轉移，不以「每列執行過一個命令」代替完整覆蓋。
+2. 記錄 Core／LuCI commit、package 與 dependency SHA、iStoreOS image、Mihomo flavor／SHA、
+   QEMU 拓撲、輸入等價類、正式入口、oracle、狀態轉移及沿用理由。
+3. 若涉及持久狀態相容性，先按「升級狀態的來源」建立並保存舊版可用基線；沒有可驗證的
+   舊版來源時，升級結果記為 ERROR 或 NOT_RUN，不得改用空白環境補位。
+4. 從正式入口建立前置狀態並執行使用者流程；UI 能力走真 UI。每次狀態轉移後先判斷外部
+   結果，再收集任務、runtime、接管、配置及日誌證據作解釋。
+5. 保留首次失敗。診斷及修復不得改寫該 attempt；修復後用相同 oracle 重走原流程。
+   環境問題只影響真正依賴它的測試，其他功能繼續。
+6. 回寫真正實測的功能、狀態轉移、等價類、結果及證據。沿用維持原版本；局部通過不能
+   升格整列 PASS，後來觀察到的同功能失敗必須撤回或取代舊 PASS。
+
+## 結果與發布
+
+- PASS：正式產品入口及全部本輪必要狀態轉移均通過獨立外部 oracle。
+- FAIL：正常產品操作或外部 oracle 違反契約；內部 readiness 不能覆蓋此結果。
+- PARTIAL：同一功能只有部分明列契約取得有效結果，其餘逐項記 FAIL、ERROR 或 NOT_RUN。
+- ERROR：測試基礎設施無法提供原計畫所需條件，且沒有取得產品結果。
+- NOT_RUN：必要 oracle 或狀態轉移未執行。
+
+原始證據放在 `.runtime/istoreos-acceptance/<run-id>/`，版控只記脫敏摘要與索引。
+發布摘要（沿用 G99 名稱）列出候選、實測與沿用契約、首次失敗、修復回驗、NOT_RUN、
+剩餘風險及證據入口。CI、建置、資產校驗及 mock 測試永遠不能替代 QEMU 功能驗收；
+公開發布仍需使用者另行授權。
+
+
+## 維護位置
+
+能力契約與結果維護於功能表，方法及代理分工維護於本 Skill，實際執行放本輪報告。
+匯入舊證據先核對入口、版本及斷言，缺資料標待核對，不據此要求全表重跑。
+修改後核對引用、錨點、穩定 ID 及歷史證據，修訂歷史由 Git 保存。

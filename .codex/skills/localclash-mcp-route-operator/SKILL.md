@@ -15,14 +15,12 @@ files, or SSH. Server state owns config/runtime paths and secrets.
   authorize a custom rule or any persistent change.
 - For an explicit simple persistent website proxy/direct override through the
   existing exits, use `custom_sites_list` / `custom_sites_transact`. Read
-  [Custom sites](references/custom-sites.md) for their API, matching, priority,
-  and transaction results. This path needs neither pack lookup nor a user patch.
+  [Custom sites](#custom-sites) for matching, priority, and transaction results. This path needs neither pack lookup nor a user patch.
 - For app/company-wide pack coverage, a named node/country, or a selection
   strategy such as Smart or fallback, use packs and a service-owned exit. Read
-  [Routing and patches](references/routing-patches.md) for selection, ownership,
-  patch apply, and removal.
+  [Routing and patches](#routing-and-patches) for selection, ownership, apply, and removal.
 
-Read the reference for the chosen path; observation-only questions usually
+Read the section for the chosen path; observation-only questions usually
 need neither. Do not run a full environment/config/runtime sequence by default.
 
 ## Match the Evidence to the Claim
@@ -92,3 +90,92 @@ ID/sequence, persistence result, loaded proof or pending next start, rollback
 evidence when relevant, unchanged protected groups, and any approved shared
 mutation. Claim actual traffic routing only when connection evidence proves
 it; state remaining uncertainty.
+
+
+## Custom Sites
+
+If either tool is absent, report a capability/version mismatch; do not replace
+it with a patch or direct JSON/YAML edits. Read both lists first to understand
+overlaps and obtain actual stable IDs. Counts/hashes describe durable state.
+
+`custom_sites_transact` accepts one version-1 operation:
+
+```json
+{"version":1,"operation":"add","pattern":"example.com","route":"proxy","wait":true}
+```
+
+Use `route:"direct"` for 自訂直連網站. Delete only an actual listed ID:
+
+```json
+{"version":1,"operation":"delete","id":"<actual list entry id>","wait":true}
+```
+
+Do not include `id` on add or `pattern`/`route` on delete.
+
+- Plain hosts compile to `DOMAIN-SUFFIX` (host and subdomains), even though
+  stored `match` is `full`. `*`/`?` compile to whole-host `DOMAIN-WILDCARD`;
+  wildcards may cross dots. No URLs, ports, paths, IPs, CIDRs, or regex.
+- Lists under `custom-sites/` are independent of patches. Default-policy sync
+  and `reset_patches` preserve them; general reset deletes them.
+- The safety baseline stays first. Custom sites follow newest-first across
+  both lists before optional/default policy and fallback. Highest matching
+  `sequence` wins; adding retains older overlaps, so deletion may reveal an
+  older route. Same-pattern yellow UI warnings do not block saving.
+- Proxy uses the reserved group's current exit; direct uses `DIRECT`. Do not
+  recreate/mutate reserved groups with builders. Specific nodes or selection
+  strategies belong to a service-owned patch.
+
+The transaction validates, renders, runs `mihomo -t`, promotes, and, when
+runtime is active, hot reloads and semantically reads back rules/groups.
+Authorization must cover that live apply. A stopped runtime stays stopped.
+Do not add a config test/reload after successful completion.
+
+With `wait:true` inspect `ok` and `apply`: `validated`/`promoted`/
+`config_sha256` prove validation/persistence; `runtime_running`/`reloaded`/
+`read_back`/`effective` distinguish loaded state. `pending_next_start` means
+saved until next start. `effective` does not prove traffic.
+On failure inspect `code`, `error`, lists, and `rolled_back`; rollback may be incomplete.
+
+The default async acknowledgement returns `task_id`, `log_file` and
+`status_file`. Use `nl_file` until done/error; artifacts retain summaries,
+not the whole transaction result. Reconcile lists plus `/rules`/`/proxies`
+before retrying an uncertain write. Repeating an add allocates another ID.
+For removal, verify absence and explain any older matching route now revealed.
+
+## Routing and Patches
+
+Use `routing_explain` for current intent, `pack_rules_query` for coverage,
+and `packs_list`/`packs_get` for catalog details. Prefetch/read an exact
+plausible source/pack only when cache coverage is insufficient. Prefer a
+reusable pack over copying domains; check earlier broad-category collisions.
+Use returned selectors, e.g. `{"source":"v2fly-dlc","pack":"apple-intelligence"}`,
+not invented composite IDs. Justify narrow `custom_rules_build` overrides by
+missing/overbroad coverage, a confirmed endpoint, or an intentional exception.
+
+`proxy_group_build` creates a service-owned node-selection exit;
+`policy_group_build` chooses among existing exits. Keep a service rule and
+dedicated group in one patch when practical. "Smart", "auto" or "fallback"
+describes that service's behavior, not permission to rewrite a shared group.
+
+For a shared mutation, identify the exact group, owning patch, current/proposed
+behavior, consumers/blast radius, and dedicated-group alternative. Apply only
+with that specific authority. Otherwise use a dedicated exit or leave the
+draft unapplied.
+
+Read `config_status(patches=true, detail=true)` and exact owning patches via
+`config_patch_get`; preserve base hashes. Build the smallest intent, then
+`config_patch_draft` atomic operations. Review unrelated patches, protected
+groups, order, and broad-pack collisions. Unresolved endpoint/ownership/scope
+means leave the draft unapplied.
+
+`config_patch_apply` persists and renders without starting runtime. For
+authorized live apply, use `mihomo_config_test` when needed for the current
+hash attestation, then `restart_runtime(strategy=hot_reload)`. Save-only
+authority does not cover reload/start. Timeout is indeterminate; inspect
+semantics rather than falling back to process restart.
+
+Read back relevant `/rules`, `/providers/rules` and `/proxies`, including
+protected groups. Traffic claims require a fresh connection's matched rule
+and proxy chain. For removal, check other patch references, remove the owning
+patch atomically by base hash and, if live removal was authorized, verify
+loaded absence without changing protected groups.

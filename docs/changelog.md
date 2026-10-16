@@ -985,7 +985,7 @@ Known limitation:
 
 - Core watchdog 自主恢復只驗證 Mihomo 與 Controller，不負責 LuCI 的
   `takeover_effective`；跨模組恢復責任仍未決定，已登記於
-  [Router Incident Register](router-incident-register.md#2026-09-01-runtime-watchdog-does-not-reconcile-router-takeover)。
+  [Router Incident Register](https://github.com/qoli/localClash/blob/1478e7b667c4b115ad2d8a1cd6b06388e10194d4/docs/router-incident-register.md#2026-09-01-runtime-watchdog-does-not-reconcile-router-takeover)。
 
 Release:
 
@@ -1053,7 +1053,7 @@ Known limitation:
 
 - Core watchdog 自主恢復只驗證 Mihomo 與 Controller，不負責 LuCI 的
   `takeover_effective`；跨模組恢復責任仍未決定，已登記於
-  [Router Incident Register](router-incident-register.md#2026-09-01-runtime-watchdog-does-not-reconcile-router-takeover)。
+  [Router Incident Register](https://github.com/qoli/localClash/blob/1478e7b667c4b115ad2d8a1cd6b06388e10194d4/docs/router-incident-register.md#2026-09-01-runtime-watchdog-does-not-reconcile-router-takeover)。
 
 Release:
 
