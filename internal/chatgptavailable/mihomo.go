@@ -39,23 +39,25 @@ const (
 )
 
 type MihomoOptions struct {
-	CorePath         string
-	RuntimeParent    string
-	Definitions      []map[string]any
-	Concurrency      int
-	Attempts         int
-	RequestTimeout   time.Duration
-	RetryDelay       time.Duration
-	OAuthEndpoint    string
-	OAuthClientID    string
-	StatsigEndpoint  string
-	StatsigClientKey string
+	CorePath             string
+	RuntimeParent        string
+	Definitions          []map[string]any
+	Concurrency          int
+	Attempts             int
+	RequestTimeout       time.Duration
+	RetryDelay           time.Duration
+	OAuthEndpoint        string
+	OAuthClientID        string
+	StatsigEndpoint      string
+	StatsigClientKey     string
+	DNSOverHTTPSEndpoint string
 }
 
 type MihomoProber struct {
 	options      MihomoOptions
 	probeOAuth   func(context.Context, *http.Client, string, string, time.Duration) oauthProbeResult
 	probeStatsig func(context.Context, *http.Client, string, string, time.Duration) statsigProbeResult
+	probeIPPaths func(context.Context, *http.Client) IPVerification
 }
 
 func RebuildWithMihomo(ctx context.Context, proxies []map[string]any, corePath, runtimeParent, snapshotPath string) (Result, error) {
@@ -121,7 +123,12 @@ func NewMihomoProber(options MihomoOptions) (*MihomoProber, error) {
 	if strings.TrimSpace(options.StatsigClientKey) == "" {
 		options.StatsigClientKey = statsigClientKey
 	}
-	return &MihomoProber{options: options, probeOAuth: probeOAuthToken, probeStatsig: requestStatsig}, nil
+	if strings.TrimSpace(options.DNSOverHTTPSEndpoint) == "" {
+		options.DNSOverHTTPSEndpoint = dnsOverHTTPSEndpoint
+	}
+	prober := &MihomoProber{options: options, probeOAuth: probeOAuthToken, probeStatsig: requestStatsig}
+	prober.probeIPPaths = prober.verifyIPPaths
+	return prober, nil
 }
 
 func (p *MihomoProber) Probe(ctx context.Context, candidates []Candidate) ([]Observation, error) {
@@ -238,7 +245,7 @@ func (p *MihomoProber) probeCandidate(ctx context.Context, candidate Candidate, 
 	}()
 	wg.Wait()
 
-	return Observation{
+	observation := Observation{
 		Fingerprint:          candidate.Fingerprint,
 		Available:            oauthResult.result.decision == oauthRegionSupported && statsigResult.result.decision == statsigReachable,
 		ServiceRejected:      oauthResult.result.explicitReject || statsigResult.result.explicitReject,
@@ -251,13 +258,21 @@ func (p *MihomoProber) probeCandidate(ctx context.Context, candidate Candidate, 
 		StatsigAttempts:      statsigResult.attempts,
 		StatsigStatus:        statsigResult.result.decision,
 		StatsigHTTPStatus:    statsigResult.result.httpStatus,
+		StatsigErrorCode:     statsigResult.result.errorCode,
 		StatsigCountry:       statsigResult.result.country,
 		ContentEncoding:      statsigResult.result.contentEncoding,
 		CompressedBytes:      statsigResult.compressedBytes,
 		DecompressedBytes:    statsigResult.decompressedBytes,
 		StatsigError:         errorString(statsigResult.result.err),
-		Duration:             time.Since(started),
 	}
+	if observation.Available {
+		verification := p.probeIPPaths(ctx, client)
+		observation.IPVerification = &verification
+		observation.Available = verification.Available && !verification.RegionRejected
+		observation.ServiceRejected = observation.ServiceRejected || verification.RegionRejected
+	}
+	observation.Duration = time.Since(started)
+	return observation
 }
 
 type oauthAttemptResult struct {
@@ -267,10 +282,14 @@ type oauthAttemptResult struct {
 }
 
 func (p *MihomoProber) probeOAuthAttempts(ctx context.Context, client *http.Client) oauthAttemptResult {
+	return p.probeOAuthEndpointAttempts(ctx, client, p.options.OAuthEndpoint)
+}
+
+func (p *MihomoProber) probeOAuthEndpointAttempts(ctx context.Context, client *http.Client, endpoint string) oauthAttemptResult {
 	var outcome oauthAttemptResult
 	for attempt := 1; attempt <= p.options.Attempts; attempt++ {
 		outcome.attempts = attempt
-		outcome.result = p.probeOAuth(ctx, client, p.options.OAuthEndpoint, p.options.OAuthClientID, p.options.RequestTimeout)
+		outcome.result = p.probeOAuth(ctx, client, endpoint, p.options.OAuthClientID, p.options.RequestTimeout)
 		outcome.responseBytes += outcome.result.responseBytes
 		if outcome.result.decision == oauthRegionSupported || outcome.result.decision == oauthRegionUnsupported {
 			return outcome
@@ -293,13 +312,17 @@ type statsigAttemptResult struct {
 }
 
 func (p *MihomoProber) probeStatsigAttempts(ctx context.Context, client *http.Client) statsigAttemptResult {
+	return p.probeStatsigEndpointAttempts(ctx, client, p.options.StatsigEndpoint)
+}
+
+func (p *MihomoProber) probeStatsigEndpointAttempts(ctx context.Context, client *http.Client, endpoint string) statsigAttemptResult {
 	var outcome statsigAttemptResult
 	for attempt := 1; attempt <= p.options.Attempts; attempt++ {
 		outcome.attempts = attempt
-		outcome.result = p.probeStatsig(ctx, client, p.options.StatsigEndpoint, p.options.StatsigClientKey, p.options.RequestTimeout)
+		outcome.result = p.probeStatsig(ctx, client, endpoint, p.options.StatsigClientKey, p.options.RequestTimeout)
 		outcome.compressedBytes += outcome.result.compressedBytes
 		outcome.decompressedBytes += outcome.result.decompressedBytes
-		if outcome.result.decision == statsigReachable {
+		if outcome.result.decision == statsigReachable || outcome.result.errorCode == oauthRegionUnsupported {
 			return outcome
 		}
 		if !waitToRetry(ctx, attempt, p.options.Attempts, p.options.RetryDelay) {
@@ -433,6 +456,7 @@ type statsigProbeResult struct {
 	decision          string
 	httpStatus        int
 	explicitReject    bool
+	errorCode         string
 	country           string
 	contentEncoding   string
 	compressedBytes   int64
@@ -473,6 +497,9 @@ func requestStatsig(parent context.Context, client *http.Client, endpoint, clien
 	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
 		result.decision = statsigRejected
 		result.explicitReject = true
+		if response, err := decodeOAuthError(resp.Body); err == nil {
+			result.errorCode = strings.TrimSpace(response.Error.Code)
+		}
 		result.err = fmt.Errorf("Statsig initialize rejected the probe (HTTP %d)", resp.StatusCode)
 		return result
 	}

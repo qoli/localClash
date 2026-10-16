@@ -343,14 +343,22 @@ MCP subscription bootstrap tools:
   service exit from every selectable proxy. Every ChatGPT-qualified node must
   pass both a dummy refresh-token `POST https://auth.openai.com/oauth/token`
   and `POST https://ab.chatgpt.com/v1/initialize` through the same isolated
-  proxy exit. The two measurements run independently and qualification is their
-  intersection. Statsig must return HTTP 200, Brotli JSON, and a non-empty
+  proxy exit. After the domain measurements pass, the candidate resolves both
+  endpoints' A/AAAA records over HTTPS through its own proxy and tests every
+  returned IP as the CONNECT target, preserving the original HTTP Host, TLS SNI,
+  and certificate verification. At least one address family must pass both
+  measurements; any explicit regional rejection on any tested IP vetoes the
+  candidate. An unavailable IPv6 path does not override a positive IPv4 pair.
+  Statsig must return HTTP 200, Brotli JSON, and a non-empty
   `derived_fields.country`.
   HTTP 401 with `error.code=token_expired` proves the egress passed the regional
   admission gate; HTTP 403 with
   `error.code=unsupported_country_region_territory` rejects it immediately.
-  Other HTTP errors, malformed responses, TLS failures, and timeouts never qualify
-  a candidate. Inconclusive failures are retried once per measurement. Probes use 16 workers.
+  Other HTTP errors, malformed responses, TLS failures, and timeouts do not pass
+  that measurement and are recorded separately from regional rejection.
+  Inconclusive failures are retried once per measurement. Probes use 16 workers.
+  Snapshot v8 records DNS results and each IP path's admission evidence; older
+  domain-only qualifications expire and require a fresh subscription refresh.
   The check is independent from the active core's cached `alive` state.
 
   MCP refresh renders `config.yaml.candidate`, validates it with `mihomo -t`, and

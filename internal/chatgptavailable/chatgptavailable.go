@@ -18,7 +18,7 @@ import (
 
 const (
 	ProfileID                   = "openai.chatgpt.oauth_statsig.v1"
-	SnapshotVersion             = 7
+	SnapshotVersion             = 8
 	ConsecutiveFailureThreshold = 1
 )
 
@@ -30,24 +30,26 @@ type Candidate struct {
 }
 
 type Observation struct {
-	Fingerprint          string        `json:"fingerprint"`
-	Available            bool          `json:"available"`
-	ServiceRejected      bool          `json:"service_rejected,omitempty"`
-	Duration             time.Duration `json:"-"`
-	OAuthAttempts        int           `json:"oauth_attempts"`
-	OAuthAdmissionStatus string        `json:"oauth_admission_status,omitempty"`
-	OAuthHTTPStatus      int           `json:"oauth_http_status,omitempty"`
-	OAuthErrorCode       string        `json:"oauth_error_code,omitempty"`
-	OAuthResponseBytes   int64         `json:"oauth_response_bytes,omitempty"`
-	OAuthError           string        `json:"oauth_error,omitempty"`
-	StatsigAttempts      int           `json:"statsig_attempts"`
-	StatsigStatus        string        `json:"statsig_status,omitempty"`
-	StatsigHTTPStatus    int           `json:"statsig_http_status,omitempty"`
-	StatsigCountry       string        `json:"statsig_country,omitempty"`
-	ContentEncoding      string        `json:"content_encoding,omitempty"`
-	CompressedBytes      int64         `json:"compressed_bytes,omitempty"`
-	DecompressedBytes    int64         `json:"decompressed_bytes,omitempty"`
-	StatsigError         string        `json:"statsig_error,omitempty"`
+	Fingerprint          string          `json:"fingerprint"`
+	Available            bool            `json:"available"`
+	ServiceRejected      bool            `json:"service_rejected,omitempty"`
+	Duration             time.Duration   `json:"-"`
+	OAuthAttempts        int             `json:"oauth_attempts"`
+	OAuthAdmissionStatus string          `json:"oauth_admission_status,omitempty"`
+	OAuthHTTPStatus      int             `json:"oauth_http_status,omitempty"`
+	OAuthErrorCode       string          `json:"oauth_error_code,omitempty"`
+	OAuthResponseBytes   int64           `json:"oauth_response_bytes,omitempty"`
+	OAuthError           string          `json:"oauth_error,omitempty"`
+	StatsigAttempts      int             `json:"statsig_attempts"`
+	StatsigStatus        string          `json:"statsig_status,omitempty"`
+	StatsigHTTPStatus    int             `json:"statsig_http_status,omitempty"`
+	StatsigErrorCode     string          `json:"statsig_error_code,omitempty"`
+	StatsigCountry       string          `json:"statsig_country,omitempty"`
+	ContentEncoding      string          `json:"content_encoding,omitempty"`
+	CompressedBytes      int64           `json:"compressed_bytes,omitempty"`
+	DecompressedBytes    int64           `json:"decompressed_bytes,omitempty"`
+	StatsigError         string          `json:"statsig_error,omitempty"`
+	IPVerification       *IPVerification `json:"ip_verification,omitempty"`
 }
 
 type Prober interface {
@@ -55,28 +57,30 @@ type Prober interface {
 }
 
 type NodeState struct {
-	Name                 string `json:"name"`
-	Available            bool   `json:"available"`
-	ObservedAvailable    bool   `json:"observed_available"`
-	ServiceRejected      bool   `json:"service_rejected,omitempty"`
-	ConsecutiveFailures  int    `json:"consecutive_failures"`
-	OAuthAttempts        int    `json:"oauth_attempts"`
-	OAuthAdmissionStatus string `json:"oauth_admission_status,omitempty"`
-	OAuthHTTPStatus      int    `json:"oauth_http_status,omitempty"`
-	OAuthErrorCode       string `json:"oauth_error_code,omitempty"`
-	OAuthResponseBytes   int64  `json:"oauth_response_bytes,omitempty"`
-	OAuthError           string `json:"oauth_error,omitempty"`
-	StatsigAttempts      int    `json:"statsig_attempts"`
-	StatsigStatus        string `json:"statsig_status,omitempty"`
-	StatsigHTTPStatus    int    `json:"statsig_http_status,omitempty"`
-	StatsigCountry       string `json:"statsig_country,omitempty"`
-	ContentEncoding      string `json:"content_encoding,omitempty"`
-	CompressedBytes      int64  `json:"compressed_bytes,omitempty"`
-	DecompressedBytes    int64  `json:"decompressed_bytes,omitempty"`
-	StatsigError         string `json:"statsig_error,omitempty"`
-	CheckedAt            string `json:"checked_at"`
-	LastAvailableAt      string `json:"last_available_at,omitempty"`
-	DurationMS           int64  `json:"duration_ms"`
+	Name                 string          `json:"name"`
+	Available            bool            `json:"available"`
+	ObservedAvailable    bool            `json:"observed_available"`
+	ServiceRejected      bool            `json:"service_rejected,omitempty"`
+	ConsecutiveFailures  int             `json:"consecutive_failures"`
+	OAuthAttempts        int             `json:"oauth_attempts"`
+	OAuthAdmissionStatus string          `json:"oauth_admission_status,omitempty"`
+	OAuthHTTPStatus      int             `json:"oauth_http_status,omitempty"`
+	OAuthErrorCode       string          `json:"oauth_error_code,omitempty"`
+	OAuthResponseBytes   int64           `json:"oauth_response_bytes,omitempty"`
+	OAuthError           string          `json:"oauth_error,omitempty"`
+	StatsigAttempts      int             `json:"statsig_attempts"`
+	StatsigStatus        string          `json:"statsig_status,omitempty"`
+	StatsigHTTPStatus    int             `json:"statsig_http_status,omitempty"`
+	StatsigErrorCode     string          `json:"statsig_error_code,omitempty"`
+	StatsigCountry       string          `json:"statsig_country,omitempty"`
+	ContentEncoding      string          `json:"content_encoding,omitempty"`
+	CompressedBytes      int64           `json:"compressed_bytes,omitempty"`
+	DecompressedBytes    int64           `json:"decompressed_bytes,omitempty"`
+	StatsigError         string          `json:"statsig_error,omitempty"`
+	IPVerification       *IPVerification `json:"ip_verification,omitempty"`
+	CheckedAt            string          `json:"checked_at"`
+	LastAvailableAt      string          `json:"last_available_at,omitempty"`
+	DurationMS           int64           `json:"duration_ms"`
 }
 
 type Snapshot struct {
@@ -172,11 +176,13 @@ func Rebuild(ctx context.Context, proxies []map[string]any, prober Prober, opts 
 			StatsigAttempts:      observation.StatsigAttempts,
 			StatsigStatus:        observation.StatsigStatus,
 			StatsigHTTPStatus:    observation.StatsigHTTPStatus,
+			StatsigErrorCode:     observation.StatsigErrorCode,
 			StatsigCountry:       observation.StatsigCountry,
 			ContentEncoding:      observation.ContentEncoding,
 			CompressedBytes:      observation.CompressedBytes,
 			DecompressedBytes:    observation.DecompressedBytes,
 			StatsigError:         observation.StatsigError,
+			IPVerification:       observation.IPVerification,
 			CheckedAt:            now.Format(time.RFC3339Nano),
 			DurationMS:           observation.Duration.Milliseconds(),
 		}

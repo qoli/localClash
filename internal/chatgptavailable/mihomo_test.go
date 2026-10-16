@@ -131,7 +131,7 @@ func TestNewMihomoProberDefaultsIncludeOAuthAndStatsig(t *testing.T) {
 		t.Fatal(err)
 	}
 	options := prober.options
-	if options.Concurrency != 16 || options.RequestTimeout != 5*time.Second || options.Attempts != 2 || options.OAuthEndpoint != oauthTokenURL || options.OAuthClientID != oauthClientID || options.StatsigEndpoint != statsigInitializeURL || options.StatsigClientKey != statsigClientKey {
+	if options.Concurrency != 16 || options.RequestTimeout != 5*time.Second || options.Attempts != 2 || options.OAuthEndpoint != oauthTokenURL || options.OAuthClientID != oauthClientID || options.StatsigEndpoint != statsigInitializeURL || options.StatsigClientKey != statsigClientKey || options.DNSOverHTTPSEndpoint != dnsOverHTTPSEndpoint || prober.probeIPPaths == nil {
 		t.Fatalf("probe defaults = %+v, want OAuth and Statsig defaults", options)
 	}
 }
@@ -153,7 +153,8 @@ func TestProbeCandidateRequiresOAuthAndStatsigIntersection(t *testing.T) {
 			oauthCalls := 0
 			statsigCalls := 0
 			prober := &MihomoProber{
-				options: MihomoOptions{Attempts: 1, RetryDelay: time.Nanosecond, RequestTimeout: time.Second},
+				probeIPPaths: func(context.Context, *http.Client) IPVerification { return IPVerification{Available: true} },
+				options:      MihomoOptions{Attempts: 1, RetryDelay: time.Nanosecond, RequestTimeout: time.Second},
 				probeOAuth: func(context.Context, *http.Client, string, string, time.Duration) oauthProbeResult {
 					oauthCalls++
 					return test.oauth
@@ -175,7 +176,8 @@ func TestProbeCandidateRetriesEachInconclusiveProbeIndependently(t *testing.T) {
 	oauthCalls := 0
 	statsigCalls := 0
 	prober := &MihomoProber{
-		options: MihomoOptions{Attempts: 2, RetryDelay: time.Nanosecond, RequestTimeout: time.Second},
+		probeIPPaths: func(context.Context, *http.Client) IPVerification { return IPVerification{Available: true} },
+		options:      MihomoOptions{Attempts: 2, RetryDelay: time.Nanosecond, RequestTimeout: time.Second},
 		probeOAuth: func(context.Context, *http.Client, string, string, time.Duration) oauthProbeResult {
 			oauthCalls++
 			if oauthCalls == 1 {
@@ -201,7 +203,8 @@ func TestProbeCandidateStopsOAuthAfterConclusiveUnsupportedButStillRunsStatsig(t
 	oauthCalls := 0
 	statsigCalls := 0
 	prober := &MihomoProber{
-		options: MihomoOptions{Attempts: 2, RetryDelay: time.Nanosecond, RequestTimeout: time.Second},
+		probeIPPaths: func(context.Context, *http.Client) IPVerification { return IPVerification{Available: true} },
+		options:      MihomoOptions{Attempts: 2, RetryDelay: time.Nanosecond, RequestTimeout: time.Second},
 		probeOAuth: func(context.Context, *http.Client, string, string, time.Duration) oauthProbeResult {
 			oauthCalls++
 			return oauthProbeResult{decision: oauthRegionUnsupported, httpStatus: 403, explicitReject: true, errorCode: oauthRegionUnsupported, err: errors.New("unsupported")}

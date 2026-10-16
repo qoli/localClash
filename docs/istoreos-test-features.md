@@ -47,7 +47,7 @@
 | 功能 ID | 功能／驗證內容 | 責任／核心範圍 | 最後實測版本；結果；證據 |
 | --- | --- | --- | --- |
 | SUB-MANAGEMENT | **訂閱來源管理**：設定、修改及移除來源後能重新讀取；支援訂閱 URL 與節點 URI，非法／空白輸入按入口契約拒絕，原有效來源不被誤清空。[實作入口](../product_cli.go) | Core／共用 | v0.1.83／不適用；PASS；URL／節點 URI 增改刪、空白／FTP／空集合拒絕及原設定保留 [E05](#e05) |
-| SUB-REFRESH | **訂閱取得與刷新**：取得並解析多來源、合併節點及重建已配置的服務能力篩選材料（如 ChatGPT 可用節點）；來源失敗如實呈現，有有效來源與全部無效的結果不同；失敗保留合法材料。保存來源與刷新生效分別讀回。[實作入口](../product_cli.go) | Core／共用 | v0.1.87／不適用；PARTIAL；同一 qcow2 由正式 v0.1.85 建立並使用 workspace，經 v0.1.86 真實失敗後原狀升級 v0.1.87；正式刷新自動重建 template-owned patches、保留 user state，50 個候選完成雙探測；E12 的獨立負向 oracle 缺口仍保留 [E12](#e12) [E14](#e14) |
+| SUB-REFRESH | **訂閱取得與刷新**：取得並解析多來源、合併節點及重建已配置的服務能力篩選材料（如 ChatGPT 可用節點）；來源失敗如實呈現，有有效來源與全部無效的結果不同；失敗保留合法材料。保存來源與刷新生效分別讀回。[實作入口](../product_cli.go) | Core／共用 | `5471848` + working tree（binary `d0a5b85d…916f4ce`）／不適用；PARTIAL；WG 裸 WAN，正式刷新兩次重建 v8 IP 資格；原 52 名保留 36、明確拒絕 16，獨立 curl 156 例一致；來源 02 HTTP 403，整項／發布升級驗收未升格 [E28](#e28)；歷史範圍 [E12](#e12) [E14](#e14) |
 | SUB-NODES | **節點查詢**：列出與搜尋已取得節點，名稱／類型與來源一致，不洩漏連線憑證；查詢結果不冒充節點品質或出口地理驗證。[實作入口](../internal/mcp/registry.go) | Core／共用 | v0.1.83／不適用；PASS；MCP 列出／搜尋、來源欄位及敏感資料界線 [E05](#e05) |
 
 <a id="sites"></a>
@@ -68,9 +68,9 @@
 | --- | --- | --- | --- |
 | CONFIG-TEMPLATE | **策略模板設定**：選取完整預設或 minimal 模板、配置 profile，產生相應補丁及 intent；重設模板只依明示選項處理既有補丁，不默默覆蓋自訂設定。[實作入口](../product_cli.go) | Core／共用 | v0.1.97／不適用；PARTIAL；同一 qcow2 從 v0.1.96 正式 workspace 升級，完整預設模板同步加入 DegYax 並保留 user-owned custom-site 狀態；minimal 未重跑 [E27](#e27)；其他歷史範圍見 [E15](#e15) [E20](#e20) |
 | CONFIG-PATCHES | **配置補丁管理**：讀取、預覽、套用、移除、啟停及排序補丁；預覽不落盤，套用後 registry／intent 一致，失效草稿或非法引用明確拒絕。[實作入口](../product_cli.go) | Core／共用 | v0.1.83／不適用；PASS；預覽／套用／移除／啟停／排序／tombstone、registry 恢復及非法／過期草稿拒絕 [E05](#e05) |
-| CONFIG-RENDER | **Mihomo 配置生成**：由訂閱、模板、補丁與 profile 生成正確配置。Meta 自動組為 url-test，Smart 為 smart 並移除 tolerance；Smart 參數、群組 priority 與 defaults 按 intent 傳遞且不覆蓋既有值；生成不等於已載入。[實作入口](../product_cli.go) | Core／按核心差異 | v0.1.97／不適用；PASS（Meta／預設模板影響範圍）；同一 qcow2 由公開 v0.1.96 建立 3-source／107-proxy workspace，候選生成 65 rules，DegYax 位於 `GEOSITE,cn,DIRECT` 前，自訂網站維持 newest-first [E27](#e27)；其他核心差異歷史範圍見 [E16](#e16) [E21](#e21) |
-| CONFIG-VALIDATION | **配置驗證**：用所選核心驗證生成配置，記錄對應 hash；非法配置不取得通過證明；驗證與活躍程序隔離，不爭用工作目錄。[實作入口](../product_cli.go) | Core／按核心差異 | v0.1.97／不適用；PASS（Meta）；iStoreOS Meta v1.19.32 正式 isolated config-test 對候選配置 SHA `8da8d8bf…3b8df` 通過並記錄 attestation [E27](#e27)；其他核心差異歷史範圍見 [E16](#e16) [E21](#e21) |
-| CONFIG-APPLY | **配置套用**：按所選入口核對候選檔提交或 runtime 載入；config-promote 是其中一個檔案提交入口，不是所有流程的前置。驗證 hash、實際載入規則／組及失敗結果符合契約，提交檔案不當成已熱載入，生成檔存在不當成已生效。[實作入口](../product_cli.go) | Core／按核心差異 | v0.1.97／不適用；PASS（本輪變更範圍）；正式 runtime start、active custom-site hot reload／語義讀回、停止狀態 pending-next-start 及 controller rules 讀回通過 [E27](#e27)；其他歷史範圍見 [E15](#e15) |
+| CONFIG-RENDER | **Mihomo 配置生成**：由訂閱、模板、補丁與 profile 生成正確配置。Meta 自動組為 url-test，Smart 為 smart 並移除 tolerance；Smart 參數、群組 priority 與 defaults 按 intent 傳遞且不覆蓋既有值；生成不等於已載入。[實作入口](../product_cli.go) | Core／按核心差異 | `5471848` + working tree（binary `d0a5b85d…916f4ce`）／不適用；PARTIAL（Smart／ChatGPT 資格群組範圍）；真實訂閱刷新後從 v8 生成 36 名群組，未展開模板／參數完整契約 [E28](#e28)；先前 Meta 與其他核心歷史見 [E27](#e27) [E16](#e16) [E21](#e21) |
+| CONFIG-VALIDATION | **配置驗證**：用所選核心驗證生成配置，記錄對應 hash；非法配置不取得通過證明；驗證與活躍程序隔離，不爭用工作目錄。[實作入口](../product_cli.go) | Core／按核心差異 | `5471848` + working tree（binary `d0a5b85d…916f4ce`）／不適用；PARTIAL（Smart／ChatGPT 資格群組範圍）；正式 isolated config-test 與 attestation 通過；本輪未重跑非法配置／Meta 類別 [E28](#e28)；歷史範圍 [E27](#e27) [E16](#e16) [E21](#e21) |
+| CONFIG-APPLY | **配置套用**：按所選入口核對候選檔提交或 runtime 載入；config-promote 是其中一個檔案提交入口，不是所有流程的前置。驗證 hash、實際載入規則／組及失敗結果符合契約，提交檔案不當成已熱載入，生成檔存在不當成已生效。[實作入口](../product_cli.go) | Core／按核心差異 | `5471848` + working tree（binary `d0a5b85d…916f4ce`）／不適用；PARTIAL（Smart／ChatGPT 資格群組範圍）；正式 runtime start 後 controller 36 名與 v8 完全一致；未展開 hot reload／停止狀態契約 [E28](#e28)；歷史範圍 [E27](#e27) [E15](#e15) |
 
 <a id="cores"></a>
 ## 核心管理
@@ -836,3 +836,33 @@ CONFIG-TEMPLATE、CONFIG-RENDER、CONFIG-VALIDATION 與 CONFIG-APPLY。
   通過；7 項公開資產的 GitHub digest、sidecar、manifest size／SHA 一致，雙架構 binary
   revision 均為 `5ecc27c`。公開 base-assets 已讀回相同 DegYax 模板語義。QEMU 停止、
   qcow2 check 無錯並清理；正式路由器未修改。
+
+<a id="e28"></a>
+### E28
+
+2026-10-16 選測 ChatGPT-available 的 IP 路徑資格，以及相依的 Smart 配置生成、驗證與
+載入成員。候選基於 `547184881fda28c3d7c1aca443d12779e9017c4a` 加工作區修改，binary SHA
+`d0a5b85d…916f4ce`；Smart `alpha-smart-dc90210` SHA `082fa511…8b0ded`。
+[完整報告](../.runtime/istoreos-acceptance/chatgpt-ip-20261016/report.md)及
+[52 名逐節點結果](../.runtime/istoreos-acceptance/chatgpt-ip-20261016/reviewed-results.csv)
+保存候選身分、外部 oracle、首次失敗與限制。
+
+- 可拋棄 QEMU 沿用已恢復的 WireGuard 測試 peer，外網 IPv4 經 WG → 路由器 bypass →
+  PPPoE WAN，清除 Slirp IPv6 default；guest 與路由器裸 WAN trace 均為 CN。
+  每次 clone 由 `subscription-sync` 從正式路由器經正式 get 匯入全部 3 個真實來源，
+  未以 fixture 或手寫部分來源替代。來源 02 持續 HTTP 403 且無有效 cache；來源 01／03
+  提供 108 合併節點、87 selectable names／70 組配置。全來源成功情境為 NOT_RUN。
+- 同一 workspace 先由未改動 HEAD binary 經正式入口建立與使用 v7，再換候選刷新為 v8；
+  此基線不是已發布舊版，因此發布升級驗收為 NOT_RUN。能力 ID 保持不變，舊域名資格過期。
+- 正式候選兩次刷新均保留原 52 名中的 36 名、剔除 16 個明確 IP 地區拒絕；原 47 組
+  fingerprint 完整匹配。獨立 curl 52 名 × 3 模式共 156 例，domain 52 通過、IPv4 36 通過／
+  16 地區拒絕、IPv6 28 通過／6 地區拒絕／18 傳輸失敗；判定與候選完全一致。8 名雖 IPv6
+  不完整，仍由有效 IPv4 保留。HK01／US01 手機服務 12 例另驗明確國家代碼與其他 403。
+- 停止測試 SSH tunnel 時外部 oracle 為 curl exit 7，恢復後正負對照恢復。首次候選
+  h2 ALPN／HTTP transport 不一致造成 376 條 IP 傳輸失敗，保留原證據後修正；新增實際
+  HTTP/2 TLS server 回歸先重現，再以修正版回驗。未把首次 0 資格當作出口結果。
+- 正式 render／isolated config-test／runtime start 後 controller Smart 組 36 名與 v8
+  一致，主代理 SSH 獨立讀回；doctor 為 ok。未展開其他模板、核心差異與 hot reload 契約，
+  不將本輪局部通過升格整項 PASS，也不沿用歷史版本作為候選已測證據。
+- 本輪 clone、runtime、WG、測試 bridge、SSH tunnel 與憑證副本已清理；正式路由器、既有
+  peer／管理 profile 與原始持久 qcow2 保留。手機登入與真實對話不在本輪驗證範圍。

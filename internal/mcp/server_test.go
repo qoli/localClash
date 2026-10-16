@@ -1270,7 +1270,7 @@ sources:
 		if runtimeParent != capabilityRoot || filepath.Dir(snapshotPath) == capabilityRoot || previousSnapshotPath != filepath.Join(capabilityRoot, "chatgpt-available.json") {
 			t.Fatalf("capability paths = runtime %q candidate %q previous %q", runtimeParent, snapshotPath, previousSnapshotPath)
 		}
-		writeMCPFile(t, snapshotPath, fmt.Sprintf(`{"version":7,"profile":%q,"updated_at":"2026-08-15T00:00:00Z","qualified":["JP 01"],"nodes":{}}`, chatgptavailable.ProfileID))
+		writeMCPFile(t, snapshotPath, fmt.Sprintf(`{"version":8,"profile":%q,"updated_at":"2026-08-15T00:00:00Z","qualified":["JP 01"],"nodes":{}}`, chatgptavailable.ProfileID))
 		return chatgptavailable.Result{
 			Profile:          chatgptavailable.ProfileID,
 			SnapshotPath:     snapshotPath,
@@ -1361,7 +1361,7 @@ func TestSubscriptionsRefreshBuildsChatGPTFromAllSelectableNodes(t *testing.T) {
 		if !reflect.DeepEqual(eligible, []string{"HK exit", "US 01"}) {
 			t.Fatalf("ChatGPT eligible nodes = %v, want every selectable subscription proxy", eligible)
 		}
-		writeMCPFile(t, candidate, fmt.Sprintf(`{"version":7,"profile":%q,"updated_at":"new","qualified":["US 01"],"nodes":{}}`, chatgptavailable.ProfileID))
+		writeMCPFile(t, candidate, fmt.Sprintf(`{"version":8,"profile":%q,"updated_at":"new","qualified":["US 01"],"nodes":{}}`, chatgptavailable.ProfileID))
 		return chatgptavailable.Result{Profile: chatgptavailable.ProfileID, SnapshotPath: candidate, Qualified: []string{"US 01"}, QualifiedCount: 1}, nil
 	}
 	impact := server.evaluateLocalClashAfterRefresh(

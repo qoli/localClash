@@ -503,7 +503,7 @@ custom_rules:
         value: openai.com
 `)
 	writeMainTestFile(t, filepath.Join(".runtime", "capabilities", "chatgpt-available.json"), `{
-  "version": 7,
+  "version": 8,
   "profile": "openai.chatgpt.oauth_statsig.v1",
   "updated_at": "2026-08-15T00:00:00Z",
   "qualified": ["US 01"],
@@ -594,7 +594,7 @@ custom_rules:
 			t.Fatalf("capability paths = runtime %q candidate %q previous %q", runtimeParent, snapshotPath, previousSnapshotPath)
 		}
 		writeMainTestFile(t, snapshotPath, `{
-  "version": 7,
+  "version": 8,
   "profile": "openai.chatgpt.oauth_statsig.v1",
   "updated_at": "2026-08-15T00:00:00Z",
   "qualified": ["US 01"],
@@ -677,7 +677,7 @@ proxy_groups:
 		if !reflect.DeepEqual(eligible, []string{"HK exit", "US 01"}) {
 			t.Fatalf("ChatGPT eligible nodes = %+v, want all selectable subscription proxies", eligible)
 		}
-		writeMainTestFile(t, candidate, fmt.Sprintf(`{"version":7,"profile":%q,"updated_at":"new","qualified":["US 01"],"nodes":{}}`, chatgptavailable.ProfileID))
+		writeMainTestFile(t, candidate, fmt.Sprintf(`{"version":8,"profile":%q,"updated_at":"new","qualified":["US 01"],"nodes":{}}`, chatgptavailable.ProfileID))
 		return chatgptavailable.Result{Profile: chatgptavailable.ProfileID, SnapshotPath: candidate, Qualified: []string{"US 01"}, QualifiedCount: 1}, nil
 	}
 
@@ -745,7 +745,7 @@ func TestRunProductSubscriptionRefreshRebuildsTemplateOwnedGroupsBeforeCapabilit
 		if !reflect.DeepEqual(eligible, []string{"US 01"}) {
 			t.Fatalf("eligible = %v", eligible)
 		}
-		writeMainTestFile(t, candidate, fmt.Sprintf(`{"version":7,"profile":%q,"updated_at":"now","qualified":["US 01"],"nodes":{}}`, chatgptavailable.ProfileID))
+		writeMainTestFile(t, candidate, fmt.Sprintf(`{"version":8,"profile":%q,"updated_at":"now","qualified":["US 01"],"nodes":{}}`, chatgptavailable.ProfileID))
 		return chatgptavailable.Result{Profile: chatgptavailable.ProfileID, SnapshotPath: candidate, Qualified: []string{"US 01"}, QualifiedCount: 1}, nil
 	}
 

@@ -80,8 +80,8 @@ func TestRebuildPublishesOnlyQualifiedNodes(t *testing.T) {
 	if !strings.Contains(string(data), `"profile": "openai.chatgpt.oauth_statsig.v1"`) {
 		t.Fatalf("snapshot missing profile: %s", data)
 	}
-	if !strings.Contains(string(data), `"version": 7`) || !strings.Contains(string(data), `"qualified": [`) || !strings.Contains(string(data), `"oauth_admission_status": "region_supported"`) || !strings.Contains(string(data), `"oauth_error_code": "token_expired"`) || !strings.Contains(string(data), `"statsig_status": "reachable"`) || !strings.Contains(string(data), `"statsig_country": "US"`) {
-		t.Fatalf("snapshot missing v7 qualified nodes and OAuth plus Statsig evidence: %s", data)
+	if !strings.Contains(string(data), `"version": 8`) || !strings.Contains(string(data), `"qualified": [`) || !strings.Contains(string(data), `"oauth_admission_status": "region_supported"`) || !strings.Contains(string(data), `"oauth_error_code": "token_expired"`) || !strings.Contains(string(data), `"statsig_status": "reachable"`) || !strings.Contains(string(data), `"statsig_country": "US"`) {
+		t.Fatalf("snapshot missing v8 qualified nodes and OAuth plus Statsig evidence: %s", data)
 	}
 	qualified, err := LoadQualified(snapshotPath)
 	if err != nil {
@@ -290,6 +290,7 @@ func TestReadSnapshotTreatsLegacyQualificationsAsAbsent(t *testing.T) {
 		{name: "statsig-v5", version: 5, profile: "openai.chatgpt.statsig.v1"},
 		{name: "oauth-v6", version: 6, profile: "openai.chatgpt.oauth_token.v1"},
 		{name: "intersection-v6", version: 6, profile: ProfileID},
+		{name: "domain-only-v7", version: 7, profile: ProfileID},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -312,6 +313,9 @@ func TestReadSnapshotTreatsLegacyQualificationsAsAbsent(t *testing.T) {
 			if exists || snapshot.Nodes != nil {
 				t.Fatalf("legacy snapshot = %+v, exists=%v; want absent migration baseline", snapshot, exists)
 			}
+			if _, err := LoadQualified(path); err == nil || !strings.Contains(err.Error(), "run subscription refresh") {
+				t.Fatalf("legacy qualification must require refresh: %v", err)
+			}
 		})
 	}
 }
@@ -324,10 +328,35 @@ func TestLoadQualifiedRequiresCurrentSnapshot(t *testing.T) {
 	}
 }
 
+func TestRebuildPersistsIPRejectionEvidence(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "chatgpt.json")
+	ip := &IPVerification{
+		RegionRejected: true,
+		Resolutions:    []IPResolution{{Endpoint: "oauth", Host: "auth.openai.com", Family: "ipv4", Addresses: []string{"192.0.2.1"}, Attempts: 1}},
+		Paths:          []IPPathObservation{{Endpoint: "oauth", Host: "auth.openai.com", Family: "ipv4", Address: "192.0.2.1", Status: oauthRegionUnsupported, Attempts: 1, HTTPStatus: 403, ErrorCode: oauthRegionUnsupported}},
+	}
+	proxies := []map[string]any{{"name": "HK", "type": "ss", "server": "example.com"}}
+	_, err := Rebuild(context.Background(), proxies, fakeProber{observations: map[string]Observation{
+		"HK": {ServiceRejected: true, IPVerification: ip},
+	}}, Options{SnapshotPath: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot, exists, err := readSnapshot(path)
+	if err != nil || !exists || len(snapshot.Qualified) != 0 {
+		t.Fatalf("snapshot = %+v, exists=%v err=%v", snapshot, exists, err)
+	}
+	for _, node := range snapshot.Nodes {
+		if !node.ServiceRejected || !reflect.DeepEqual(node.IPVerification, ip) {
+			t.Fatalf("lost IP rejection evidence: %+v", node)
+		}
+	}
+}
+
 func TestLoadQualifiedRejectsMalformedCurrentSnapshot(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "chatgpt.json")
 	data := `{
-  "version": 7,
+  "version": 8,
   "profile": "openai.chatgpt.oauth_statsig.v1",
   "updated_at": "2026-08-15T00:00:00Z",
   "qualified": ["US 01", "US 01"],

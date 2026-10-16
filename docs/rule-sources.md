@@ -51,14 +51,24 @@ capability rebuilt by `subscriptions_refresh`; it derives its nodes by
 posting a dummy refresh token to `https://auth.openai.com/oauth/token` through an
 isolated temporary Mihomo while also initializing Statsig at
 `https://ab.chatgpt.com/v1/initialize`. Its candidate set is the complete
-selectable subscription. A node qualifies only when both measurements pass.
+selectable subscription. A node must first pass both domain measurements, then
+pass both measurements through IP targets in at least one common address family.
+The candidate dynamically resolves A/AAAA through Cloudflare DNS over HTTPS
+using its own proxy, then probes every returned address while retaining the
+original HTTP Host, TLS SNI and certificate verification. No CDN address or
+node-name country blacklist is embedded in the check. An explicit regional
+rejection on any tested IP vetoes qualification even if another path passes.
 HTTP 401 with `error.code=token_expired` passes the OAuth measurement because
 the request passed the regional gate before the dummy token was rejected. HTTP
 403 with `error.code=unsupported_country_region_territory` rejects the node
 immediately. Statsig requires HTTP 200, Brotli JSON, and a non-empty
 `derived_fields.country`. OAuth and Statsig run independently for every candidate;
 other HTTP errors, malformed responses, connection failures, and timeouts are
-retried once per measurement and never qualify a node. There is no failure
+retried once per measurement and cannot provide positive admission. Such errors
+on IPv6 do not discard a valid IPv4 pair; they remain in the per-path evidence.
+Snapshot v8 stores resolution, target family/address, attempts, HTTP status,
+error code and country for each IP measurement. Older domain-only snapshots
+are treated as absent and must be refreshed. There is no failure
 hysteresis. A completed probe with no qualified nodes publishes an
 explicit empty capability result. Infrastructure, missing, and malformed
 snapshot errors fail explicitly. A `capability` group
