@@ -41,6 +41,8 @@ Verification:
 - 合併後完整 Go 測試、go vet、建置與 MCP 回歸通過；舊 handler 對照可重現原缺陷。
 - iStoreOS QEMU 同一 workspace 從官方 v0.1.98 升級，使用真實 v8 能力快照，
   MCP 補丁管理、過期草稿拒絕、快照缺失保留原設定及恢復重試通過；Smart 實載 12 名與快照一致。
+- [Release CI](https://github.com/qoli/localClash/actions/runs/38844462328)、7 項公開資產校驗與
+  雙架構來源 commit 核對通過；官方 amd64 binary／base assets 已在同一 VM 完成 MCP 與核心回驗。
 - 本輪選測範圍通過；兩個訂閱來源刷新失敗，完整功能列維持 PARTIAL。
   真實零合格節點、Meta 與 hot reload 未重跑，詳見 [E30 驗收紀錄](istoreos-test-features.md#e30)。
 

@@ -70,10 +70,10 @@
 | 功能 ID | 功能／驗證內容 | 責任／核心範圍 | 最後實測版本；結果；證據 |
 | --- | --- | --- | --- |
 | CONFIG-TEMPLATE | **策略模板設定**：選取完整預設或 minimal 模板、配置 profile，產生相應補丁及 intent；重設模板只依明示選項處理既有補丁，不默默覆蓋自訂設定。[實作入口](../product_cli.go) | Core／共用 | v0.1.97／不適用；PARTIAL；同一 qcow2 從 v0.1.96 正式 workspace 升級，完整預設模板同步加入 DegYax 並保留 user-owned custom-site 狀態；minimal 未重跑 [E27](#e27)；其他歷史範圍見 [E15](#e15) [E20](#e20) |
-| CONFIG-PATCHES | **配置補丁管理**：讀取、預覽、套用、移除、啟停及排序補丁；預覽不落盤，套用後 registry／intent 一致，失效草稿或非法引用明確拒絕。[實作入口](../product_cli.go) | Core／共用 | v0.1.99 候選 `2817ab6`／不適用；PARTIAL（MCP／能力快照範圍）；同一 v0.1.98 workspace 升級，無關 DIRECT 補丁新增／修改／移除／啟停／排序及 fresh MCP 讀回通過；過期草稿、缺快照保留原設定及恢復重試通過；真實零合格節點未測 [E30](#e30)；完整歷史範圍保留 [E05](#e05) |
-| CONFIG-RENDER | **Mihomo 配置生成**：由訂閱、模板、補丁與 profile 生成正確配置。Meta 自動組為 url-test，Smart 為 smart 並移除 tolerance；Smart 參數、群組 priority 與 defaults 按 intent 傳遞且不覆蓋既有值；生成不等於已載入。[實作入口](../product_cli.go) | Core／按核心差異 | v0.1.99 候選 `2817ab6`／不適用；PARTIAL（Smart／MCP 能力群組範圍）；公開 v0.1.98 workspace 升級，保留真實 v8／12 名快照並生成 Smart 配置；未展開模板／參數完整契約 [E30](#e30)；先前實測版本與完整矩陣見 [E29](#e29) [E28](#e28) [E27](#e27) [E16](#e16) [E21](#e21) |
-| CONFIG-VALIDATION | **配置驗證**：用所選核心驗證生成配置，記錄對應 hash；非法配置不取得通過證明；驗證與活躍程序隔離，不爭用工作目錄。[實作入口](../product_cli.go) | Core／按核心差異 | v0.1.99 候選 `2817ab6`／不適用；PARTIAL（Smart／MCP 能力群組範圍）；MCP patch apply 與正式 isolated config-test／attestation 通過；本輪未重跑非法配置／Meta 類別 [E30](#e30)；歷史範圍 [E29](#e29) [E28](#e28) [E27](#e27) [E16](#e16) [E21](#e21) |
-| CONFIG-APPLY | **配置套用**：按所選入口核對候選檔提交或 runtime 載入；config-promote 是其中一個檔案提交入口，不是所有流程的前置。驗證 hash、實際載入規則／組及失敗結果符合契約，提交檔案不當成已熱載入，生成檔存在不當成已生效。[實作入口](../product_cli.go) | Core／按核心差異 | v0.1.99 候選 `2817ab6`／不適用；PARTIAL（Smart／MCP 能力群組範圍）；MCP patch 提交及 runtime start 後，controller Smart 12 名與保留的真實 v8 快照一致，主代理獨立讀回；未展開 hot reload／停止狀態契約 [E30](#e30)；歷史範圍 [E29](#e29) [E28](#e28) [E27](#e27) [E15](#e15) |
+| CONFIG-PATCHES | **配置補丁管理**：讀取、預覽、套用、移除、啟停及排序補丁；預覽不落盤，套用後 registry／intent 一致，失效草稿或非法引用明確拒絕。[實作入口](../product_cli.go) | Core／共用 | v0.1.99／不適用；PARTIAL（MCP／能力快照範圍）；同一 v0.1.98 workspace 升級，候選完成無關 DIRECT 補丁新增／修改／移除／啟停／排序、過期草稿與缺快照恢復；官方 binary 草稿／套用及 fresh MCP 持久讀回通過；真實零合格節點未測 [E30](#e30)；完整歷史範圍保留 [E05](#e05) |
+| CONFIG-RENDER | **Mihomo 配置生成**：由訂閱、模板、補丁與 profile 生成正確配置。Meta 自動組為 url-test，Smart 為 smart 並移除 tolerance；Smart 參數、群組 priority 與 defaults 按 intent 傳遞且不覆蓋既有值；生成不等於已載入。[實作入口](../product_cli.go) | Core／按核心差異 | v0.1.99／不適用；PARTIAL（Smart／MCP 能力群組範圍）；公開 v0.1.98 workspace 升級，候選與官方 binary 均保留真實 v8／12 名快照並生成 Smart 配置；未展開模板／參數完整契約 [E30](#e30)；先前實測版本與完整矩陣見 [E29](#e29) [E28](#e28) [E27](#e27) [E16](#e16) [E21](#e21) |
+| CONFIG-VALIDATION | **配置驗證**：用所選核心驗證生成配置，記錄對應 hash；非法配置不取得通過證明；驗證與活躍程序隔離，不爭用工作目錄。[實作入口](../product_cli.go) | Core／按核心差異 | v0.1.99／不適用；PARTIAL（Smart／MCP 能力群組範圍）；候選與官方 binary 的 MCP draft／apply 及正式 isolated config-test／attestation 通過；本輪未重跑非法配置／Meta 類別 [E30](#e30)；歷史範圍 [E29](#e29) [E28](#e28) [E27](#e27) [E16](#e16) [E21](#e21) |
+| CONFIG-APPLY | **配置套用**：按所選入口核對候選檔提交或 runtime 載入；config-promote 是其中一個檔案提交入口，不是所有流程的前置。驗證 hash、實際載入規則／組及失敗結果符合契約，提交檔案不當成已熱載入，生成檔存在不當成已生效。[實作入口](../product_cli.go) | Core／按核心差異 | v0.1.99／不適用；PARTIAL（Smart／MCP 能力群組範圍）；候選與官方 binary 的 MCP patch 提交及 runtime start 後，controller Smart 12 名與保留的真實 v8 快照一致，主代理獨立讀回；未展開 hot reload／停止狀態契約 [E30](#e30)；歷史範圍 [E29](#e29) [E28](#e28) [E27](#e27) [E15](#e15) |
 
 <a id="cores"></a>
 ## 核心管理
@@ -941,7 +941,18 @@ CONFIG-RENDER／VALIDATION／APPLY 能力快照範圍。候選 commit
   沒有把沿用矩陣記成候選新測。首次 QEMU socket 路徑過長及訂閱來源失敗均保留。
 - 本輪受影響範圍通過；全部來源成功、真實零合格節點、Meta、hot reload／停止狀態、
   LuCI 一鍵更新／接管及完整 ARM64 runtime 未涵蓋，完整功能列維持 **PARTIAL**。
-  公開 v0.1.99 官方 binary／base assets 的同 workspace 回驗待發布後補記。
+- [Release workflow 38844462328](https://github.com/qoli/localClash/actions/runs/38844462328)
+  通過；公開 tag commit `39f3916029698d6f711df8825e1a33d400e15e97` 與候選僅有兩份文件差異。
+  7 項公開資產 digest／sidecar／manifest、雙架構 Go 1.24.13 clean revision 及
+  18 份靜態 base files 逐檔校驗一致。
+- 官方 amd64 binary（SHA `0212d2c3…ad8117`）及 base assets（SHA `a68fbfd2…99558`）
+  在同一 workspace 替換後，fresh MCP draft／apply（皆 `test=true`）、正式 render、
+  isolated Smart config-test 及 runtime restart 通過；registry／patch hashes 與真實快照均保留。
+  主代理另行 SSH 核對 binary／四份 GeoX 與公開資產相符，fresh MCP 持久讀回及直接 controller
+  Smart 12 名集合與原快照一致。首次 BusyBox 缺少 `install` 的測試拷貝錯誤保留，改用
+  `cp`／`chmod` 後回驗；這是測試環境操作，未改產品安裝入口。
+- 本輪 runtime／MCP／QEMU、disposable overlay 與私密輸入已清理；主代理獨立確認
+  SSH／LuCI／MCP／controller 轉發 port 均關閉。原持久 QEMU 與正式路由器保留。
 
 <a id="pending-incidents"></a>
 ## 待核對事故與證據缺口
