@@ -18,8 +18,38 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
-| localClash Core | [v0.1.97](https://github.com/qoli/localClash/releases/tag/v0.1.97) | 2026-10-09 UTC+8 |
+| localClash Core | [v0.1.98](https://github.com/qoli/localClash/releases/tag/v0.1.98) | 2026-10-16 UTC+8 |
 | localclash-luci | [v0.1.0-85](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-85) | 2026-10-03 UTC+8 |
+
+## 2026-10-16
+
+### localClash Core v0.1.98
+
+Changes:
+
+- ChatGPT-available 增加保留 Host／TLS SNI 的 IP 路徑驗證，明確地區拒絕即剔除，
+  修正域名探測通過、手機卻顯示地區不支援的假陽性。
+- 動態解析並驗證 IPv4／IPv6；IPv6 傳輸失敗時，仍可由有效 IPv4 保留出口。
+- 資格快照升至 v8；更新 Core 後請刷新訂閱，重建 ChatGPT-available 分組。
+
+Release:
+
+[localClash v0.1.98](https://github.com/qoli/localClash/releases/tag/v0.1.98)
+
+Verification:
+
+- [Core Release workflow 38836419656](https://github.com/qoli/localClash/actions/runs/38836419656)
+  在 `9803a82` 通過 Linux 全套測試、雙架構建置與發布；7 項公開資產重新下載後，
+  GitHub digest、三份 sidecar、manifest size／SHA-256 全部一致，兩架構 build revision
+  都是該 tag commit，`vcs.modified=false`。Manifest SHA 為 `5a69f044…aba85`。
+- WireGuard 裸 WAN 完整 52 名／156 例獨立 curl 證據與本輪三份產品程式 SHA 相同；
+  同一 QEMU workspace 另由官方 v0.1.97 建立 v7／52 名，再升級候選重建 v8／36 名。
+  HK／TW 拒絕、US IPv4-only 與雙協定 12 例外部對照及停止／恢復敏感度通過。
+- 官方 Go 1.24.13 amd64 binary 與 base assets 已在同一 VM 正式刷新、生成、驗證及啟動；
+  v8 與 controller 均為 35 名，16 個 IP 地區拒絕與候選一致，另 1 名因域名 OAuth 逾時剔除。
+  後續 6 例獨立 curl 確認香港 IP 雙協定拒絕、美國 domain／IPv4 恢復正向，保留原始結果。
+- 來源 02 HTTP 403，全部來源成功情境未驗；完整功能列保持 **PARTIAL**。
+  手機登入／實際對話與完整 ARM64 runtime 驗收未涵蓋，詳見 [E29](istoreos-test-features.md#e29)。
 
 ## 2026-10-09
 
