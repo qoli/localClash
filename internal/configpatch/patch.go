@@ -131,24 +131,25 @@ type GetResult struct {
 }
 
 type DraftOptions struct {
-	RegistryDir         string
-	PolicyTemplate      string
-	ConfigPath          string
-	SelectionPath       string
-	OutputPath          string
-	Subscription        string
-	SubscriptionConfig  string
-	SubscriptionRuntime string
-	RulesCache          string
-	RuntimeProfilePath  string
-	ValidationCache     string
-	CorePath            string
-	WorkDir             string
-	DraftName           string
-	Operations          []Operation
-	Test                bool
-	Generation          int64
-	Now                 time.Time
+	RegistryDir            string
+	PolicyTemplate         string
+	ConfigPath             string
+	SelectionPath          string
+	OutputPath             string
+	Subscription           string
+	SubscriptionConfig     string
+	SubscriptionRuntime    string
+	RulesCache             string
+	RuntimeProfilePath     string
+	ValidationCache        string
+	CorePath               string
+	WorkDir                string
+	DraftName              string
+	Operations             []Operation
+	Test                   bool
+	Generation             int64
+	Now                    time.Time
+	ResolveCapabilityNodes func(localconfig.Config) (map[string][]string, error)
 }
 
 type DraftResult struct {
@@ -180,26 +181,27 @@ type Impact struct {
 }
 
 type ApplyOptions struct {
-	RegistryDir         string
-	PolicyTemplate      string
-	ConfigPath          string
-	SelectionPath       string
-	OutputPath          string
-	Subscription        string
-	SubscriptionConfig  string
-	SubscriptionRuntime string
-	RulesCache          string
-	RuntimeProfilePath  string
-	ValidationCache     string
-	CorePath            string
-	WorkDir             string
-	BackupDir           string
-	Operations          []Operation
-	BaseHashes          map[string]string
-	BaseRegistryHash    string
-	Test                bool
-	Generation          int64
-	Now                 time.Time
+	RegistryDir            string
+	PolicyTemplate         string
+	ConfigPath             string
+	SelectionPath          string
+	OutputPath             string
+	Subscription           string
+	SubscriptionConfig     string
+	SubscriptionRuntime    string
+	RulesCache             string
+	RuntimeProfilePath     string
+	ValidationCache        string
+	CorePath               string
+	WorkDir                string
+	BackupDir              string
+	Operations             []Operation
+	BaseHashes             map[string]string
+	BaseRegistryHash       string
+	Test                   bool
+	Generation             int64
+	Now                    time.Time
+	ResolveCapabilityNodes func(localconfig.Config) (map[string][]string, error)
 }
 
 type ApplyResult struct {
@@ -243,24 +245,25 @@ type ApplyTransactionResult struct {
 }
 
 type ImportTemplateOptions struct {
-	RegistryDir         string
-	PolicyTemplatesDir  string
-	PolicyTemplate      string
-	ResetPatches        bool
-	RefreshTemplateOnly bool
-	ConfigPath          string
-	SelectionPath       string
-	OutputPath          string
-	Subscription        string
-	SubscriptionConfig  string
-	SubscriptionRuntime string
-	RulesCache          string
-	RuntimeProfilePath  string
-	CorePath            string
-	WorkDir             string
-	ValidationCache     string
-	SkipArtifactBuild   bool
-	Now                 time.Time
+	RegistryDir            string
+	PolicyTemplatesDir     string
+	PolicyTemplate         string
+	ResetPatches           bool
+	RefreshTemplateOnly    bool
+	ConfigPath             string
+	SelectionPath          string
+	OutputPath             string
+	Subscription           string
+	SubscriptionConfig     string
+	SubscriptionRuntime    string
+	RulesCache             string
+	RuntimeProfilePath     string
+	CorePath               string
+	WorkDir                string
+	ValidationCache        string
+	SkipArtifactBuild      bool
+	Now                    time.Time
+	ResolveCapabilityNodes func(localconfig.Config) (map[string][]string, error)
 }
 
 type ImportTemplateResult struct {
@@ -978,28 +981,38 @@ func verifyBaseHashes(registry Registry, hashes map[string]string) error {
 }
 
 type buildOptions struct {
-	ConfigPath          string
-	SelectionPath       string
-	OutputPath          string
-	Subscription        string
-	SubscriptionConfig  string
-	SubscriptionRuntime string
-	RulesCache          string
-	RuntimeProfilePath  string
-	ValidationCache     string
-	CorePath            string
-	WorkDir             string
-	Test                bool
-	TempOnly            bool
+	ConfigPath             string
+	SelectionPath          string
+	OutputPath             string
+	Subscription           string
+	SubscriptionConfig     string
+	SubscriptionRuntime    string
+	RulesCache             string
+	RuntimeProfilePath     string
+	ValidationCache        string
+	CorePath               string
+	WorkDir                string
+	ResolveCapabilityNodes func(localconfig.Config) (map[string][]string, error)
+	Test                   bool
+	TempOnly               bool
 }
 
 func buildArtifacts(ctx context.Context, config localconfig.Config, opts buildOptions) (BuildResult, error) {
 	result := BuildResult{}
+	var capabilityNodes map[string][]string
+	if opts.ResolveCapabilityNodes != nil {
+		var err error
+		capabilityNodes, err = opts.ResolveCapabilityNodes(config)
+		if err != nil {
+			return result, err
+		}
+	}
 	resolved, err := localconfig.Resolve(localconfig.ResolveOptions{
 		Config:              config,
 		SubscriptionPath:    opts.Subscription,
 		SubscriptionConfig:  opts.SubscriptionConfig,
 		SubscriptionRuntime: opts.SubscriptionRuntime,
+		CapabilityNodes:     capabilityNodes,
 		RulesCache:          opts.RulesCache,
 	})
 	if err != nil {
@@ -1960,55 +1973,58 @@ func normalizeImportOptions(opts ImportTemplateOptions) ImportTemplateOptions {
 
 func buildOptionsFromDraft(opts DraftOptions, finalPaths bool) buildOptions {
 	return buildOptions{
-		ConfigPath:          opts.ConfigPath,
-		SelectionPath:       opts.SelectionPath,
-		OutputPath:          opts.OutputPath,
-		Subscription:        opts.Subscription,
-		SubscriptionConfig:  opts.SubscriptionConfig,
-		SubscriptionRuntime: opts.SubscriptionRuntime,
-		RulesCache:          opts.RulesCache,
-		RuntimeProfilePath:  opts.RuntimeProfilePath,
-		ValidationCache:     opts.ValidationCache,
-		CorePath:            opts.CorePath,
-		WorkDir:             opts.WorkDir,
-		Test:                opts.Test,
-		TempOnly:            !finalPaths,
+		ConfigPath:             opts.ConfigPath,
+		SelectionPath:          opts.SelectionPath,
+		OutputPath:             opts.OutputPath,
+		Subscription:           opts.Subscription,
+		SubscriptionConfig:     opts.SubscriptionConfig,
+		SubscriptionRuntime:    opts.SubscriptionRuntime,
+		RulesCache:             opts.RulesCache,
+		RuntimeProfilePath:     opts.RuntimeProfilePath,
+		ValidationCache:        opts.ValidationCache,
+		CorePath:               opts.CorePath,
+		WorkDir:                opts.WorkDir,
+		ResolveCapabilityNodes: opts.ResolveCapabilityNodes,
+		Test:                   opts.Test,
+		TempOnly:               !finalPaths,
 	}
 }
 
 func buildOptionsFromApply(opts ApplyOptions, finalPaths bool) buildOptions {
 	return buildOptions{
-		ConfigPath:          opts.ConfigPath,
-		SelectionPath:       opts.SelectionPath,
-		OutputPath:          opts.OutputPath,
-		Subscription:        opts.Subscription,
-		SubscriptionConfig:  opts.SubscriptionConfig,
-		SubscriptionRuntime: opts.SubscriptionRuntime,
-		RulesCache:          opts.RulesCache,
-		RuntimeProfilePath:  opts.RuntimeProfilePath,
-		ValidationCache:     opts.ValidationCache,
-		CorePath:            opts.CorePath,
-		WorkDir:             opts.WorkDir,
-		Test:                opts.Test,
-		TempOnly:            !finalPaths,
+		ConfigPath:             opts.ConfigPath,
+		SelectionPath:          opts.SelectionPath,
+		OutputPath:             opts.OutputPath,
+		Subscription:           opts.Subscription,
+		SubscriptionConfig:     opts.SubscriptionConfig,
+		SubscriptionRuntime:    opts.SubscriptionRuntime,
+		RulesCache:             opts.RulesCache,
+		RuntimeProfilePath:     opts.RuntimeProfilePath,
+		ValidationCache:        opts.ValidationCache,
+		CorePath:               opts.CorePath,
+		WorkDir:                opts.WorkDir,
+		ResolveCapabilityNodes: opts.ResolveCapabilityNodes,
+		Test:                   opts.Test,
+		TempOnly:               !finalPaths,
 	}
 }
 
 func buildOptionsFromImport(opts ImportTemplateOptions) buildOptions {
 	return buildOptions{
-		ConfigPath:          opts.ConfigPath,
-		SelectionPath:       opts.SelectionPath,
-		OutputPath:          opts.OutputPath,
-		Subscription:        opts.Subscription,
-		SubscriptionConfig:  opts.SubscriptionConfig,
-		SubscriptionRuntime: opts.SubscriptionRuntime,
-		RulesCache:          opts.RulesCache,
-		RuntimeProfilePath:  opts.RuntimeProfilePath,
-		ValidationCache:     opts.ValidationCache,
-		CorePath:            opts.CorePath,
-		WorkDir:             opts.WorkDir,
-		Test:                false,
-		TempOnly:            false,
+		ConfigPath:             opts.ConfigPath,
+		SelectionPath:          opts.SelectionPath,
+		OutputPath:             opts.OutputPath,
+		Subscription:           opts.Subscription,
+		SubscriptionConfig:     opts.SubscriptionConfig,
+		SubscriptionRuntime:    opts.SubscriptionRuntime,
+		RulesCache:             opts.RulesCache,
+		RuntimeProfilePath:     opts.RuntimeProfilePath,
+		ValidationCache:        opts.ValidationCache,
+		CorePath:               opts.CorePath,
+		WorkDir:                opts.WorkDir,
+		ResolveCapabilityNodes: opts.ResolveCapabilityNodes,
+		Test:                   false,
+		TempOnly:               false,
 	}
 }
 

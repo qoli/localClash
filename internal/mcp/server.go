@@ -1572,6 +1572,7 @@ func (s *Server) callConfigPatchDraft(ctx context.Context, args json.RawMessage)
 		Test                 *bool
 		Core                 string
 		RuntimeDir           string
+		CapabilityRoot       string
 	}{
 		DraftName:  req.DraftName,
 		Operations: req.Operations,
@@ -1606,6 +1607,9 @@ func (s *Server) callConfigPatchDraft(ctx context.Context, args json.RawMessage)
 		if in.RuntimeDir == "" {
 			in.RuntimeDir = s.state.Paths.MihomoRuntimeDir
 		}
+		if in.CapabilityRoot == "" && s.state.Paths.RuntimeRoot != "" {
+			in.CapabilityRoot = filepath.Join(s.state.Paths.RuntimeRoot, "capabilities")
+		}
 	}
 	setDefault(&in.PatchesDir, workspacePath(root, configpatch.RegistryDirName))
 	setDefault(&in.ConfigPath, workspacePath(root, "localclash-intent.json"))
@@ -1617,6 +1621,7 @@ func (s *Server) callConfigPatchDraft(ctx context.Context, args json.RawMessage)
 	setDefault(&in.Selection, workspacePath(root, "localclash-packs.gob"))
 	setDefault(&in.Output, workspacePath(root, filepath.Join(".runtime", "mihomo", "config.yaml")))
 	setDefault(&in.RuntimeDir, workspacePath(root, filepath.Join(".runtime", "mihomo")))
+	setDefault(&in.CapabilityRoot, workspacePath(root, filepath.Join(".runtime", "capabilities")))
 	setDefault(&in.ValidationCache, validationCachePath(in.ValidationCache, in.RuntimeDir))
 	if s.state != nil {
 		in.Core = normalizeMCPStateCorePath(s.state, in.Core)
@@ -1645,6 +1650,9 @@ func (s *Server) callConfigPatchDraft(ctx context.Context, args json.RawMessage)
 		Operations:          in.Operations,
 		Test:                test,
 		Generation:          generation,
+		ResolveCapabilityNodes: func(cfg localconfig.Config) (map[string][]string, error) {
+			return configuredCapabilityNodesFromSnapshot(cfg, in.CapabilityRoot)
+		},
 	})
 	if err != nil {
 		return toolResult{}, err
@@ -1695,6 +1703,7 @@ func (s *Server) callConfigPatchApply(ctx context.Context, args json.RawMessage)
 		Test                 *bool
 		Core                 string
 		RuntimeDir           string
+		CapabilityRoot       string
 	}{
 		UseCurrentDraft:  req.UseCurrentDraft,
 		Generation:       req.Generation,
@@ -1736,6 +1745,9 @@ func (s *Server) callConfigPatchApply(ctx context.Context, args json.RawMessage)
 		if in.RuntimeDir == "" {
 			in.RuntimeDir = s.state.Paths.MihomoRuntimeDir
 		}
+		if in.CapabilityRoot == "" && s.state.Paths.RuntimeRoot != "" {
+			in.CapabilityRoot = filepath.Join(s.state.Paths.RuntimeRoot, "capabilities")
+		}
 	}
 	setDefault(&in.PatchesDir, workspacePath(root, configpatch.RegistryDirName))
 	setDefault(&in.Subscription, workspacePath(root, "subscription.gob"))
@@ -1747,6 +1759,7 @@ func (s *Server) callConfigPatchApply(ctx context.Context, args json.RawMessage)
 	setDefault(&in.Selection, workspacePath(root, "localclash-packs.gob"))
 	setDefault(&in.Output, workspacePath(root, filepath.Join(".runtime", "mihomo", "config.yaml")))
 	setDefault(&in.RuntimeDir, workspacePath(root, filepath.Join(".runtime", "mihomo")))
+	setDefault(&in.CapabilityRoot, workspacePath(root, filepath.Join(".runtime", "capabilities")))
 	setDefault(&in.BackupDir, workspacePath(root, filepath.Join(".runtime", "backups", "config-patch-apply")))
 	if s.state != nil {
 		in.Core = normalizeMCPStateCorePath(s.state, in.Core)
@@ -1784,6 +1797,9 @@ func (s *Server) callConfigPatchApply(ctx context.Context, args json.RawMessage)
 		BaseRegistryHash:    in.BaseRegistryHash,
 		Test:                test,
 		Generation:          in.Generation,
+		ResolveCapabilityNodes: func(cfg localconfig.Config) (map[string][]string, error) {
+			return configuredCapabilityNodesFromSnapshot(cfg, in.CapabilityRoot)
+		},
 	})
 	if err != nil {
 		if in.UseCurrentDraft && strings.Contains(err.Error(), "stale") {
