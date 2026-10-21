@@ -18,8 +18,36 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
-| localClash Core | [v0.1.99](https://github.com/qoli/localClash/releases/tag/v0.1.99) | 2026-10-16 UTC+8 |
+| localClash Core | [v0.1.101](https://github.com/qoli/localClash/releases/tag/v0.1.101) | 2026-10-21 UTC+8 |
 | localclash-luci | [v0.1.0-85](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-85) | 2026-10-03 UTC+8 |
+
+## 2026-10-21
+
+### localClash Core v0.1.101
+
+Changes:
+
+- 修復兩條以上單節點 URI 在 LuCI 訂閱設定欄消失，以及再次保存不完整清單可能移除節點的問題。
+  訂閱 URL 與節點連結混用時，現在完整讀回全部來源，保留原有分組及去重行為。
+- 修正手動發布流程的建置順序；本版取代已公開但建置標記為 dirty 的
+  [v0.1.100](https://github.com/qoli/localClash/releases/tag/v0.1.100)，訂閱修正程式相同。
+- 只需更新 Core；本次沒有 LuCI package 變更。已被不完整清單覆寫移除的來源，需從原始連結或備份補回。
+
+Release:
+
+[localClash v0.1.101](https://github.com/qoli/localClash/releases/tag/v0.1.101)
+
+Verification:
+
+- 完整 Go 測試、go vet 及五組隔離 CLI 保存／讀回／再次保存／刷新回歸通過。
+- 同一 iStoreOS QEMU workspace 從官方 v0.1.99 升級修正候選，真 LuCI 保存、重複保存、
+  重新開頁、fresh-process 刷新及 guest 重啟後，3 個真實訂閱來源與清單 hash 均保留。
+- [Release CI](https://github.com/qoli/localClash/actions/runs/39613919549)、7 項公開資產 digest／sidecar／manifest
+  與 18 份靜態 base files 校驗通過；雙架構 Go 1.24.13 binary 均對應 tag commit `215edf2`，`vcs.modified=false`。
+- 官方 amd64 binary 已在同一 VM 完成 Get／status、LuCI 重開與 10 項 doctor 檢查；
+  主代理獨立核對頁面、來源檔與公開 binary，來源內容保持一致。
+- 功能列維持 **PARTIAL**：正式路由器沒有手動節點 URI，兩條以上連結的缺陷場景只有主機回歸；
+  來源 02 HTTP 403，全部來源成功、完整增改刪／非法輸入與 ARM64 runtime 未涵蓋，詳見 [E31](istoreos-test-features.md#e31)。
 
 ## 2026-10-16
 

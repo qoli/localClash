@@ -49,8 +49,8 @@
 
 | 功能 ID | 功能／驗證內容 | 責任／核心範圍 | 最後實測版本；結果；證據 |
 | --- | --- | --- | --- |
-| SUB-MANAGEMENT | **訂閱來源管理**：設定、修改及移除來源後能重新讀取；支援訂閱 URL 與節點 URI，非法／空白輸入按入口契約拒絕，原有效來源不被誤清空。[實作入口](../product_cli.go) | Core／共用 | v0.1.100／v0.1.0-85；PARTIAL（Get／來源保存範圍）；同一官方 v0.1.99 workspace 升級，真實 3 個 URL 經 LuCI 保存／重複保存／重開頁、fresh-process 刷新及重啟後完整讀回；真實多節點 URI、完整增改刪／非法輸入未測 [E31](#e31)；完整歷史範圍保留原版本 [E05](#e05) |
-| SUB-REFRESH | **訂閱取得與刷新**：取得並解析多來源、合併節點及重建已配置的服務能力篩選材料（如 ChatGPT 可用節點）；來源失敗如實呈現，有有效來源與全部無效的結果不同；失敗保留合法材料。保存來源與刷新生效分別讀回。[實作入口](../product_cli.go) | Core／共用 | v0.1.100／v0.1.0-85；PARTIAL（Get／來源保存範圍）；同一官方 v0.1.99 workspace 升級，fresh-process 刷新及重啟保留 3 個來源；01／03 成功、02 HTTP 403 無有效 cache，合併 106 proxies；全部來源成功及真實節點 URI 未測 [E31](#e31)；資格快照升級／35 名讀回及 52 名／156 例矩陣維持原實測版本 [E29](#e29) [E28](#e28)；歷史範圍 [E12](#e12) [E14](#e14) |
+| SUB-MANAGEMENT | **訂閱來源管理**：設定、修改及移除來源後能重新讀取；支援訂閱 URL 與節點 URI，非法／空白輸入按入口契約拒絕，原有效來源不被誤清空。[實作入口](../product_cli.go) | Core／共用 | v0.1.101／v0.1.0-85；PARTIAL（Get／來源保存範圍）；同一官方 v0.1.99 workspace 的修正候選經 LuCI 保存／重複保存／重開頁、fresh-process 刷新及重啟保留 3 個 URL；官方 v0.1.101 binary 的 Get／LuCI 讀回一致；真實多節點 URI、完整增改刪／非法輸入未測 [E31](#e31)；完整歷史範圍保留原版本 [E05](#e05) |
+| SUB-REFRESH | **訂閱取得與刷新**：取得並解析多來源、合併節點及重建已配置的服務能力篩選材料（如 ChatGPT 可用節點）；來源失敗如實呈現，有有效來源與全部無效的結果不同；失敗保留合法材料。保存來源與刷新生效分別讀回。[實作入口](../product_cli.go) | Core／共用 | v0.1.101／v0.1.0-85；PARTIAL（Get／來源保存範圍）；修正候選 fresh-process 刷新及重啟保留 3 個來源，01／03 成功、02 HTTP 403 無有效 cache，合併 106 proxies；官方 binary 僅讀回既有結果；全部來源成功及真實節點 URI 未測 [E31](#e31)；資格快照升級／35 名讀回及 52 名／156 例矩陣維持原實測版本 [E29](#e29) [E28](#e28)；歷史範圍 [E12](#e12) [E14](#e14) |
 | SUB-NODES | **節點查詢**：列出與搜尋已取得節點，名稱／類型與來源一致，不洩漏連線憑證；查詢結果不冒充節點品質或出口地理驗證。[實作入口](../internal/mcp/registry.go) | Core／共用 | v0.1.83／不適用；PASS；MCP 列出／搜尋、來源欄位及敏感資料界線 [E05](#e05) |
 
 <a id="sites"></a>
@@ -958,7 +958,7 @@ CONFIG-RENDER／VALIDATION／APPLY 能力快照範圍。候選 commit
 ### E31
 
 2026-10-21 為 Core v0.1.100 選測 SUB-MANAGEMENT／SUB-REFRESH 的 Get 與來源保存範圍。
-候選及 tag commit `3d432c62d64f3ccaaee57682baa1ccf718f8b91a`，候選 amd64 binary
+候選與 v0.1.100 tag commit `3d432c62d64f3ccaaee57682baa1ccf718f8b91a`，候選 amd64 binary
 SHA `60425f37…98fcf1`；LuCI v0.1.0-85、iStoreOS 24.10.8 x86_64、Smart
 `alpha-smart-dc90210`（SHA `082fa511…b0ded`）。[G99 報告](../.runtime/istoreos-acceptance/20261021-v01100-subscriptions/report.md)及
 [功能摘要](../.runtime/istoreos-acceptance/20261021-v01100-subscriptions/functional-summary.json)
@@ -983,6 +983,26 @@ SHA `60425f37…98fcf1`；LuCI v0.1.0-85、iStoreOS 24.10.8 x86_64、Smart
   未重跑；SUB-NODES 缺少節點列出／搜尋及憑證界線 oracle，維持原實測版本。
 - 本輪功能列維持 **PARTIAL**。資格判定矩陣保留 [E29](#e29)／[E28](#e28) 原版本；
   Meta、LuCI 一鍵更新／接管、資料面及完整 ARM64 runtime 均未重跑。
+- v0.1.100 的手動 Release 流程在建置前 checkout `.release-tools`，令官方 amd64
+  build info 成為 `v0.1.100+dirty`／`vcs.modified=true`；下載檔與 GitHub digest 相符。
+  停止請求抵達前已公開，該 workflow 結果為 cancelled；保留公開 tag／資產，
+  另以新版本修正建置順序，不覆寫 v0.1.100。首次 metadata 與診斷保留於
+  [發布證據](../.runtime/releases/v0.1.100/first-attempt-build-metadata-diagnostic.json)。
+- 最終發布 v0.1.101，tag commit `215edf253cef2cda272a072515030485dcd9c814` 與候選
+  只有上述 workflow 差異；訂閱程式未變。[Release CI](https://github.com/qoli/localClash/actions/runs/39613919549)
+  成功。7 項公開資產的 digest／sidecar／manifest／size，以及 18 份靜態 base files
+  均核對一致；雙架構 Go 1.24.13 build revision 為該 tag，`vcs.modified=false`，詳見
+  [公開資產核對](../.runtime/releases/v0.1.101/public-assets-verification.json)。
+- 官方 amd64 binary（SHA `a9c76c90…e9835`）在同一 VM atomic 替換後，fresh-process
+  Get／status、10 項 doctor checks 與真 LuCI 重開讀回通過；3 個來源、106 proxies 及
+  來源檔 SHA `e55090e8…07dfa` 保留。主代理另從真頁面計算清單 hash，獨立 SSH 比較
+  來源檔完整值、CLI Get 與實際 binary SHA，均與公開檔一致，詳見
+  [官方讀回 oracle](../.runtime/releases/v0.1.101/parent-official-guest-oracle.json)。
+  此次官方 smoke 未替換 GeoX／base assets，也未重跑候選的保存、刷新及重啟轉移。
+- 本輪 VM 已停止，SSH／LuCI／MCP／controller 轉發 port 均關閉；停止後 clone 的
+  `qemu-img check` 無錯誤，再清理 disposable overlay 與私密輸入。原 overlay 保留，
+  主代理關閉自己建立的驗證 tab；ignored 證據保留，詳見
+  [清理紀錄](../.runtime/istoreos-acceptance/20261021-v01100-subscriptions/cleanup.json)。
 
 <a id="pending-incidents"></a>
 ## 待核對事故與證據缺口
