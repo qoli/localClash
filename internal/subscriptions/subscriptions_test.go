@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -210,6 +211,68 @@ func TestConfigureDeduplicatesURIInputs(t *testing.T) {
 		t.Fatalf("get = %+v, want two source URIs and one legacy URL", raw)
 	}
 	assertNoTokenLeak(t, result)
+}
+
+func TestGetURIsCanBeSavedWithoutLosingSources(t *testing.T) {
+	remoteA := "https://example.com/sub?token=secret-token"
+	remoteB := "https://example.net/sub?token=backup-secret"
+	vless := "vless://uuid@example.com:443?security=tls&type=tcp#VLESS"
+	trojan := "trojan://secret-token@example.net:443#Trojan"
+	tests := []struct {
+		name        string
+		input       []string
+		wantURIs    []string
+		wantURLs    []string
+		sourceCount int
+	}{
+		{
+			name: "remote subscriptions", input: []string{remoteA, remoteB},
+			wantURIs: []string{remoteA, remoteB}, wantURLs: []string{remoteA, remoteB}, sourceCount: 2,
+		},
+		{
+			name: "one inline proxy", input: []string{vless},
+			wantURIs: []string{vless}, sourceCount: 1,
+		},
+		{
+			name: "multiple inline proxies", input: []string{vless, trojan},
+			wantURIs: []string{vless, trojan}, sourceCount: 1,
+		},
+		{
+			name: "mixed sources with duplicate proxy", input: []string{vless, remoteA, trojan, remoteB, vless},
+			wantURIs: []string{remoteA, remoteB, vless, trojan}, wantURLs: []string{remoteA, remoteB}, sourceCount: 3,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := filepath.Join(t.TempDir(), "localclash-subscriptions.json")
+			configured, err := Configure(ConfigureOptions{ConfigPath: config, URIs: tt.input})
+			if err != nil {
+				t.Fatal(err)
+			}
+			assertNoTokenLeak(t, configured)
+			before := readTestFile(t, config)
+
+			result, err := Get(StatusOptions{ConfigPath: config})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !slices.Equal(result.URIs, tt.wantURIs) {
+				t.Fatalf("get uris = %q, want %q", result.URIs, tt.wantURIs)
+			}
+			if !slices.Equal(result.URLs, tt.wantURLs) {
+				t.Fatalf("legacy urls = %q, want remote subscriptions %q", result.URLs, tt.wantURLs)
+			}
+			if !result.Configured || result.Count != tt.sourceCount || len(result.Sources) != tt.sourceCount {
+				t.Fatalf("configured/count/sources = %t/%d/%d, want true/%d/%d", result.Configured, result.Count, len(result.Sources), tt.sourceCount, tt.sourceCount)
+			}
+			if _, err := Configure(ConfigureOptions{ConfigPath: config, URIs: result.URIs}); err != nil {
+				t.Fatal(err)
+			}
+			if after := readTestFile(t, config); after != before {
+				t.Fatal("saving the returned URI list changed the persisted sources")
+			}
+		})
+	}
 }
 
 func TestRefreshFetchesArtifactsAndPrefixesMultiSourceNodes(t *testing.T) {

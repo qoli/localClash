@@ -264,7 +264,9 @@ func Get(opts StatusOptions) (GetResult, error) {
 			URL:         legacyURLForGet(source),
 			URIHash:     sourceURIHash(source),
 		})
-		if uri != "" {
+		if sourceType(source) == sourceTypeInlineProxyURIs {
+			result.URIs = append(result.URIs, source.URIs...)
+		} else if uri != "" {
 			result.URIs = append(result.URIs, uri)
 		}
 		if sourceType(source) == sourceTypeRemoteSubscription {
