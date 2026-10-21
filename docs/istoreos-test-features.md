@@ -49,8 +49,8 @@
 
 | 功能 ID | 功能／驗證內容 | 責任／核心範圍 | 最後實測版本；結果；證據 |
 | --- | --- | --- | --- |
-| SUB-MANAGEMENT | **訂閱來源管理**：設定、修改及移除來源後能重新讀取；支援訂閱 URL 與節點 URI，非法／空白輸入按入口契約拒絕，原有效來源不被誤清空。[實作入口](../product_cli.go) | Core／共用 | v0.1.83／不適用；PASS；URL／節點 URI 增改刪、空白／FTP／空集合拒絕及原設定保留 [E05](#e05) |
-| SUB-REFRESH | **訂閱取得與刷新**：取得並解析多來源、合併節點及重建已配置的服務能力篩選材料（如 ChatGPT 可用節點）；來源失敗如實呈現，有有效來源與全部無效的結果不同；失敗保留合法材料。保存來源與刷新生效分別讀回。[實作入口](../product_cli.go) | Core／共用 | v0.1.98／不適用；PARTIAL；公開 v0.1.97 同 workspace 由 v7／52 名升級候選 v8／36 名，16 明確 IP 地區拒絕與 E28 一致；官方 binary 實刷 35 名，另 1 名域名 OAuth 逾時；來源 02 HTTP 403，全部來源成功未驗 [E29](#e29)；完整 52 名／156 例矩陣沿用原版本 [E28](#e28)；歷史範圍 [E12](#e12) [E14](#e14) |
+| SUB-MANAGEMENT | **訂閱來源管理**：設定、修改及移除來源後能重新讀取；支援訂閱 URL 與節點 URI，非法／空白輸入按入口契約拒絕，原有效來源不被誤清空。[實作入口](../product_cli.go) | Core／共用 | v0.1.100／v0.1.0-85；PARTIAL（Get／來源保存範圍）；同一官方 v0.1.99 workspace 升級，真實 3 個 URL 經 LuCI 保存／重複保存／重開頁、fresh-process 刷新及重啟後完整讀回；真實多節點 URI、完整增改刪／非法輸入未測 [E31](#e31)；完整歷史範圍保留原版本 [E05](#e05) |
+| SUB-REFRESH | **訂閱取得與刷新**：取得並解析多來源、合併節點及重建已配置的服務能力篩選材料（如 ChatGPT 可用節點）；來源失敗如實呈現，有有效來源與全部無效的結果不同；失敗保留合法材料。保存來源與刷新生效分別讀回。[實作入口](../product_cli.go) | Core／共用 | v0.1.100／v0.1.0-85；PARTIAL（Get／來源保存範圍）；同一官方 v0.1.99 workspace 升級，fresh-process 刷新及重啟保留 3 個來源；01／03 成功、02 HTTP 403 無有效 cache，合併 106 proxies；全部來源成功及真實節點 URI 未測 [E31](#e31)；資格快照升級／35 名讀回及 52 名／156 例矩陣維持原實測版本 [E29](#e29) [E28](#e28)；歷史範圍 [E12](#e12) [E14](#e14) |
 | SUB-NODES | **節點查詢**：列出與搜尋已取得節點，名稱／類型與來源一致，不洩漏連線憑證；查詢結果不冒充節點品質或出口地理驗證。[實作入口](../internal/mcp/registry.go) | Core／共用 | v0.1.83／不適用；PASS；MCP 列出／搜尋、來源欄位及敏感資料界線 [E05](#e05) |
 
 <a id="sites"></a>
@@ -953,6 +953,36 @@ CONFIG-RENDER／VALIDATION／APPLY 能力快照範圍。候選 commit
   `cp`／`chmod` 後回驗；這是測試環境操作，未改產品安裝入口。
 - 本輪 runtime／MCP／QEMU、disposable overlay 與私密輸入已清理；主代理獨立確認
   SSH／LuCI／MCP／controller 轉發 port 均關閉。原持久 QEMU 與正式路由器保留。
+
+<a id="e31"></a>
+### E31
+
+2026-10-21 為 Core v0.1.100 選測 SUB-MANAGEMENT／SUB-REFRESH 的 Get 與來源保存範圍。
+候選及 tag commit `3d432c62d64f3ccaaee57682baa1ccf718f8b91a`，候選 amd64 binary
+SHA `60425f37…98fcf1`；LuCI v0.1.0-85、iStoreOS 24.10.8 x86_64、Smart
+`alpha-smart-dc90210`（SHA `082fa511…b0ded`）。[G99 報告](../.runtime/istoreos-acceptance/20261021-v01100-subscriptions/report.md)及
+[功能摘要](../.runtime/istoreos-acceptance/20261021-v01100-subscriptions/functional-summary.json)
+保存身分、狀態轉移與原始證據索引。
+
+- 同一可拋棄 qcow2 先安裝官方 v0.1.99 binary（SHA `0212d2c3…ad8117`）及匹配
+  base assets（SHA `a68fbfd2…99558`），從正式路由器唯讀取得全部 3 個訂閱 URL，
+  經正式同步入口刷新取得 108 proxies，並完成真 LuCI 保存與 runtime restart。
+  停止舊 runtime 後保留 workspace，僅替換候選 binary。正式路由器未被修改。
+- 首次 clone 因持久 LAN 是 `192.168.100.1`、原腳本轉發到 `192.168.101.1` 而無法連線；
+  保留失敗證據，使用 ignored 的本輪 launcher 副本修正轉發，未修改產品腳本或原 overlay。
+  舊版 stopped-runtime 對照中，真 LuCI 保存以 `runtime_restart_precondition_failed` 明確失敗；
+  啟動 runtime 後重試成功。這只證明 oracle 敏感度，不作產品負向能力 PASS。
+- 候選完成真 LuCI 保存、重複保存、重新開頁、fresh-process Get／refresh 及 guest 重啟後
+  重新登入讀回。3 行來源清單的 SHA `96a701ef…a1534` 均一致；主代理獨立從 guest
+  讀取來源檔、CLI Get 與頁面結果，比較完整值後只保存 hash，並核對實際安裝的 binary SHA。
+- 來源 01／03 刷新成功，來源 02 HTTP 403 且無有效 cache；遠端內容變動令合併數由
+  108 變成 106，持久來源清單未變。全部來源成功情境未驗，不能宣稱節點數固定不變。
+- 正式路由器有 3 個 `remote_subscription`、0 個 `inline_proxy_uris`；本次缺陷的多條
+  手動節點 URI 真實 VM 類別為 **NOT_RUN**，沒有手寫正向輸入補位。主機端五組 CLI 與
+  Go 回歸通過僅作程式證據，不提高 iStoreOS 結果。完整增改刪、去重、非法／空白輸入
+  未重跑；SUB-NODES 缺少節點列出／搜尋及憑證界線 oracle，維持原實測版本。
+- 本輪功能列維持 **PARTIAL**。資格判定矩陣保留 [E29](#e29)／[E28](#e28) 原版本；
+  Meta、LuCI 一鍵更新／接管、資料面及完整 ARM64 runtime 均未重跑。
 
 <a id="pending-incidents"></a>
 ## 待核對事故與證據缺口
