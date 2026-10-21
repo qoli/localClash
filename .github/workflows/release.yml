@@ -53,15 +53,16 @@ jobs:
           cache: true
           cache-dependency-path: go.sum
 
+      - name: Build release assets
+        run: scripts/build-release-assets.sh "$RELEASE_TAG"
+
+      # Keep the source checkout clean while Go records VCS build metadata.
       - name: Checkout release tooling for manual recovery
         if: github.event_name == 'workflow_dispatch'
         uses: actions/checkout@v6
         with:
           ref: main
           path: .release-tools
-
-      - name: Build release assets
-        run: scripts/build-release-assets.sh "$RELEASE_TAG"
 
       - name: Create GitHub release
         if: github.event_name != 'workflow_dispatch'
