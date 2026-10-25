@@ -16,7 +16,7 @@ func TestRenderDefaultViuTVHongKongRouting(t *testing.T) {
 		nodes     []string
 		wantExits []string
 	}{
-		{"hong_kong_available", []string{"HK fixture", "JP fixture"}, []string{"🇭🇰 香港节点", "REJECT"}},
+		{"hong_kong_available", []string{"HK fixture", "JP fixture"}, []string{"🇭🇰 ViuTV 香港节点", "REJECT"}},
 		{"hong_kong_absent", []string{"JP fixture"}, []string{"REJECT"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -25,8 +25,13 @@ func TestRenderDefaultViuTVHongKongRouting(t *testing.T) {
 				t.Fatal(err)
 			}
 			group := config.PolicyGroups["📺 ViuTV"]
-			if group.Mode != "manual" || !reflect.DeepEqual(group.Exits, []string{"🇭🇰 香港节点", "REJECT"}) {
+			if group.Mode != "manual" || !reflect.DeepEqual(group.Exits, []string{"🇭🇰 ViuTV 香港节点", "REJECT"}) {
 				t.Fatalf("ViuTV policy = %+v, want Hong Kong with explicit unavailable action", group)
+			}
+			serviceHK := config.ProxyGroups["🇭🇰 ViuTV 香港节点"]
+			sharedHK := config.ProxyGroups["🇭🇰 香港节点"]
+			if serviceHK.Mode != "manual" || !serviceHK.Optional || !reflect.DeepEqual(serviceHK.Match, sharedHK.Match) || sharedHK.Mode != "auto" {
+				t.Fatalf("ViuTV exit must independently select the existing Hong Kong selector's leaf nodes: service=%+v shared=%+v", serviceHK, sharedHK)
 			}
 			var viuRules []localconfig.CustomRuleLine
 			for _, custom := range config.CustomRules {
@@ -43,6 +48,7 @@ func TestRenderDefaultViuTVHongKongRouting(t *testing.T) {
 				{Type: "domain_suffix", Value: "viu.tv"},
 				{Type: "domain", Value: "api.viu.now.com"},
 				{Type: "domain", Value: "cdn01r.now.com"},
+				{Type: "domain", Value: "cdn01.now.com"},
 				{Type: "domain", Value: "fwp.nowe.com"},
 			}
 			if !reflect.DeepEqual(viuRules, wantRules) {
@@ -93,17 +99,21 @@ func TestRenderDefaultViuTVHongKongRouting(t *testing.T) {
 				t.Fatalf("rendered ViuTV exits = %+v, want %+v", got, tc.wantExits)
 			}
 			if tc.name == "hong_kong_available" {
+				serviceHK := proxyGroupFromConfig(t, rendered, "🇭🇰 ViuTV 香港节点")
+				if got := testStringSlice(serviceHK["proxies"]); serviceHK["type"] != "select" || !reflect.DeepEqual(got, []string{"HK fixture"}) {
+					t.Fatalf("ViuTV exit must select only Hong Kong leaf nodes, without a Smart/url-test wrapper: %+v", serviceHK)
+				}
 				hk := proxyGroupFromConfig(t, rendered, "🇭🇰 香港节点")
-				if got := testStringSlice(hk["proxies"]); !reflect.DeepEqual(got, []string{"HK fixture"}) {
+				if got := testStringSlice(hk["proxies"]); hk["type"] != "url-test" || !reflect.DeepEqual(got, []string{"HK fixture"}) {
 					t.Fatalf("Hong Kong candidates = %+v, want only HK fixture", got)
 				}
-			} else if proxyGroupNamesFromConfig(rendered)["🇭🇰 香港节点"] {
+			} else if proxyGroupNamesFromConfig(rendered)["🇭🇰 香港节点"] || proxyGroupNamesFromConfig(rendered)["🇭🇰 ViuTV 香港节点"] {
 				t.Fatal("empty optional Hong Kong exit must remain omitted")
 			}
 			renderedRules := testStringSlice(rendered["rules"])
 			for _, want := range []string{
 				"DOMAIN-SUFFIX,viu.tv,📺 ViuTV", "DOMAIN,api.viu.now.com,📺 ViuTV",
-				"DOMAIN,cdn01r.now.com,📺 ViuTV", "DOMAIN,fwp.nowe.com,📺 ViuTV",
+				"DOMAIN,cdn01r.now.com,📺 ViuTV", "DOMAIN,cdn01.now.com,📺 ViuTV", "DOMAIN,fwp.nowe.com,📺 ViuTV",
 			} {
 				index := indexOf(renderedRules, want)
 				for _, later := range []string{"GEOIP,cloudflare,☁️ Cloudflare,no-resolve", "GEOSITE,category-entertainment,🎞 媒体", "GEOSITE,geolocation-!cn,🌍 非中國網站", "GEOSITE,cn,DIRECT"} {

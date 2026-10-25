@@ -185,14 +185,20 @@ With `refresh_subscription=true` it performs a rollback-protected
 template/refresh/capability/render/config-test transaction. `reset_patches`
 replaces policy patches but preserves independent custom-site lists.
 
-The full default template includes `📺 ViuTV` for ViuTV 99/96. Its only
-geographic exit is the existing `🇭🇰 香港节点` group; without matching Hong Kong
-nodes, this service exposes only `REJECT`. The dedicated rules cover `viu.tv`
-and its subdomains, `api.viu.now.com`, `cdn01r.now.com`, and `fwp.nowe.com`
+The full default template includes `📺 ViuTV` for ViuTV 99/96. Its service-owned
+`🇭🇰 ViuTV 香港节点` group manually selects one Hong Kong leaf node, keeping the
+API, CDN and license requests on that selection. The shared Hong Kong automatic
+group keeps its own selection behavior. Without matching Hong Kong nodes, this
+service exposes only `REJECT`. The dedicated rules cover `viu.tv` and its
+subdomains, `api.viu.now.com`, `cdn01r.now.com`, `cdn01.now.com`, and `fwp.nowe.com`
 before broad media routing. They do not capture Viu.com or all of now.com.
 The reusable Viu packs include Viu.com and omit the observed CDN/license
 hosts, so this policy uses scoped endpoint rules. Region selectors match node
 names; actual Hong Kong egress and successful DRM playback still need testing.
+The builtin router profile skips destination override for exactly
+`api.viu.now.com`: its DNS-mapped IP must reach the selected proxy unchanged
+because the API issues an IP-bound playback URL. It does not pin a CDN/API IP
+or disable sniffing for other services.
 
 Runtime-only keys such as DNS, TUN, ports, and sniffer come from the selected
 builtin runtime template, or `localclash-user.json` when present. That file

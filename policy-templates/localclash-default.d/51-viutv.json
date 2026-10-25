@@ -3,11 +3,23 @@
   "description": "Route ViuTV 99/96 through Hong Kong before broad media routing; keep Viu.com outside this service policy.",
   "config": {
     "version": 3,
+    "proxy_groups": {
+      "🇭🇰 ViuTV 香港节点": {
+        "mode": "manual",
+        "match": {
+          "type": "name_regex",
+          "pattern": "(香港|HK|Hong.?Kong)"
+        },
+        "optional": true,
+        "reason": "ViuTV 的 API 與 CDN 使用同一個手動固定香港節點，避免逐目的地自動選擇破壞 IP 綁定播放網址。",
+        "boundary": "service_owned_name_based_region_selector"
+      }
+    },
     "policy_groups": {
       "📺 ViuTV": {
         "mode": "manual",
         "exits": [
-          "🇭🇰 香港节点",
+          "🇭🇰 ViuTV 香港节点",
           "REJECT"
         ],
         "reason": "ViuTV 99/96 使用香港出口；沒有香港節點時僅拒絕此服務，不改用其他地區或直連。",
@@ -23,6 +35,7 @@
           {"type": "domain_suffix", "value": "viu.tv"},
           {"type": "domain", "value": "api.viu.now.com"},
           {"type": "domain", "value": "cdn01r.now.com"},
+          {"type": "domain", "value": "cdn01.now.com"},
           {"type": "domain", "value": "fwp.nowe.com"}
         ]
       }

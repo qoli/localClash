@@ -145,6 +145,11 @@ func TestDefaultRouterProfileMatchesRouterReferencePreferences(t *testing.T) {
 	if sniffer["enable"] != true || sniffer["override-destination"] != true || sniffer["force-dns-mapping"] != true || sniffer["parse-pure-ip"] != true {
 		t.Fatalf("router sniffer = %+v, want enabled DNS mapping and pure-IP parsing", sniffer)
 	}
+	// The live API signs an IP-bound CDN URL. Preserve its DNS-mapped IP
+	// instead of replacing it with a domain for upstream proxy resolution.
+	if want := []any{"Mijia Cloud", "dlg.io.mi.com", "+.oray.com", "+.sunlogin.net", "+.push.apple.com", "api.viu.now.com"}; !reflect.DeepEqual(sniffer["skip-domain"], want) {
+		t.Fatalf("router sniffer skip-domain = %v, want existing entries plus the exact ViuTV API host %v", sniffer["skip-domain"], want)
+	}
 	tlsSniffer := sniffer["sniff"].(map[string]any)["TLS"].(map[string]any)
 	if want := []any{443, 465, 993, 5222, 8443}; !reflect.DeepEqual(tlsSniffer["ports"], want) {
 		t.Fatalf("router TLS sniffer ports = %v, want %v", tlsSniffer["ports"], want)

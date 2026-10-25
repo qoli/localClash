@@ -153,7 +153,8 @@
         "dlg.io.mi.com",
         "+.oray.com",
         "+.sunlogin.net",
-        "+.push.apple.com"
+        "+.push.apple.com",
+        "api.viu.now.com"
       ],
       "force-dns-mapping": true,
       "parse-pure-ip": true

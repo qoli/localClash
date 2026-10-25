@@ -19,7 +19,7 @@ func TestRunProductDefaultTemplateAddsViuTVWithoutOrderCollision(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, mode := range []string{"fresh", "reapply_pre_viutv", "sync_pre_viutv"} {
+	for _, mode := range []string{"fresh", "reapply_pre_viutv", "sync_pre_viutv", "sync_shared_smart_viutv"} {
 		t.Run(mode, func(t *testing.T) {
 			dir := t.TempDir()
 			t.Setenv("LOCALCLASH_WORKDIR", dir)
@@ -30,6 +30,11 @@ func TestRunProductDefaultTemplateAddsViuTVWithoutOrderCollision(t *testing.T) {
 			}
 			manifestPath := filepath.Join(templatesDir, "localclash-default.json")
 			currentManifest, err := os.ReadFile(manifestPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			viuPath := filepath.Join(templatesDir, "localclash-default.d", "51-viutv.json")
+			currentViu, err := os.ReadFile(viuPath)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -62,6 +67,7 @@ func TestRunProductDefaultTemplateAddsViuTVWithoutOrderCollision(t *testing.T) {
 			}
 			registryDir := filepath.Join(dir, configpatch.RegistryDirName)
 			previousOrders := map[string]string{}
+			previousHashes := map[string]string{}
 			if mode != "fresh" {
 				// A synthetic pre-ViuTV inventory exercises the actual persisted
 				// registry path; real old-release upgrade acceptance remains in QEMU.
@@ -69,13 +75,42 @@ func TestRunProductDefaultTemplateAddsViuTVWithoutOrderCollision(t *testing.T) {
 				if err := json.Unmarshal(currentManifest, &manifest); err != nil {
 					t.Fatal(err)
 				}
-				var previous []policytemplate.PatchRef
-				for _, patch := range manifest.Patches {
-					if patch.ID != "default.viutv.v1" {
-						previous = append(previous, patch)
+				if mode == "sync_shared_smart_viutv" {
+					// Reproduce the v0.1.102 service definition through the same
+					// formal import path, then synchronize its replacement.
+					var oldViu policytemplate.PatchFile
+					if err := json.Unmarshal(currentViu, &oldViu); err != nil {
+						t.Fatal(err)
 					}
+					delete(oldViu.Config.ProxyGroups, "🇭🇰 ViuTV 香港节点")
+					group := oldViu.Config.PolicyGroups["📺 ViuTV"]
+					group.Exits = []string{"🇭🇰 香港节点", "REJECT"}
+					oldViu.Config.PolicyGroups["📺 ViuTV"] = group
+					for i := range oldViu.Config.CustomRules {
+						var oldRules []localconfig.CustomRuleLine
+						for _, rule := range oldViu.Config.CustomRules[i].Rules {
+							if rule.Value != "cdn01.now.com" {
+								oldRules = append(oldRules, rule)
+							}
+						}
+						oldViu.Config.CustomRules[i].Rules = oldRules
+					}
+					data, err := json.Marshal(oldViu)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if err := os.WriteFile(viuPath, data, 0o600); err != nil {
+						t.Fatal(err)
+					}
+				} else {
+					var previous []policytemplate.PatchRef
+					for _, patch := range manifest.Patches {
+						if patch.ID != "default.viutv.v1" {
+							previous = append(previous, patch)
+						}
+					}
+					manifest.Patches = previous
 				}
-				manifest.Patches = previous
 				data, err := json.Marshal(manifest)
 				if err != nil {
 					t.Fatal(err)
@@ -88,13 +123,17 @@ func TestRunProductDefaultTemplateAddsViuTVWithoutOrderCollision(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if _, exists := before.ByID["default.viutv.v1"]; exists || len(before.Records) != len(previous) {
-					t.Fatal("synthetic pre-ViuTV registry was not established")
+				if _, exists := before.ByID["default.viutv.v1"]; exists != (mode == "sync_shared_smart_viutv") || len(before.Records) != len(manifest.Patches) {
+					t.Fatal("synthetic prior registry was not established")
 				}
 				for _, record := range before.Records {
 					previousOrders[record.Patch.PatchID] = record.Patch.OrderID
+					previousHashes[record.Patch.PatchID] = record.SHA256
 				}
 				if err := os.WriteFile(manifestPath, currentManifest, 0o600); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(viuPath, currentViu, 0o600); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -125,7 +164,7 @@ func TestRunProductDefaultTemplateAddsViuTVWithoutOrderCollision(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			apply(mode == "sync_pre_viutv")
+			apply(mode == "sync_pre_viutv" || mode == "sync_shared_smart_viutv")
 			registry, err := configpatch.Load(registryDir)
 			if err != nil {
 				t.Fatal(err)
@@ -137,6 +176,9 @@ func TestRunProductDefaultTemplateAddsViuTVWithoutOrderCollision(t *testing.T) {
 			for id, order := range previousOrders {
 				if got := registry.ByID[id].Patch.OrderID; got != order {
 					t.Fatalf("existing patch %s changed order from %s to %s", id, order, got)
+				}
+				if id != "default.viutv.v1" && registry.ByID[id].SHA256 != previousHashes[id] {
+					t.Fatalf("ViuTV synchronization changed unrelated patch %s", id)
 				}
 			}
 			orders := map[string]string{}
@@ -159,10 +201,27 @@ func TestRunProductDefaultTemplateAddsViuTVWithoutOrderCollision(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			serviceHK := intent.ProxyGroups["🇭🇰 ViuTV 香港节点"]
+			if serviceHK.Mode != "manual" || !serviceHK.Optional || !reflect.DeepEqual(serviceHK.Match, intent.ProxyGroups["🇭🇰 香港节点"].Match) {
+				t.Fatalf("compiled service-owned Hong Kong selector = %+v", serviceHK)
+			}
+			if got := intent.PolicyGroups["📺 ViuTV"].Exits; !reflect.DeepEqual(got, []string{"🇭🇰 ViuTV 香港节点", "REJECT"}) {
+				t.Fatalf("compiled ViuTV exits = %+v", got)
+			}
 			viuIndex, cloudflareIndex := -1, -1
 			for index, rule := range intent.CustomRules {
 				if rule.ID == "viutv-playback-hosts" {
 					viuIndex = index
+					want := []localconfig.CustomRuleLine{
+						{Type: "domain_suffix", Value: "viu.tv"},
+						{Type: "domain", Value: "api.viu.now.com"},
+						{Type: "domain", Value: "cdn01r.now.com"},
+						{Type: "domain", Value: "cdn01.now.com"},
+						{Type: "domain", Value: "fwp.nowe.com"},
+					}
+					if rule.Target != "📺 ViuTV" || !reflect.DeepEqual(rule.Rules, want) {
+						t.Fatalf("compiled ViuTV coverage = %+v", rule)
+					}
 				}
 				if rule.ID == "cloudflare-geoip" {
 					cloudflareIndex = index
