@@ -1770,6 +1770,8 @@ func templateOrderID(id string, index int) string {
 		return "0550.000000"
 	case "default.platform-media.v1":
 		return "0600.000000"
+	case "default.viutv.v1":
+		return "0650.000000"
 	case "default.games.v1":
 		return "0700.000000"
 	case "default.syncnext-app-maintenance.v1":
