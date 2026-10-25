@@ -194,7 +194,9 @@ subdomains, `api.viu.now.com`, `cdn01r.now.com`, `cdn01.now.com`, and `fwp.nowe.
 before broad media routing. They do not capture Viu.com or all of now.com.
 The reusable Viu packs include Viu.com and omit the observed CDN/license
 hosts, so this policy uses scoped endpoint rules. Region selectors match node
-names; actual Hong Kong egress and successful DRM playback still need testing.
+names; node names alone do not establish exit geography. With the published
+Smart TCP fix, the formal router and Safari 99/96 FairPlay playback passed on
+2026-10-25; see [the measured scope and limits](docs/istoreos-test-features.md#e37).
 The builtin router profile skips destination override for exactly
 `api.viu.now.com`: its DNS-mapped IP must reach the selected proxy unchanged
 because the API issues an IP-bound playback URL. It does not pin a CDN/API IP

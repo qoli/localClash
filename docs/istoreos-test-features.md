@@ -69,11 +69,11 @@
 
 | 功能 ID | 功能／驗證內容 | 責任／核心範圍 | 最後實測版本；結果；證據 |
 | --- | --- | --- | --- |
-| CONFIG-TEMPLATE | **策略模板設定**：選取完整預設或 minimal 模板、配置 profile，產生相應補丁及 intent；重設模板只依明示選項處理既有補丁，不默默覆蓋自訂設定。[實作入口](../product_cli.go) | Core／共用 | v0.1.102／LuCI v0.1.0-85；PARTIAL；同一 qcow2 從官方 v0.1.101 workspace 升級至候選 `214a650`，及正式 ARM64 一鍵更新，均同步 ViuTV 並保留舊排序、訂閱配置與自訂網站；首次候選排序衝突 FAIL 與修正回驗分開保留，minimal 未重跑 [E33](#e33) [E34](#e34)；歷史範圍 [E27](#e27) [E15](#e15) [E20](#e20) |
+| CONFIG-TEMPLATE | **策略模板設定**：選取完整預設或 minimal 模板、配置 profile，產生相應補丁及 intent；重設模板只依明示選項處理既有補丁，不默默覆蓋自訂設定。[實作入口](../product_cli.go) | Core／共用 | v0.1.103／LuCI v0.1.0-85；PARTIAL；QEMU 舊版升級及正式 ARM64 同步 ViuTV 專有香港 selector、第五個 CDN host，保留補丁排序、自訂網站與訂閱配置；正式 builtin 取代等價臨時 profile，minimal／完整模板契約未重跑 [E36](#e36) [E37](#e37)；歷史範圍 [E34](#e34) [E33](#e33) [E27](#e27) [E15](#e15) [E20](#e20) |
 | CONFIG-PATCHES | **配置補丁管理**：讀取、預覽、套用、移除、啟停及排序補丁；預覽不落盤，套用後 registry／intent 一致，失效草稿或非法引用明確拒絕。[實作入口](../product_cli.go) | Core／共用 | v0.1.99／不適用；PARTIAL（MCP／能力快照範圍）；同一 v0.1.98 workspace 升級，候選完成無關 DIRECT 補丁新增／修改／移除／啟停／排序、過期草稿與缺快照恢復；官方 binary 草稿／套用及 fresh MCP 持久讀回通過；真實零合格節點未測 [E30](#e30)；完整歷史範圍保留 [E05](#e05) |
-| CONFIG-RENDER | **Mihomo 配置生成**：由訂閱、模板、補丁與 profile 生成正確配置。Meta 自動組為 url-test，Smart 為 smart 並移除 tolerance；Smart 參數、群組 priority 與 defaults 按 intent 傳遞且不覆蓋既有值；生成不等於已載入。[實作入口](../product_cli.go) | Core／按核心差異 | v0.1.102（QEMU 候選與正式 ARM64）／LuCI v0.1.0-85；PARTIAL（Smart／ViuTV 範圍）；正式舊 workspace 升級後，生成及 loaded 規則的 ViuTV 均早於廣義娛樂，保留自訂網站優先序；未展開模板／參數完整契約 [E33](#e33) [E34](#e34)；歷史範圍 [E30](#e30) [E29](#e29) [E28](#e28) [E27](#e27) [E16](#e16) [E21](#e21) |
-| CONFIG-VALIDATION | **配置驗證**：用所選核心驗證生成配置，記錄對應 hash；非法配置不取得通過證明；驗證與活躍程序隔離，不爭用工作目錄。[實作入口](../product_cli.go) | Core／按核心差異 | v0.1.102（QEMU 候選與正式 ARM64）／LuCI v0.1.0-85；PARTIAL（Smart／ViuTV 範圍）；正式 isolated config-test 通過並核對 config SHA／attestation；本輪未重跑非法配置／Meta 類別 [E33](#e33) [E34](#e34)；歷史範圍 [E30](#e30) [E29](#e29) [E28](#e28) [E27](#e27) [E16](#e16) [E21](#e21) |
-| CONFIG-APPLY | **配置套用**：按所選入口核對候選檔提交或 runtime 載入；config-promote 是其中一個檔案提交入口，不是所有流程的前置。驗證 hash、實際載入規則／組及失敗結果符合契約，提交檔案不當成已熱載入，生成檔存在不當成已生效。[實作入口](../product_cli.go) | Core／按核心差異 | v0.1.102（QEMU 候選與正式 ARM64）／LuCI v0.1.0-85；PARTIAL（Smart／ViuTV 範圍）；正式套用及最終啟動後，controller 四條 ViuTV 規則、香港組與自訂網站順序一致；未展開 hot reload／停止狀態契約 [E33](#e33) [E34](#e34)；歷史範圍 [E30](#e30) [E29](#e29) [E28](#e28) [E27](#e27) [E15](#e15) |
+| CONFIG-RENDER | **Mihomo 配置生成**：由訂閱、模板、補丁與 profile 生成正確配置。Meta 自動組為 url-test，Smart 為 smart 並移除 tolerance；Smart 參數、群組 priority 與 defaults 按 intent 傳遞且不覆蓋既有值；生成不等於已載入。[實作入口](../product_cli.go) | Core／按核心差異 | v0.1.103／LuCI v0.1.0-85；PARTIAL（Smart／ViuTV 範圍）；QEMU 升級與正式 ARM64 的 generated／loaded 五條規則、專用 selector、exact API skip 及自訂網站優先序一致；正式 Safari99／96通過，模板／參數完整契約未展開 [E36](#e36) [E37](#e37)；歷史範圍 [E34](#e34) [E33](#e33) [E30](#e30) [E29](#e29) [E28](#e28) [E27](#e27) [E16](#e16) [E21](#e21) |
+| CONFIG-VALIDATION | **配置驗證**：用所選核心驗證生成配置，記錄對應 hash；非法配置不取得通過證明；驗證與活躍程序隔離，不爭用工作目錄。[實作入口](../product_cli.go) | Core／按核心差異 | v0.1.103／LuCI v0.1.0-85；PARTIAL（Smart／ViuTV 範圍）；QEMU 舊 Smart 與正式 ARM64 alpha-smart-ab65458 的 isolated config-test／SHA attestation 通過；builtin 收尾配置不變、證明保留；非法配置／Meta 未重跑 [E36](#e36) [E37](#e37)；歷史範圍 [E34](#e34) [E33](#e33) [E30](#e30) [E29](#e29) [E28](#e28) [E27](#e27) [E16](#e16) [E21](#e21) |
+| CONFIG-APPLY | **配置套用**：按所選入口核對候選檔提交或 runtime 載入；config-promote 是其中一個檔案提交入口，不是所有流程的前置。驗證 hash、實際載入規則／組及失敗結果符合契約，提交檔案不當成已熱載入，生成檔存在不當成已生效。[實作入口](../product_cli.go) | Core／按核心差異 | v0.1.103／LuCI v0.1.0-85；PARTIAL（Smart／ViuTV 範圍）；QEMU 升級／外部 proxy stop-start 敏感度保留；正式 ARM64 單次更新後 loaded5規則、資料保留及實際 Safari 官方／Docker99／96授權與影格通過；未展開其他 hot reload／停止狀態契約 [E36](#e36) [E37](#e37)；歷史範圍 [E34](#e34) [E33](#e33) [E30](#e30) [E29](#e29) [E28](#e28) [E27](#e27) [E15](#e15) |
 
 <a id="cores"></a>
 ## 核心管理
@@ -120,7 +120,7 @@ LUCI-INSTALL／LUCI-UPDATE 維持原實測版本與結果，見 [E35](#e35)。
 | --- | --- | --- | --- |
 | LUCI-INSTALL | **OpenWrt 安裝與版本管理**：離線包安裝、重裝、LuCI／Core 安裝更新及支援的舊版交接正常；架構／完整性錯誤拒絕，應保留資料不丟失。Core 自我更新未實作，實際由 helper 管理。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI／共用 | Core `591c357`／LuCI v0.1.0-81 候選；PASS（影響範圍）；候選 IPK 在 inactive task 同步 rpcd reload、active task 只寫延後標記，兩路均安裝成功且 rpcd／uhttpd PID 不變 [E17](#e17) |
 | LUCI-INIT | **初始化引導**：由頁面提供訂閱、模板及核心，完成 Core 呼叫、配置、啟動及接管；重新開頁顯示真實狀態，失敗可定位。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI 編排＋Core／按影響 | v0.1.83／0.1.0-76；PASS；空工作區 Meta／Smart 初始化、訂閱／模板／Core、UI 啟動並接管、重開讀回及可定位失敗後恢復 [E05](#e05) |
-| LUCI-UPDATE | **一鍵更新與資料保留**：從頁面更新，兩個檢查點、來源版本及結果可讀回；重跑／舊版升級保持訂閱、網站順序、偏好及核心選擇；Mihomo 下載失敗時保留運行中程序並停止後續切換，原本停止或未初始化的狀態不擅自啟動。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI 編排＋Core／按影響 | Core v0.1.101 → v0.1.102／LuCI v0.1.0-85；PARTIAL；正式 ARM64 LuCI 單次更新，預設策略同步、官方產物 SHA、自訂網站／訂閱配置／群組選擇保留及 runtime／接管恢復通過；訂閱 02 HTTP403 使用原快取並明示警告 [E34](#e34)；下載失敗／停止狀態未重跑，歷史 FAIL 與缺口保留 [E19](#e19)；其他範圍 [E18](#e18) [E17](#e17) |
+| LUCI-UPDATE | **一鍵更新與資料保留**：從頁面更新，兩個檢查點、來源版本及結果可讀回；重跑／舊版升級保持訂閱、網站順序、偏好及核心選擇；Mihomo 下載失敗時保留運行中程序並停止後續切換，原本停止或未初始化的狀態不擅自啟動。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI 編排＋Core／按影響 | Core v0.1.102 → v0.1.103／LuCI v0.1.0-85；PARTIAL；正式 ARM64 同一一鍵更新 RPC 成功，預設同步／資料保留、官方 Core與Smart活躍SHA、runtime／接管及外部Safari實播通過；初次GUI session過期未啟任務，不記GUI成功，02 HTTP403沿用快取並警告 [E37](#e37)；下載失敗／停止狀態未重跑，歷史 FAIL／缺口 [E19](#e19)；前次GUI及其他範圍 [E34](#e34) [E18](#e18) [E17](#e17) |
 | LUCI-TASKS | **介面與長任務交互**：訂閱、網站、初始化及更新頁面操作與後端一致；日誌、取消、互斥、重新連接與終態可用，無重複交易／無限 busy；依各操作是否支援取消驗證。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI／共用 | Core `591c357`／LuCI v0.1.0-81 候選；PASS（影響範圍）；真 RPC session 從啟動追蹤至終態，active-task 重裝未建立重複交易，reload 後同 token、ubus method／ACL、HTTP／LuCI 均可用 [E17](#e17)；其他長任務交互沿用 [E05](#e05) |
 | LUCI-TAKEOVER | **OpenWrt 網路接管**：從正式入口套用及停止防火牆、策略路由與 DNS 接管；獨立 LAN client 的實際 TCP／UDP／DNS 請求按配置到達受控 WAN endpoint，停止後恢復原資料面，且非本產品規則保留。內部 effective、規則或 lease 只能解釋結果。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI／共用 | Core v0.1.96 `d5506d9`／LuCI v0.1.0-85 `d24de8e`；PARTIAL；正式 ARM64 路由器 Smart 的 IPv4 UDP／TCP DNS 接管、Mac 混合大小寫／PTR 與公開 A／AAAA 通過，TCP socket 歸屬證明 53→7874；IPv6 GUA／link-local 通過；正式 LAN 開啟 SLAAC 後原生 Mac ULA UDP／TCP 14/14 與本地 PTR 通過，53→7874 接管及 LAN 回程已確認 [E26](#e26)，取代 [E22](#e22) 的自動來源 ULA FAIL；診斷與 VM 原生 RA 對照見 [E23](#e23)／[E24](#e24)／[E25](#e25)；歷史狀態轉移保留 [E21](#e21) |
 | LUCI-RESTORE | **接管及服務恢復**：開機、WAN 事件、受管程序退出及依賴故障後，按使用者意圖恢復或撤回接管；每次轉移後由獨立 client 重跑相同資料面 oracle，明確停止後不自行重開。內部狀態與 lease 不代表服務可用。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI＋Core 生命週期／共用 | Core `9881182`／LuCI `18c3b7c` + 發布前候選（binary `596c797d…4d17`、IPK `e5218681…ac7e`）；PARTIAL；停止 Mihomo 後不清理 firewall，租約到期轉 dnsmasq，正式重新授租後完整 IPv4 UDP／TCP 查詢集成功；到期階段僅四項查詢、受控故障敏感度及 IPv6 尚未完整覆蓋 [E21](#e21)；開機／WAN 歷史範圍保留 [E05](#e05) [E11](#e11) |
@@ -1103,6 +1103,73 @@ v0.1.0-85。主代理透過現有 Arc 的真實概覽頁單次執行「一鍵更
   均為 **NOT_RUN**。LUCI-INSTALL／LUCI-UPDATE 不提高實測版本，也不改寫歷史結果。
 - 證據：[主機端核對](../.runtime/istoreos-acceptance/20261025-version-display/host-verification.md)、
   [QEMU 嘗試](../.runtime/istoreos-acceptance/20261025-version-display/report.md)。
+
+<a id="e36"></a>
+### E36
+
+2026-10-25，官方 Core v0.1.102 → v0.1.103 候選 `51208cc7777071f95dfc99ebe33c3a2195ea2a95`，
+LuCI v0.1.0-85、既有 Smart amd64；同一可拋棄 iStoreOS QEMU workspace。
+本輪範圍為 ViuTV 預設策略／router profile 的升級、生成、驗證及套用，四項能力均維持 **PARTIAL**。
+
+- 舊版使用官方 binary／matching base assets，經正式入口初始化、同步正式 router 訂閱、套用及啟動。
+  候選由 exact commit archive 建置，僅替換版本擁有的程式／資產，保留工作區、自訂網站、
+  訂閱配置與 profile；候選 binary SHA `4181f21bfd48e64b60e1c35d3be345cb11dbde3cd58d145f6c2fb38ad8db1ed`。
+- 正式 apply-template／refresh／render／isolated Smart config-test／start 通過。
+  `default.viutv.v1=0650.000000`；五條 ViuTV 規則 index 25–29、娛樂 index 65，
+  `🇭🇰 ViuTV 香港节点` 只含香港 leaf nodes，API 精確 skip 與 `cdn01.now.com` 均保留。
+- 正向使用真實訂閱：來源 01 解析 30 proxies；來源 02 HTTP403、03 connection reset。
+  最初缺核心／Model.bin 及候選能力刷新前的失敗／警告保留，未以 fixture 補位。
+- 外部 oracle 從 guest 經候選 HTTP proxy GET 官方 API 根路徑，HTTP200、9 bytes；
+  正式 stop 令同 probe rc=7，start 後恢復 HTTP200。這僅證明 proxy/API 連通與敏感度，
+  不能證明香港出口、完整 getLiveURL、HLS、DRM 或 Safari 播放。
+- 此 QEMU 未安裝 Smart TCP 修正候選，不以主機回歸／CI 或另一個 ARM64 隔離探測替代。
+  正式 router 更新及實播需另記；沒有擴大 minimal、Meta、非法配置等未重跑契約。
+- VM 已正式停止並通過 `qemu-img check`；只移除自有 clone／candidate staging／Model.bin 暫存，
+  未觸碰共享 qcow2 或正式 router。
+- 證據：[G99 摘要](../.runtime/istoreos-acceptance/20261025-viutv-ip-bound-fix/G99-summary.md)、
+  [功能結果](../.runtime/istoreos-acceptance/20261025-viutv-ip-bound-fix/functional-summary.json)、
+  [清理](../.runtime/istoreos-acceptance/20261025-viutv-ip-bound-fix/cleanup.json)。
+
+<a id="e37"></a>
+### E37
+
+2026-10-25，正式 ARM64 router Core v0.1.102 → v0.1.103 `51208cc`、
+Smart `alpha-smart-dc90210` → `alpha-smart-ab65458`，LuCI v0.1.0-85 不變。
+這是正式現場補證，未改寫 [E36](#e36) 的 QEMU PARTIAL 或 [E35](#e35) 的其他任務紀錄。
+
+- 兩個 workflow 均成功；Core 七資產／manifest／checksum／19份靜態來源檔及 Smart rolling
+  Source commit／version／ARM64 gzip checksum 通過。活躍 Core MCP 與磁碟 SHA 同為
+  `829cb4c7dd71f03cbd74d117b8d5a60bc3b9cf6c478c6af42debf45e4df3f92f`，
+  活躍 Smart 與官方解壓檔 SHA 同為
+  `fae223331a5dfbb755572c6055661e04a0ea5181f7bc7b5b16b3b5d006d1dd62`。
+- Arc 概覽初次點擊遇 session 過期，fresh 讀回沒有任務。核對正式 RPC 契約後，經既有
+  可信 SSH 呼叫 `ubus call localclash one_click_update`，`sync_default_policy=true`；
+  自訂網站保留是 backend 固定行為。唯一正式任務22:13:49→22:22:17，exit0／oktrue。
+  不是 GUI 成功、不是兩次更新。訂閱02 HTTP403明示沿用原有效快取。
+- 新官方 Core/MCP、Smart、isolated config-test、最終 process_restart 檢查點與 LuCI 接管
+  讀回正常。訂閱配置、6個自訂代理網站／seq6、13個補丁與 ViuTV 0650、共享群組選擇保留。
+  五條 ViuTV 規則 index30–34 早於娛樂70，API exact skip 存在，服務固定專用香港01 leaf。
+- fresh 核對本輪臨時完整 user profile 的原 SHA 與新 builtin 完整等價後，移至原 rollback
+  目錄的 `retired/`，原 user path 不存在、來源回到 builtin。正式 render 前後 SHA 均為
+  `cf15559ef81aee23ed65f9203117231e77f400cbba94f0f8974185f16b12b051`，
+  通過的 attestation 與新 Smart SHA 匹配，未增加 test／reload／restart。
+  移動後取證 `stat` 不可用的 exit127 已保留；只讀回驗確認完成，沒有重送移動。
+- 獨立 Mac99／OrbStack container96 provider probe 的主清單及 variant200、SAMPLE-AES。
+  真實 Safari27.0.1 官方99／96的 FairPlay wrapper POST200、webkitKeys存在、時間／影格
+  分別428.00→447.28秒／3960→4460及65.79→82.80秒／408→854。
+  Docker99／96各完成skd初始化、真實SPC／CKC1／1，時間／影格分別56.07→65.85秒／377→767
+  及64.55→86.61秒／414→1518；均無播放器錯誤。測後停止測試串流，服務保留運行。
+- 一次有限MCP觀測看到 Mac API／兩個CDN／授權連線均經同一專用香港leaf，CDN一秒增加
+  417,792bytes；truncated=true，沒有依快照單獨推定HTTP狀態、頻道或app。
+- 配置與更新能力維持本次範圍 **PARTIAL**：minimal／Meta／非法配置、下載故障／原本停止
+  等契約未重跑。Safari本次實播通過，不涵蓋URL到期續期、其他裝置或全平台。
+- 證據：Core `.runtime/releases/v0.1.103/public-assets-verification.json`；
+  macOSAgentBot `.runtime/viutv-live/cdn403-20261025/` 下的 `safari-acceptance.json`、
+  `router-release-update/official-task-20261025T141348Z/summary.json`、
+  `router-release-update/profile-retire-20261025T142702Z/summary.json` 與
+  `router-release-update/final-playback-route-observation-20261025T145738Z.json`。
+  舊403、DNS ERROR與首次QUIC失敗不刪改；完整播放／維護入口見 sibling macOSAgentBot 的
+  `viutv_live/README.md`。
 
 <a id="pending-incidents"></a>
 ## 待核對事故與證據缺口

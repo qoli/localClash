@@ -18,10 +18,43 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
-| localClash Core | [v0.1.102](https://github.com/qoli/localClash/releases/tag/v0.1.102) | 2026-10-25 UTC+8 |
+| localClash Core | [v0.1.103](https://github.com/qoli/localClash/releases/tag/v0.1.103) | 2026-10-25 UTC+8 |
 | localclash-luci | [v0.1.0-85](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-85) | 2026-10-03 UTC+8 |
 
 ## 2026-10-25
+
+### localClash Core v0.1.103
+
+Changes:
+
+- ViuTV 改用服務自有的手動香港節點組，讓取流 API、CDN 與授權請求固定使用同一 leaf node；
+  共享香港 Smart／自動組保持原來行為。加入官方重新導向實際使用的 `cdn01.now.com`。
+- Router profile 對精確的 `api.viu.now.com` 保留 DNS 映射目的地址，配合本次發佈的
+  Smart `alpha-smart-ab65458` TCP 修正，避免遠端重新解析域名造成 IP 綁定播放網址失效。
+  不硬編 API IP，也不關閉其他服務的嗅探。
+- 元件狀態回報 Core 的編譯版本。既有路由器可執行「一鍵更新」並保留「同步最新默认策略」勾選；
+  本次沒有新的 LuCI package。
+
+Release:
+
+[localClash v0.1.103](https://github.com/qoli/localClash/releases/tag/v0.1.103)
+
+Verification:
+
+- 完整 Go 測試、go vet、正式 CLI 舊策略同步／排序／香港有無節點回歸通過。
+- 同一 QEMU workspace 從官方 v0.1.102 升級至 exact 候選 `51208cc`，正式套用、生成、
+  isolated config-test、啟動及資料保留通過；外部 oracle 僅證明 API 根路徑連通，
+  沒有把它當作香港、HLS 或 DRM 驗收，功能範圍維持 **PARTIAL**，見 [E36](istoreos-test-features.md#e36)。
+- [Core Release CI](https://github.com/qoli/localClash/actions/runs/40197319545) 與七項公開資產校驗通過；
+  雙架構來源為 `51208cc`、`vcs.modified=false`，base assets 的 19 份靜態來源檔一致。
+- [Smart Build](https://github.com/qoli/mihomo-Alpha/actions/runs/40197198909) 完成，公開 ARM64 產物的
+  source／版本／checksum 通過。同配置、節點、DNS 答案與目的 IP 的隔離對照中，
+  舊核心 CDN 403／空 body，修正候選的主清單／variant 均 200；此對照不等於 Safari 實播。
+- 正式 ARM64 路由器完成一次一鍵更新，活躍 Core／Smart SHA 與官方檔案一致；
+  同步預設策略，保留自訂網站、訂閱配置及共享群組，臨時 profile 已核對後退役至 rollback 目錄。
+  初次 GUI session 過期沒有建立任務，正式完成的是同一 LuCI RPC，詳見 [E37](istoreos-test-features.md#e37)。
+- Safari 27.0.1 官方及 OrbStack 頁面的 99／96 均完成真實 FairPlay 授權，時間與影格持續增加；
+  本機頁各有 SPC／CKC 1／1、無播放器錯誤。URL 到期重開及長時間續期待驗。
 
 ### localClash Core v0.1.102
 
