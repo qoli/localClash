@@ -18,8 +18,38 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
-| localClash Core | [v0.1.101](https://github.com/qoli/localClash/releases/tag/v0.1.101) | 2026-10-21 UTC+8 |
+| localClash Core | [v0.1.102](https://github.com/qoli/localClash/releases/tag/v0.1.102) | 2026-10-25 UTC+8 |
 | localclash-luci | [v0.1.0-85](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-85) | 2026-10-03 UTC+8 |
+
+## 2026-10-25
+
+### localClash Core v0.1.102
+
+Changes:
+
+- 新增 ViuTV 99／96 專用預設策略，官網、取流 API、已觀察到的 CDN 與 DRM 授權主機
+  優先使用香港節點組，排在一般娛樂／媒體規則之前；沒有香港節點時僅拒絕此服務。
+- 既有工作區可透過預設策略同步加入新片段，保留既有排序與自訂網站列表。
+- 只需更新 Core；在路由器 localClash 概覽執行「一鍵更新」，保留「同步最新默认策略」勾選。
+  本次沒有新的 LuCI package。
+
+Release:
+
+[localClash v0.1.102](https://github.com/qoli/localClash/releases/tag/v0.1.102)
+
+Verification:
+
+- 完整 Go 測試、正式 CLI 模板首次匯入／重新套用／同步，以及 HK 有／無與規則順序回歸通過。
+- 同一可拋棄 iStoreOS QEMU workspace 從官方 v0.1.101 升級至修正候選，
+  正式套用／生成／Smart 驗證／啟動與自訂網站、真實訂閱資料保留通過。
+- [Release CI](https://github.com/qoli/localClash/actions/runs/40187442989) 與 7 項公開資產校驗通過；
+  雙架構 binary 均對應 tag commit `214a650`、`vcs.modified=false`，base assets 內的新模板一致。
+- 正式 ARM64 路由器經 LuCI 一鍵更新並同步新策略，既有自訂網站、訂閱配置與群組選擇保留。
+  實際 API／CDN 連線命中 ViuTV 香港組；99／96 取流 API 均 `SUCCESS`，CDN 與 ffmpeg 仍回 403。
+  一個訂閱刷新 403，依原流程保留快取；更新任務本身成功。
+- 整體維持 **PARTIAL**，尚未通過實播，也未獨立測量節點出口地理位置。
+  首次排序衝突與修正回驗見 [E33](istoreos-test-features.md#e33)，正式路由器結果見
+  [E34](istoreos-test-features.md#e34)。
 
 ## 2026-10-21
 
