@@ -1337,6 +1337,7 @@ func componentStatus(state appinit.RuntimeState) map[string]any {
 		"localclash": map[string]any{
 			"path":      exe,
 			"installed": exe != "",
+			"version":   version,
 		},
 		"mihomo": map[string]any{
 			"path":      state.Core.Path,

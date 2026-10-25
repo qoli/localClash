@@ -113,6 +113,9 @@
 <a id="luci"></a>
 ## LuCI 整合能力（另列歸屬）
 
+2026-10-25 的目前版本顯示候選尚未取得真實 UI 結果；QEMU 的 SSH／LuCI 連線逾時，
+LUCI-INSTALL／LUCI-UPDATE 維持原實測版本與結果，見 [E35](#e35)。
+
 | 功能 ID | 功能／驗證內容 | 責任／核心範圍 | 最後實測版本；結果；證據 |
 | --- | --- | --- | --- |
 | LUCI-INSTALL | **OpenWrt 安裝與版本管理**：離線包安裝、重裝、LuCI／Core 安裝更新及支援的舊版交接正常；架構／完整性錯誤拒絕，應保留資料不丟失。Core 自我更新未實作，實際由 helper 管理。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI／共用 | Core `591c357`／LuCI v0.1.0-81 候選；PASS（影響範圍）；候選 IPK 在 inactive task 同步 rpcd reload、active task 只寫延後標記，兩路均安裝成功且 rpcd／uhttpd PID 不變 [E17](#e17) |
@@ -1082,6 +1085,24 @@ v0.1.0-85。主代理透過現有 Arc 的真實概覽頁單次執行「一鍵更
   [更新後讀回](../.runtime/releases/v0.1.102/router-readback.json)、
   [主代理獨立核對](../.runtime/releases/v0.1.102/main-final-verification.json)、
   [ffmpeg](../.runtime/releases/v0.1.102/ffmpeg-playback.json)。
+
+<a id="e35"></a>
+### E35
+
+2026-10-25，Core `92d83b3`／LuCI `7dd4774` 上的未提交目前版本顯示變更。
+影響範圍為 Core 元件狀態的編譯版本、rpcd 傳遞及概覽頁顯示；不更動安裝、更新或接管流程。
+
+- 主機端 `go test ./...`、相關 JavaScript／shell 語法與既有 UI／rpcd 狀態測試通過。
+  IPK／APK 建置成功，IPK 中的頁面與 helper 逐 byte 比較與目前來源一致。
+  這些結果不構成 iStoreOS 功能 PASS。
+  主機驗證時 Core 基準為 `214a650`；其後的 `92d83b3` 僅更新文件，程式來源未變。
+- 啟動既有停止的可拋棄 QEMU 後，monitor 顯示 VM running，但 guest SSH
+  `Connection timed out during banner exchange`，LuCI HTTP 也逾時；主代理獨立 SSH
+  probe 得到同一錯誤。候選安裝及真 UI 驗收為 **ERROR／NOT_RUN**，沒有產品顯示結果。
+- 頁面版本與套件／編譯標記一致、重開頁、更新檢查失敗時保留版本、窄版及缺版本狀態
+  均為 **NOT_RUN**。LUCI-INSTALL／LUCI-UPDATE 不提高實測版本，也不改寫歷史結果。
+- 證據：[主機端核對](../.runtime/istoreos-acceptance/20261025-version-display/host-verification.md)、
+  [QEMU 嘗試](../.runtime/istoreos-acceptance/20261025-version-display/report.md)。
 
 <a id="pending-incidents"></a>
 ## 待核對事故與證據缺口
