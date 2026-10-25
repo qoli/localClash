@@ -40,6 +40,11 @@
       "description": "Add Apple, Google, Microsoft, TikTok, and streaming media groups."
     },
     {
+      "id": "default.viutv.v1",
+      "path": "localclash-default.d/51-viutv.json",
+      "description": "Route ViuTV playback endpoints through the Hong Kong exit."
+    },
+    {
       "id": "default.games.v1",
       "path": "localclash-default.d/60-games.json",
       "description": "Add Bahamut and generic game-platform routing."

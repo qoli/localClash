@@ -1004,6 +1004,26 @@ SHA `60425f37…98fcf1`；LuCI v0.1.0-85、iStoreOS 24.10.8 x86_64、Smart
   主代理關閉自己建立的驗證 tab；ignored 證據保留，詳見
   [清理紀錄](../.runtime/istoreos-acceptance/20261021-v01100-subscriptions/cleanup.json)。
 
+<a id="e32"></a>
+### E32
+
+2026-10-25，Core `070afd8` 上的未提交 ViuTV 預設模板變更，僅完成主機端來源回歸與
+隔離配置檢查；**不更新上述功能列的 iStoreOS 實測版本或結果**。
+
+- `default.viutv.v1` 以服務專用規則涵蓋 `viu.tv` 子網域、`api.viu.now.com`、
+  歷史觀測的 `cdn01r.now.com` 與 `fwp.nowe.com`，優先於廣義娛樂／媒體分類；
+  不使用同時涵蓋 Viu.com 且缺少 CDN／license 的現成 Viu 規則包。
+- 真實模板的 resolve／render 回歸通過：有香港節點時 `📺 ViuTV` 預設引用既有香港組；
+  沒有香港節點時該服務只剩 `REJECT`。端點覆蓋、Cloudflare／媒體規則順序、
+  自訂網站優先權、安全 baseline、DIRECT／MATCH fallback 及其他媒體預設保持原契約。
+  Go 1.26.0 的 `go test ./...` 與 `git diff --check` 通過。
+- 以真實 region／ViuTV 來源片段及明列的 synthetic nodes 生成兩份服務範圍夾具，
+  經產品 `mihomotest.Test` 的隔離流程驗證；host Meta v1.19.25 兩例均通過。
+  `doctor` 兩例皆僅有未安裝 Dashboard 的 warning；初次夾具準備失敗另保留，
+  沒有修改產品引擎、正式工作區或 live runtime。
+- 本輪沒有 QEMU、真實香港出口、載入新模板後的官方 API／CDN／DRM／播放器 oracle；
+  這些項目均為 **NOT_RUN**，配置接受與來源回歸不代表 ViuTV 已可播放。
+
 <a id="pending-incidents"></a>
 ## 待核對事故與證據缺口
 

@@ -1,0 +1,31 @@
+{
+  "id": "default.viutv.v1",
+  "description": "Route ViuTV 99/96 through Hong Kong before broad media routing; keep Viu.com outside this service policy.",
+  "config": {
+    "version": 3,
+    "policy_groups": {
+      "📺 ViuTV": {
+        "mode": "manual",
+        "exits": [
+          "🇭🇰 香港节点",
+          "REJECT"
+        ],
+        "reason": "ViuTV 99/96 使用香港出口；沒有香港節點時僅拒絕此服務，不改用其他地區或直連。",
+        "boundary": "business_to_exit_layer"
+      }
+    },
+    "custom_rules": [
+      {
+        "id": "viutv-playback-hosts",
+        "target": "📺 ViuTV",
+        "reason": "Confirmed ViuTV site, live API, observed CDN and DRM wrapper. Existing Viu packs also include Viu.com and omit the CDN/license hosts.",
+        "rules": [
+          {"type": "domain_suffix", "value": "viu.tv"},
+          {"type": "domain", "value": "api.viu.now.com"},
+          {"type": "domain", "value": "cdn01r.now.com"},
+          {"type": "domain", "value": "fwp.nowe.com"}
+        ]
+      }
+    ]
+  }
+}

@@ -185,6 +185,15 @@ With `refresh_subscription=true` it performs a rollback-protected
 template/refresh/capability/render/config-test transaction. `reset_patches`
 replaces policy patches but preserves independent custom-site lists.
 
+The full default template includes `📺 ViuTV` for ViuTV 99/96. Its only
+geographic exit is the existing `🇭🇰 香港节点` group; without matching Hong Kong
+nodes, this service exposes only `REJECT`. The dedicated rules cover `viu.tv`
+and its subdomains, `api.viu.now.com`, `cdn01r.now.com`, and `fwp.nowe.com`
+before broad media routing. They do not capture Viu.com or all of now.com.
+The reusable Viu packs include Viu.com and omit the observed CDN/license
+hosts, so this policy uses scoped endpoint rules. Region selectors match node
+names; actual Hong Kong egress and successful DRM playback still need testing.
+
 Runtime-only keys such as DNS, TUN, ports, and sniffer come from the selected
 builtin runtime template, or `localclash-user.json` when present. That file
 replaces the builtin fragment without deep backfill; dynamic routing keys
