@@ -19,7 +19,7 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
 | localClash Core | [v0.1.104](https://github.com/qoli/localClash/releases/tag/v0.1.104) | 2026-10-26 UTC+8 |
-| localclash-luci | [v0.1.0-86](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-86) | 2026-10-26 UTC+8 |
+| localclash-luci | [v0.1.0-87](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-87) | 2026-10-26 UTC+8 |
 
 ## 2026-10-26
 
@@ -49,6 +49,28 @@ Verification:
   一般連通的停止／恢復回驗需手動切直連才恢復。ViuTV API 在舊版與候選均不可用，出口地理、DRM 與實播未驗。
 - [Core Release CI](https://github.com/qoli/localClash/actions/runs/40299568992) 成功，七項公開資產／manifest／checksum
   與 19 份靜態來源檔校驗通過；雙架構來源均為 `d98ea66`、`vcs.modified=false`。
+
+### localclash-luci v0.1.0-87
+
+Changes:
+
+- 面板改用 Trackly 中性色的半透明灰度疊加，純黑／純白背景下仍能分辨一般區域與重點狀態面板；頁面背景保持透明。
+- 訂閱來源輸入框最少完整顯示五行，保留垂直拖曳放大，修復原生 Trackly 主題覆寫欄位最小高度的問題。
+- 普通 IPK／APK 更新 LuCI；離線包繼續固定 Core v0.1.96，Core 通道維持 v0.1.104。
+
+Release:
+
+[localclash-luci v0.1.0-87](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-87)
+
+Verification:
+
+- [主分支 CI](https://github.com/qoli/localclash-luci/actions/runs/40337228859) 與
+  [Release CI](https://github.com/qoli/localclash-luci/actions/runs/40338281709) 通過；
+  八項公開資產與 SHA-256 核對完成，IPK 與 QEMU 受測檔完全相同，APK 安裝內容及雙架構離線包內容與候選一致。
+- 灰度面板在黑／白／灰底、桌面及390px交叉檢查；原生 Trackly 訂閱框 light／dark 各1440／390／320px均維持五行，
+  沿用 [E40](istoreos-test-features.md#e40)／[E41](istoreos-test-features.md#e41) 的原實測身分。
+- v87 最終包的版本顯示及 light 桌面／dark390 輸入框回驗通過，見 [E42](istoreos-test-features.md#e42)。
+  選測完整能力仍為 **PARTIAL**；先前運行中網站 controller 讀回逾時／回滾保留原失敗，未宣稱網路、接管或 ARM runtime 驗收。
 
 ### localclash-luci v0.1.0-86
 

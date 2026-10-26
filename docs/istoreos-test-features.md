@@ -1326,6 +1326,11 @@ CSS SHA `d9697bd6…84c0c2b`、subscription.js SHA `aafb5e18…b8a341` 與 [E41]
   資料面、takeover、ARM runtime、APK runtime／離線安裝、CRUD、更新與完整取消／續接未重跑。
 - [主分支 CI](https://github.com/qoli/localclash-luci/actions/runs/40337228859) 通過；
   主機／CI／資產檢查只證明來源與包裝，不取代上述 QEMU 畫面結果。
+- [v0.1.0-87](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-87) 已透過
+  [Release CI](https://github.com/qoli/localclash-luci/actions/runs/40338281709) 公開，tag 指向上述 commit。
+  八項公開資產與 sidecar SHA 核對完成；公開 IPK 與受測檔逐 byte 相同，APK 安裝內容及雙架構
+  離線包 payload 與候選相符，離線 Core 仍為 v0.1.96；這些不代表 APK／ARM runtime 或離線安裝驗收。
+  [公開資產核對](../.runtime/releases/luci-v0.1.0-87/verification.json)。
 - 證據：[G99](../.runtime/istoreos-acceptance/20261026-luci87-release/G99-summary.md)、
   [功能摘要](../.runtime/istoreos-acceptance/20261026-luci87-release/functional-summary.json)、
   [guest 安裝身分](../.runtime/istoreos-acceptance/20261026-luci87-release/raw/install-readback.json)、
