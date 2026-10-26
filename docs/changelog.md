@@ -19,7 +19,7 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
 | localClash Core | [v0.1.104](https://github.com/qoli/localClash/releases/tag/v0.1.104) | 2026-10-26 UTC+8 |
-| localclash-luci | [v0.1.0-85](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-85) | 2026-10-03 UTC+8 |
+| localclash-luci | [v0.1.0-86](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-86) | 2026-10-26 UTC+8 |
 
 ## 2026-10-26
 
@@ -32,7 +32,7 @@ Changes:
 - `📺 ViuTV` 提供「香港、直連（`DIRECT`）」兩個出口選項，預設香港；沒有匹配香港節點時保留直連。
 - 同步最新預設策略會更新舊 ViuTV 補丁，保留原排序、其他策略及獨立自訂網站。
   五條服務規則與 Router profile 的 API 精確嗅探例外保持原設定。
-  既有路由器可執行「一鍵更新」並保留「同步最新默认策略」勾選；本次沒有新的 LuCI package。
+  既有路由器可執行「一鍵更新」並保留「同步最新默认策略」勾選；該 Core 更新無須新版 LuCI package。
 
 Release:
 
@@ -49,6 +49,32 @@ Verification:
   一般連通的停止／恢復回驗需手動切直連才恢復。ViuTV API 在舊版與候選均不可用，出口地理、DRM 與實播未驗。
 - [Core Release CI](https://github.com/qoli/localClash/actions/runs/40299568992) 成功，七項公開資產／manifest／checksum
   與 19 份靜態來源檔校驗通過；雙架構來源均為 `d98ea66`、`vcs.modified=false`。
+
+### localclash-luci v0.1.0-86
+
+Changes:
+
+- 概覽、訂閱、網站分流與進階頁統一排版、按鈕及面板層級；保留 LuCI 頁面透明背景，
+  以半透明面板與邊界區分區域。手機摘要、網站列與長狀態文字改善換行。
+- 配色優先遵循 LuCI 實際主題，支援 Argon 與 Bootstrap 的固定深淺色；
+  修復瀏覽器深色偏好與 LuCI 淺色主題衝突時，頁面失去對比及日誌彈窗白底白字。
+- 共用樣式網址加入 LuCI 資源版本；改善訂閱／排程標籤、彈窗焦點與網站時間顯示。
+  概覽顯示 LuCI 安裝版本，支援回報版本的 Core 同時顯示 Core 版本。
+- 普通 IPK／APK 只更新 LuCI；離線整合包繼續固定 Core v0.1.96，Core 發佈通道維持 v0.1.104。
+
+Release:
+
+[localclash-luci v0.1.0-86](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-86)
+
+Verification:
+
+- [主分支 CI](https://github.com/qoli/localclash-luci/actions/runs/40320628341) 與
+  [Release CI](https://github.com/qoli/localclash-luci/actions/runs/40321735046) 通過；
+  公開八項資產、SHA-256、雙架構離線內容及受測 IPK 對應完成核對。
+- iStoreOS x86_64 QEMU 實測四頁、Argon／Bootstrap 深淺色交叉與匹配組合的真實日誌／結果彈窗、
+  320／390px 排版、訂閱／排程讀回及停止 runtime 的網站增刪；兩次首次視覺失敗與修復回驗保留於 [E39](istoreos-test-features.md#e39)。
+- 本輪維持選測範圍 **PARTIAL**：運行中的一次網站熱載入在 controller 讀回時逾時並回滾；
+  未修改 Core 熱載入邏輯，亦未宣稱資料面、takeover、一鍵更新、ARM runtime 或完整長任務驗收。
 
 ## 2026-10-25
 
