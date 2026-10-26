@@ -69,11 +69,11 @@
 
 | 功能 ID | 功能／驗證內容 | 責任／核心範圍 | 最後實測版本；結果；證據 |
 | --- | --- | --- | --- |
-| CONFIG-TEMPLATE | **策略模板設定**：選取完整預設或 minimal 模板、配置 profile，產生相應補丁及 intent；重設模板只依明示選項處理既有補丁，不默默覆蓋自訂設定。[實作入口](../product_cli.go) | Core／共用 | v0.1.103／LuCI v0.1.0-85；PARTIAL；QEMU 舊版升級及正式 ARM64 同步 ViuTV 專有香港 selector、第五個 CDN host，保留補丁排序、自訂網站與訂閱配置；正式 builtin 取代等價臨時 profile，minimal／完整模板契約未重跑 [E36](#e36) [E37](#e37)；歷史範圍 [E34](#e34) [E33](#e33) [E27](#e27) [E15](#e15) [E20](#e20) |
+| CONFIG-TEMPLATE | **策略模板設定**：選取完整預設或 minimal 模板、配置 profile，產生相應補丁及 intent；重設模板只依明示選項處理既有補丁，不默默覆蓋自訂設定。[實作入口](../product_cli.go) | Core／共用 | v0.1.104／不適用；PARTIAL（ViuTV 同步範圍）；同一 QEMU 由官方 v0.1.103 升級，改用共享香港／DIRECT，保留原排序、12 份其他補丁、訂閱配置、profile 與自訂網站；minimal／完整模板契約未重跑 [E38](#e38)；歷史範圍 [E37](#e37) [E36](#e36) [E34](#e34) [E33](#e33) [E27](#e27) [E15](#e15) [E20](#e20) |
 | CONFIG-PATCHES | **配置補丁管理**：讀取、預覽、套用、移除、啟停及排序補丁；預覽不落盤，套用後 registry／intent 一致，失效草稿或非法引用明確拒絕。[實作入口](../product_cli.go) | Core／共用 | v0.1.99／不適用；PARTIAL（MCP／能力快照範圍）；同一 v0.1.98 workspace 升級，候選完成無關 DIRECT 補丁新增／修改／移除／啟停／排序、過期草稿與缺快照恢復；官方 binary 草稿／套用及 fresh MCP 持久讀回通過；真實零合格節點未測 [E30](#e30)；完整歷史範圍保留 [E05](#e05) |
-| CONFIG-RENDER | **Mihomo 配置生成**：由訂閱、模板、補丁與 profile 生成正確配置。Meta 自動組為 url-test，Smart 為 smart 並移除 tolerance；Smart 參數、群組 priority 與 defaults 按 intent 傳遞且不覆蓋既有值；生成不等於已載入。[實作入口](../product_cli.go) | Core／按核心差異 | v0.1.103／LuCI v0.1.0-85；PARTIAL（Smart／ViuTV 範圍）；QEMU 升級與正式 ARM64 的 generated／loaded 五條規則、專用 selector、exact API skip 及自訂網站優先序一致；正式 Safari99／96通過，模板／參數完整契約未展開 [E36](#e36) [E37](#e37)；歷史範圍 [E34](#e34) [E33](#e33) [E30](#e30) [E29](#e29) [E28](#e28) [E27](#e27) [E16](#e16) [E21](#e21) |
-| CONFIG-VALIDATION | **配置驗證**：用所選核心驗證生成配置，記錄對應 hash；非法配置不取得通過證明；驗證與活躍程序隔離，不爭用工作目錄。[實作入口](../product_cli.go) | Core／按核心差異 | v0.1.103／LuCI v0.1.0-85；PARTIAL（Smart／ViuTV 範圍）；QEMU 舊 Smart 與正式 ARM64 alpha-smart-ab65458 的 isolated config-test／SHA attestation 通過；builtin 收尾配置不變、證明保留；非法配置／Meta 未重跑 [E36](#e36) [E37](#e37)；歷史範圍 [E34](#e34) [E33](#e33) [E30](#e30) [E29](#e29) [E28](#e28) [E27](#e27) [E16](#e16) [E21](#e21) |
-| CONFIG-APPLY | **配置套用**：按所選入口核對候選檔提交或 runtime 載入；config-promote 是其中一個檔案提交入口，不是所有流程的前置。驗證 hash、實際載入規則／組及失敗結果符合契約，提交檔案不當成已熱載入，生成檔存在不當成已生效。[實作入口](../product_cli.go) | Core／按核心差異 | v0.1.103／LuCI v0.1.0-85；PARTIAL（Smart／ViuTV 範圍）；QEMU 升級／外部 proxy stop-start 敏感度保留；正式 ARM64 單次更新後 loaded5規則、資料保留及實際 Safari 官方／Docker99／96授權與影格通過；未展開其他 hot reload／停止狀態契約 [E36](#e36) [E37](#e37)；歷史範圍 [E34](#e34) [E33](#e33) [E30](#e30) [E29](#e29) [E28](#e28) [E27](#e27) [E15](#e15) |
+| CONFIG-RENDER | **Mihomo 配置生成**：由訂閱、模板、補丁與 profile 生成正確配置。Meta 自動組為 url-test，Smart 為 smart 並移除 tolerance；Smart 參數、群組 priority 與 defaults 按 intent 傳遞且不覆蓋既有值；生成不等於已載入。[實作入口](../product_cli.go) | Core／按核心差異 | v0.1.104／不適用；PARTIAL（Smart／ViuTV 範圍）；QEMU 升級後生成 109 proxies／71 rules，五條服務規則保留，ViuTV 改引用共享香港 Smart／DIRECT；香港外部請求因節點逾時 FAIL，Meta／完整參數契約未實測 [E38](#e38)；歷史範圍 [E37](#e37) [E36](#e36) [E34](#e34) [E33](#e33) [E30](#e30) [E29](#e29) [E28](#e28) [E27](#e27) [E16](#e16) [E21](#e21) |
+| CONFIG-VALIDATION | **配置驗證**：用所選核心驗證生成配置，記錄對應 hash；非法配置不取得通過證明；驗證與活躍程序隔離，不爭用工作目錄。[實作入口](../product_cli.go) | Core／按核心差異 | v0.1.104／不適用；PARTIAL（Smart／ViuTV 範圍）；同一 QEMU 的舊版及候選 isolated config-test／SHA attestation 通過；候選配置 SHA ec4919da，非法配置／Meta／正式 ARM64 未重跑 [E38](#e38)；歷史範圍 [E37](#e37) [E36](#e36) [E34](#e34) [E33](#e33) [E30](#e30) [E29](#e29) [E28](#e28) [E27](#e27) [E16](#e16) [E21](#e21) |
+| CONFIG-APPLY | **配置套用**：按所選入口核對候選檔提交或 runtime 載入；config-promote 是其中一個檔案提交入口，不是所有流程的前置。驗證 hash、實際載入規則／組及失敗結果符合契約，提交檔案不當成已熱載入，生成檔存在不當成已生效。[實作入口](../product_cli.go) | Core／按核心差異 | v0.1.104／不適用；PARTIAL（Smart／ViuTV 範圍）；QEMU 官方 v0.1.103 升級、套用／載入及資料保留通過；指定 ViuTV 的 DIRECT 外部請求 PASS、香港節點逾時 FAIL；一般連通重啟須手動切直連才恢復，未驗地理／DRM／實播 [E38](#e38)；歷史範圍 [E37](#e37) [E36](#e36) [E34](#e34) [E33](#e33) [E30](#e30) [E29](#e29) [E28](#e28) [E27](#e27) [E15](#e15) |
 
 <a id="cores"></a>
 ## 核心管理
@@ -1170,6 +1170,46 @@ Smart `alpha-smart-dc90210` → `alpha-smart-ab65458`，LuCI v0.1.0-85 不變。
   `router-release-update/final-playback-route-observation-20261025T145738Z.json`。
   舊403、DNS ERROR與首次QUIC失敗不刪改；完整播放／維護入口見 sibling macOSAgentBot 的
   `viutv_live/README.md`。
+
+<a id="e38"></a>
+### E38
+
+2026-10-26，Core v0.1.104 `d98ea66` 的 ViuTV 共享 GEO／直連出口選測。
+使用全新可拋棄 iStoreOS QEMU，先以官方 v0.1.103 binary／base assets 與正式路由器
+唯讀匯出的真實訂閱建立可用工作區，再在同一 qcow2 停止舊 runtime、替換版本擁有檔案並升級。
+LuCI、Mihomo 實作與正式路由器設定未修改；四項配置能力均記為 **PARTIAL**。
+
+- 候選 Linux amd64 binary SHA `82aa57390b43f694b6eb12bf7099669a568a167647e2c6833e1c0cc923fc6441`，
+  source commit `d98ea66c59d7952ca0718fdb54ab31c246d8e89f`、`vcs.modified=false`。
+  舊官方 binary／base assets 與 firmware、Smart／model 的 SHA 及完整來源記錄保留於 G99。
+  測試使用既有 Smart `alpha-smart-dc90210`，不代表正式 ARM64 或較新 Smart 的實測。
+- 正式 `subscription-sync`、模板套用、刷新、生成、isolated config-test 與啟動完成；
+  三個真實來源合併 109 proxies，來源 02 既有 HTTP 403 明示跳過。初次在刷新前新增自訂網站
+  因未解析配置缺 `DNSProxy` 失敗；保留首次結果，正式刷新後重試通過。
+- 候選生成 71 rules，五條 ViuTV hosts 與 `0650.000000` 排序保留。
+  loaded `📺 ViuTV` 的選項恰為 `🇭🇰 香港节点`／`DIRECT`，原香港組仍為 Smart，
+  獨立 ViuTV 香港組移除。通過的候選配置 SHA 為
+  `ec4919dac38f96bd4aaa07f5842e3f5382a20650160991615c8fc253336a6e55`。
+- 訂閱配置、runtime profile、兩份自訂網站與 12 份其他補丁 SHA 前後一致；
+  主代理另行讀回比對。派生 intent、packs 與刷新後 subscription cache 的 hash 不作不變宣稱。
+- 透過正式 MCP 補丁臨時把外部回顯 endpoint 導向 `📺 ViuTV`，獨立 client 的香港路徑
+  確認命中該組但實際節點逾時，結果為 **FAIL**；切明確 DIRECT 後同一請求成功。
+  測後透過正式補丁入口移除臨時規則。節點名稱與 controller 就緒不當成出口地理證明。
+- 一般 Cloudflare 204 請求在執行時成功、停止時失敗；重啟後兩次回驗 rc35，手動將一般
+  非中國組切為直連後才恢復 204。只保留為一般連通敏感度與恢復限制，不冒充香港路徑 PASS。
+  ViuTV API 在舊版與候選均不可用；地理、live URL、HLS、DRM、Safari 實播及無香港節點
+  的真實輸入情境均為 **NOT_RUN**。主機 Meta／Smart 來源回歸不更新這些實測結果。
+- 舊版實播結果 [E37](#e37) 仍只屬於當時專用 selector 配置。完整模板、minimal、Meta、
+  非法配置與其他配置套用狀態契約未重跑；未把本輪 Bug 回歸升格為完整能力 PASS。
+- [Release CI](https://github.com/qoli/localClash/actions/runs/40299568992) 成功，公開 tag 指向相同 `d98ea66`。
+  七資產／SHA-256／manifest／19 份靜態來源檔一致，公開 amd64／arm64 binary 的
+  `vcs.modified=false`；這是官方產物來源及完整性證據，不替代前述私有候選的 QEMU 結果。
+- 測後停止 runtime／MCP／SSH forwarding／VM，`qemu-img check` 通過並清理該輪 clone。
+  證據：[G99](../.runtime/istoreos-acceptance/20261026-viutv-shared-geo-release/G99-summary.md)、
+  [功能摘要](../.runtime/istoreos-acceptance/20261026-viutv-shared-geo-release/functional-summary.json)、
+  [清理](../.runtime/istoreos-acceptance/20261026-viutv-shared-geo-release/cleanup.json)；
+  主代理核對見 `.runtime/releases/v0.1.104/acceptance-review.json`，官方資產核對見
+  `.runtime/releases/v0.1.104/verification.json`。
 
 <a id="pending-incidents"></a>
 ## 待核對事故與證據缺口

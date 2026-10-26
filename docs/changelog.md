@@ -18,8 +18,37 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
-| localClash Core | [v0.1.103](https://github.com/qoli/localClash/releases/tag/v0.1.103) | 2026-10-25 UTC+8 |
+| localClash Core | [v0.1.104](https://github.com/qoli/localClash/releases/tag/v0.1.104) | 2026-10-26 UTC+8 |
 | localclash-luci | [v0.1.0-85](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-85) | 2026-10-03 UTC+8 |
+
+## 2026-10-26
+
+### localClash Core v0.1.104
+
+Changes:
+
+- ViuTV 預設策略直接引用既有 `🇭🇰 香港节点` GEO 出口，移除服務專用香港節點組，
+  沿用原組的 Meta `url-test`／Smart `smart` 選擇行為。
+- `📺 ViuTV` 提供「香港、直連（`DIRECT`）」兩個出口選項，預設香港；沒有匹配香港節點時保留直連。
+- 同步最新預設策略會更新舊 ViuTV 補丁，保留原排序、其他策略及獨立自訂網站。
+  五條服務規則與 Router profile 的 API 精確嗅探例外保持原設定。
+  既有路由器可執行「一鍵更新」並保留「同步最新默认策略」勾選；本次沒有新的 LuCI package。
+
+Release:
+
+[localClash v0.1.104](https://github.com/qoli/localClash/releases/tag/v0.1.104)
+
+Verification:
+
+- 完整 Go 測試與 go vet 通過；正式 CLI 首次套用、舊策略同步、排序及自訂網站保留回歸通過。
+- Meta／Smart、有／無香港節點的配置生成回歸通過；主機 Meta 的服務範圍配置隔離驗證通過。
+  來源測試及配置接受不視為 iStoreOS 出口、DRM 或實播驗收。
+- 同一 QEMU 工作區由官方 v0.1.103 升級，真實訂閱刷新、模板同步、Smart 隔離驗證、啟動與載入讀回通過；
+  訂閱配置、runtime profile、自訂網站與 12 份其他補丁的 SHA 保留，見 [E38](istoreos-test-features.md#e38)。
+- 本輪功能範圍維持 **PARTIAL**：指定 ViuTV 策略的直連外部請求通過，香港路徑因實際節點逾時失敗；
+  一般連通的停止／恢復回驗需手動切直連才恢復。ViuTV API 在舊版與候選均不可用，出口地理、DRM 與實播未驗。
+- [Core Release CI](https://github.com/qoli/localClash/actions/runs/40299568992) 成功，七項公開資產／manifest／checksum
+  與 19 份靜態來源檔校驗通過；雙架構來源均為 `d98ea66`、`vcs.modified=false`。
 
 ## 2026-10-25
 
