@@ -19,7 +19,7 @@ func TestRunProductDefaultTemplateAddsViuTVWithoutOrderCollision(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, mode := range []string{"fresh", "reapply_pre_viutv", "sync_pre_viutv", "sync_shared_smart_viutv"} {
+	for _, mode := range []string{"fresh", "reapply_pre_viutv", "sync_pre_viutv", "sync_shared_smart_viutv", "sync_dedicated_viutv"} {
 		t.Run(mode, func(t *testing.T) {
 			dir := t.TempDir()
 			t.Setenv("LOCALCLASH_WORKDIR", dir)
@@ -75,9 +75,10 @@ func TestRunProductDefaultTemplateAddsViuTVWithoutOrderCollision(t *testing.T) {
 				if err := json.Unmarshal(currentManifest, &manifest); err != nil {
 					t.Fatal(err)
 				}
-				if mode == "sync_shared_smart_viutv" {
-					// Reproduce the v0.1.102 service definition through the same
-					// formal import path, then synchronize its replacement.
+				hasViu := mode == "sync_shared_smart_viutv" || mode == "sync_dedicated_viutv"
+				if hasViu {
+					// Reproduce the v0.1.102/v0.1.103 service definitions through
+					// the formal import path, then synchronize their replacement.
 					var oldViu policytemplate.PatchFile
 					if err := json.Unmarshal(currentViu, &oldViu); err != nil {
 						t.Fatal(err)
@@ -85,11 +86,20 @@ func TestRunProductDefaultTemplateAddsViuTVWithoutOrderCollision(t *testing.T) {
 					delete(oldViu.Config.ProxyGroups, "🇭🇰 ViuTV 香港节点")
 					group := oldViu.Config.PolicyGroups["📺 ViuTV"]
 					group.Exits = []string{"🇭🇰 香港节点", "REJECT"}
+					if mode == "sync_dedicated_viutv" {
+						oldViu.Config.ProxyGroups = map[string]localconfig.ProxyGroup{
+							"🇭🇰 ViuTV 香港节点": {
+								Mode: "manual", Optional: true,
+								Match: &localconfig.Match{Type: "name_regex", Pattern: "(香港|HK|Hong.?Kong)"},
+							},
+						}
+						group.Exits = []string{"🇭🇰 ViuTV 香港节点", "REJECT"}
+					}
 					oldViu.Config.PolicyGroups["📺 ViuTV"] = group
 					for i := range oldViu.Config.CustomRules {
 						var oldRules []localconfig.CustomRuleLine
 						for _, rule := range oldViu.Config.CustomRules[i].Rules {
-							if rule.Value != "cdn01.now.com" {
+							if mode == "sync_dedicated_viutv" || rule.Value != "cdn01.now.com" {
 								oldRules = append(oldRules, rule)
 							}
 						}
@@ -123,7 +133,7 @@ func TestRunProductDefaultTemplateAddsViuTVWithoutOrderCollision(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if _, exists := before.ByID["default.viutv.v1"]; exists != (mode == "sync_shared_smart_viutv") || len(before.Records) != len(manifest.Patches) {
+				if _, exists := before.ByID["default.viutv.v1"]; exists != hasViu || len(before.Records) != len(manifest.Patches) {
 					t.Fatal("synthetic prior registry was not established")
 				}
 				for _, record := range before.Records {
@@ -164,7 +174,7 @@ func TestRunProductDefaultTemplateAddsViuTVWithoutOrderCollision(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			apply(mode == "sync_pre_viutv" || mode == "sync_shared_smart_viutv")
+			apply(mode == "sync_pre_viutv" || mode == "sync_shared_smart_viutv" || mode == "sync_dedicated_viutv")
 			registry, err := configpatch.Load(registryDir)
 			if err != nil {
 				t.Fatal(err)
@@ -201,11 +211,10 @@ func TestRunProductDefaultTemplateAddsViuTVWithoutOrderCollision(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			serviceHK := intent.ProxyGroups["🇭🇰 ViuTV 香港节点"]
-			if serviceHK.Mode != "manual" || !serviceHK.Optional || !reflect.DeepEqual(serviceHK.Match, intent.ProxyGroups["🇭🇰 香港节点"].Match) {
-				t.Fatalf("compiled service-owned Hong Kong selector = %+v", serviceHK)
+			if _, exists := intent.ProxyGroups["🇭🇰 ViuTV 香港节点"]; exists {
+				t.Fatal("compiled intent retained the dedicated ViuTV Hong Kong selector")
 			}
-			if got := intent.PolicyGroups["📺 ViuTV"].Exits; !reflect.DeepEqual(got, []string{"🇭🇰 ViuTV 香港节点", "REJECT"}) {
+			if got := intent.PolicyGroups["📺 ViuTV"].Exits; !reflect.DeepEqual(got, []string{"🇭🇰 香港节点", "DIRECT"}) {
 				t.Fatalf("compiled ViuTV exits = %+v", got)
 			}
 			viuIndex, cloudflareIndex := -1, -1

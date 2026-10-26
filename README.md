@@ -185,18 +185,18 @@ With `refresh_subscription=true` it performs a rollback-protected
 template/refresh/capability/render/config-test transaction. `reset_patches`
 replaces policy patches but preserves independent custom-site lists.
 
-The full default template includes `📺 ViuTV` for ViuTV 99/96. Its service-owned
-`🇭🇰 ViuTV 香港节点` group manually selects one Hong Kong leaf node, keeping the
-API, CDN and license requests on that selection. The shared Hong Kong automatic
-group keeps its own selection behavior. Without matching Hong Kong nodes, this
-service exposes only `REJECT`. The dedicated rules cover `viu.tv` and its
+The full default template includes `📺 ViuTV` for ViuTV 99/96, with
+`🇭🇰 香港节点` and `DIRECT` as its two exit options. It defaults to the existing
+Hong Kong GEO group and follows that group's selection behavior (Meta
+`url-test`, Smart `smart`). Without matching Hong Kong nodes, this service
+exposes only `DIRECT`. The dedicated rules cover `viu.tv` and its
 subdomains, `api.viu.now.com`, `cdn01r.now.com`, `cdn01.now.com`, and `fwp.nowe.com`
 before broad media routing. They do not capture Viu.com or all of now.com.
 The reusable Viu packs include Viu.com and omit the observed CDN/license
 hosts, so this policy uses scoped endpoint rules. Region selectors match node
-names; node names alone do not establish exit geography. With the published
-Smart TCP fix, the formal router and Safari 99/96 FairPlay playback passed on
-2026-10-25; see [the measured scope and limits](docs/istoreos-test-features.md#e37).
+names; node names alone do not establish exit geography. Historical router and
+Safari 99/96 FairPlay playback results from 2026-10-25 used the previous
+dedicated selector; see [the measured scope and limits](docs/istoreos-test-features.md#e37).
 The builtin router profile skips destination override for exactly
 `api.viu.now.com`: its DNS-mapped IP must reach the selected proxy unchanged
 because the API issues an IP-bound playback URL. It does not pin a CDN/API IP

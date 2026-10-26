@@ -8,16 +8,21 @@ import (
 	"localclash/internal/localconfig"
 	"localclash/internal/policytemplate"
 	"localclash/internal/rules"
+	"localclash/internal/runtimeprofile"
 )
 
 func TestRenderDefaultViuTVHongKongRouting(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
+		core      string
 		nodes     []string
 		wantExits []string
+		wantType  string
 	}{
-		{"hong_kong_available", []string{"HK fixture", "JP fixture"}, []string{"🇭🇰 ViuTV 香港节点", "REJECT"}},
-		{"hong_kong_absent", []string{"JP fixture"}, []string{"REJECT"}},
+		{"meta_hong_kong_available", runtimeprofile.CoreMeta, []string{"HK fixture 01", "HK fixture 02", "JP fixture"}, []string{"🇭🇰 香港节点", "DIRECT"}, "url-test"},
+		{"meta_hong_kong_absent", runtimeprofile.CoreMeta, []string{"JP fixture"}, []string{"DIRECT"}, ""},
+		{"smart_hong_kong_available", runtimeprofile.CoreSmart, []string{"HK fixture 01", "HK fixture 02", "JP fixture"}, []string{"🇭🇰 香港节点", "DIRECT"}, "smart"},
+		{"smart_hong_kong_absent", runtimeprofile.CoreSmart, []string{"JP fixture"}, []string{"DIRECT"}, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			config, _, err := policytemplate.Build(filepath.Join("..", "..", policytemplate.DefaultDir), policytemplate.TemplateLocalClashDefault)
@@ -25,13 +30,15 @@ func TestRenderDefaultViuTVHongKongRouting(t *testing.T) {
 				t.Fatal(err)
 			}
 			group := config.PolicyGroups["📺 ViuTV"]
-			if group.Mode != "manual" || !reflect.DeepEqual(group.Exits, []string{"🇭🇰 ViuTV 香港节点", "REJECT"}) {
-				t.Fatalf("ViuTV policy = %+v, want Hong Kong with explicit unavailable action", group)
+			if group.Mode != "manual" || !reflect.DeepEqual(group.Exits, []string{"🇭🇰 香港节点", "DIRECT"}) {
+				t.Fatalf("ViuTV policy = %+v, want shared Hong Kong and direct exits", group)
 			}
-			serviceHK := config.ProxyGroups["🇭🇰 ViuTV 香港节点"]
 			sharedHK := config.ProxyGroups["🇭🇰 香港节点"]
-			if serviceHK.Mode != "manual" || !serviceHK.Optional || !reflect.DeepEqual(serviceHK.Match, sharedHK.Match) || sharedHK.Mode != "auto" {
-				t.Fatalf("ViuTV exit must independently select the existing Hong Kong selector's leaf nodes: service=%+v shared=%+v", serviceHK, sharedHK)
+			if sharedHK.Mode != "auto" || !sharedHK.Optional {
+				t.Fatalf("shared Hong Kong selector changed: %+v", sharedHK)
+			}
+			if _, exists := config.ProxyGroups["🇭🇰 ViuTV 香港节点"]; exists {
+				t.Fatal("ViuTV must reuse the shared Hong Kong selector")
 			}
 			var viuRules []localconfig.CustomRuleLine
 			for _, custom := range config.CustomRules {
@@ -67,6 +74,10 @@ func TestRenderDefaultViuTVHongKongRouting(t *testing.T) {
 			}
 			config.Packs = tailPacks
 			paths := writeRenderFixture(t)
+			profilePath := filepath.Join(paths.dir, "localclash-runtime.json")
+			if _, err := runtimeprofile.Configure(profilePath, "", tc.core); err != nil {
+				t.Fatal(err)
+			}
 			if err := rules.WritePackIndex(rules.PackIndexPath(paths.cacheDir), map[string]rules.PackCache{
 				"v2fly-dlc": {Version: 1, Source: "v2fly-dlc", Adapter: "v2fly-dlc", Renderable: true, Packs: cachedPacks},
 			}); err != nil {
@@ -88,26 +99,25 @@ func TestRenderDefaultViuTVHongKongRouting(t *testing.T) {
 			result, err := Render(Options{
 				Source: map[string]any{"proxies": proxies}, OutputPath: filepath.Join(paths.dir, "viutv.yaml"),
 				Selection: &resolved.Selection, RulesCacheDir: paths.cacheDir,
-				RuntimeProfilePath: filepath.Join(paths.dir, "localclash-runtime.json"),
+				RuntimeProfilePath: profilePath,
 			})
 			if err != nil {
 				t.Fatal(err)
 			}
 			rendered := readTestYAML(t, result.OutputPath)
 			viuGroup := proxyGroupFromConfig(t, rendered, "📺 ViuTV")
-			if got := testStringSlice(viuGroup["proxies"]); !reflect.DeepEqual(got, tc.wantExits) {
+			if got := testStringSlice(viuGroup["proxies"]); viuGroup["type"] != "select" || !reflect.DeepEqual(got, tc.wantExits) {
 				t.Fatalf("rendered ViuTV exits = %+v, want %+v", got, tc.wantExits)
 			}
-			if tc.name == "hong_kong_available" {
-				serviceHK := proxyGroupFromConfig(t, rendered, "🇭🇰 ViuTV 香港节点")
-				if got := testStringSlice(serviceHK["proxies"]); serviceHK["type"] != "select" || !reflect.DeepEqual(got, []string{"HK fixture"}) {
-					t.Fatalf("ViuTV exit must select only Hong Kong leaf nodes, without a Smart/url-test wrapper: %+v", serviceHK)
-				}
+			if proxyGroupNamesFromConfig(rendered)["🇭🇰 ViuTV 香港节点"] {
+				t.Fatal("rendered ViuTV must not have a dedicated Hong Kong selector")
+			}
+			if tc.wantType != "" {
 				hk := proxyGroupFromConfig(t, rendered, "🇭🇰 香港节点")
-				if got := testStringSlice(hk["proxies"]); hk["type"] != "url-test" || !reflect.DeepEqual(got, []string{"HK fixture"}) {
-					t.Fatalf("Hong Kong candidates = %+v, want only HK fixture", got)
+				if got := testStringSlice(hk["proxies"]); hk["type"] != tc.wantType || !reflect.DeepEqual(got, []string{"HK fixture 01", "HK fixture 02"}) {
+					t.Fatalf("shared Hong Kong selector = %+v, want %s with both HK fixtures", hk, tc.wantType)
 				}
-			} else if proxyGroupNamesFromConfig(rendered)["🇭🇰 香港节点"] || proxyGroupNamesFromConfig(rendered)["🇭🇰 ViuTV 香港节点"] {
+			} else if proxyGroupNamesFromConfig(rendered)["🇭🇰 香港节点"] {
 				t.Fatal("empty optional Hong Kong exit must remain omitted")
 			}
 			renderedRules := testStringSlice(rendered["rules"])

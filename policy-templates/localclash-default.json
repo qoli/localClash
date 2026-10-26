@@ -42,7 +42,7 @@
     {
       "id": "default.viutv.v1",
       "path": "localclash-default.d/51-viutv.json",
-      "description": "Route ViuTV playback endpoints through the Hong Kong exit."
+      "description": "Route ViuTV playback endpoints through the shared Hong Kong exit or DIRECT."
     },
     {
       "id": "default.games.v1",

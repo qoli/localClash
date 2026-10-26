@@ -1,28 +1,16 @@
 {
   "id": "default.viutv.v1",
-  "description": "Route ViuTV 99/96 through Hong Kong before broad media routing; keep Viu.com outside this service policy.",
+  "description": "Route ViuTV 99/96 through the shared Hong Kong exit or DIRECT before broad media routing; keep Viu.com outside this service policy.",
   "config": {
     "version": 3,
-    "proxy_groups": {
-      "🇭🇰 ViuTV 香港节点": {
-        "mode": "manual",
-        "match": {
-          "type": "name_regex",
-          "pattern": "(香港|HK|Hong.?Kong)"
-        },
-        "optional": true,
-        "reason": "ViuTV 的 API 與 CDN 使用同一個手動固定香港節點，避免逐目的地自動選擇破壞 IP 綁定播放網址。",
-        "boundary": "service_owned_name_based_region_selector"
-      }
-    },
     "policy_groups": {
       "📺 ViuTV": {
         "mode": "manual",
         "exits": [
-          "🇭🇰 ViuTV 香港节点",
-          "REJECT"
+          "🇭🇰 香港节点",
+          "DIRECT"
         ],
-        "reason": "ViuTV 99/96 使用香港出口；沒有香港節點時僅拒絕此服務，不改用其他地區或直連。",
+        "reason": "ViuTV 99/96 預設沿用既有香港 GEO 出口的選擇行為，並提供直連選項。",
         "boundary": "business_to_exit_layer"
       }
     },
