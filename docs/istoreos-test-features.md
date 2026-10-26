@@ -118,10 +118,10 @@
 
 | 功能 ID | 功能／驗證內容 | 責任／核心範圍 | 最後實測版本；結果；證據 |
 | --- | --- | --- | --- |
-| LUCI-INSTALL | **OpenWrt 安裝與版本管理**：離線包安裝、重裝、LuCI／Core 安裝更新及支援的舊版交接正常；架構／完整性錯誤拒絕，應保留資料不丟失。Core 自我更新未實作，實際由 helper 管理。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI／共用 | v0.1.104／v0.1.0-86；PARTIAL（IPK 重裝／版本顯示）；同一可拋棄 QEMU 先裝官方 v85，再安裝及重裝候選 IPK；LuCI86／Core104 頁面版本與獨立 guest 讀回一致；v86 離線安裝、APK／ARM runtime 與完整更新契約未重跑 [E39](#e39)；先前交接／active task 重裝範圍保留原版本 [E17](#e17) |
+| LUCI-INSTALL | **OpenWrt 安裝與版本管理**：離線包安裝、重裝、LuCI／Core 安裝更新及支援的舊版交接正常；架構／完整性錯誤拒絕，應保留資料不丟失。Core 自我更新未實作，實際由 helper 管理。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI／共用 | Core v0.1.104／LuCI v0.1.0-87；PARTIAL（IPK 安裝／版本顯示）；同一可拋棄 QEMU 保留工作區安裝候選 v87，guest 版本／檔案 SHA 與原生概覽 LuCI87／Core104 一致 [E42](#e42)；v86 重裝範圍保留原版本 [E39](#e39)，完整離線／APK／ARM runtime 與更新契約未重跑；歷史交接／active task 重裝保留 [E17](#e17) |
 | LUCI-INIT | **初始化引導**：由頁面提供訂閱、模板及核心，完成 Core 呼叫、配置、啟動及接管；重新開頁顯示真實狀態，失敗可定位。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI 編排＋Core／按影響 | v0.1.83／0.1.0-76；PASS；空工作區 Meta／Smart 初始化、訂閱／模板／Core、UI 啟動並接管、重開讀回及可定位失敗後恢復 [E05](#e05) |
 | LUCI-UPDATE | **一鍵更新與資料保留**：從頁面更新，兩個檢查點、來源版本及結果可讀回；重跑／舊版升級保持訂閱、網站順序、偏好及核心選擇；Mihomo 下載失敗時保留運行中程序並停止後續切換，原本停止或未初始化的狀態不擅自啟動。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI 編排＋Core／按影響 | Core v0.1.102 → v0.1.103／LuCI v0.1.0-85；PARTIAL；正式 ARM64 同一一鍵更新 RPC 成功，預設同步／資料保留、官方 Core與Smart活躍SHA、runtime／接管及外部Safari實播通過；初次GUI session過期未啟任務，不記GUI成功，02 HTTP403沿用快取並警告 [E37](#e37)；下載失敗／停止狀態未重跑，歷史 FAIL／缺口 [E19](#e19)；前次GUI及其他範圍 [E34](#e34) [E18](#e18) [E17](#e17) |
-| LUCI-TASKS | **介面與長任務交互**：訂閱、網站、初始化及更新頁面操作與後端一致；日誌、取消、互斥、重新連接與終態可用，無重複交易／無限 busy；依各操作是否支援取消驗證。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI／共用 | v0.1.104／v0.1.0-86；PARTIAL（本輪視覺／介面範圍通過）；四頁、Argon／Bootstrap 深淺色交叉的真實任務日誌與結果、焦點／關閉、排程保存重開及 320／390px 通過；保留兩次白底白字首次失敗與修復回驗；取消、互斥、斷線續接等完整契約未重跑 [E39](#e39)；歷史範圍保留原版本 [E17](#e17) [E05](#e05) |
+| LUCI-TASKS | **介面與長任務交互**：訂閱、網站、初始化及更新頁面操作與後端一致；日誌、取消、互斥、重新連接與終態可用，無重複交易／無限 busy；依各操作是否支援取消驗證。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI／共用 | Core v0.1.104／LuCI v0.1.0-87；PARTIAL；最終包概覽版本及 light 桌面／dark390 訂閱五行回驗通過 [E42](#e42)；CSS `d9697bd6`／訂閱 JS `aafb5e18` 與原候選相同，灰度及原生四頁沿用原實測 [E40](#e40)，六組五行／縮小下限沿用 [E41](#e41)；主題／日誌及其他操作保留原版本 [E39](#e39)，完整取消／互斥／續接等保留 [E17](#e17) [E05](#e05) |
 | LUCI-TAKEOVER | **OpenWrt 網路接管**：從正式入口套用及停止防火牆、策略路由與 DNS 接管；獨立 LAN client 的實際 TCP／UDP／DNS 請求按配置到達受控 WAN endpoint，停止後恢復原資料面，且非本產品規則保留。內部 effective、規則或 lease 只能解釋結果。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI／共用 | Core v0.1.96 `d5506d9`／LuCI v0.1.0-85 `d24de8e`；PARTIAL；正式 ARM64 路由器 Smart 的 IPv4 UDP／TCP DNS 接管、Mac 混合大小寫／PTR 與公開 A／AAAA 通過，TCP socket 歸屬證明 53→7874；IPv6 GUA／link-local 通過；正式 LAN 開啟 SLAAC 後原生 Mac ULA UDP／TCP 14/14 與本地 PTR 通過，53→7874 接管及 LAN 回程已確認 [E26](#e26)，取代 [E22](#e22) 的自動來源 ULA FAIL；診斷與 VM 原生 RA 對照見 [E23](#e23)／[E24](#e24)／[E25](#e25)；歷史狀態轉移保留 [E21](#e21) |
 | LUCI-RESTORE | **接管及服務恢復**：開機、WAN 事件、受管程序退出及依賴故障後，按使用者意圖恢復或撤回接管；每次轉移後由獨立 client 重跑相同資料面 oracle，明確停止後不自行重開。內部狀態與 lease 不代表服務可用。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI＋Core 生命週期／共用 | Core `9881182`／LuCI `18c3b7c` + 發布前候選（binary `596c797d…4d17`、IPK `e5218681…ac7e`）；PARTIAL；停止 Mihomo 後不清理 firewall，租約到期轉 dnsmasq，正式重新授租後完整 IPv4 UDP／TCP 查詢集成功；到期階段僅四項查詢、受控故障敏感度及 IPv6 尚未完整覆蓋 [E21](#e21)；開機／WAN 歷史範圍保留 [E05](#e05) [E11](#e11) |
 
@@ -1247,6 +1247,90 @@ LuCI、Mihomo 實作與正式路由器設定未修改；四項配置能力均記
   [功能摘要](../.runtime/istoreos-acceptance/20261026-luci86-visual-release/retest-660a9b3/functional-summary.json)、
   [前次功能／失敗](../.runtime/istoreos-acceptance/20261026-luci86-visual-release/retest-e2ea438/G99-summary.md)；
   主代理審核 `.runtime/releases/luci-v0.1.0-86/acceptance-review-660a9b3.json`。
+
+<a id="e40"></a>
+### E40
+
+2026-10-26，半透明灰度面板修正，屬未發布工作區候選：LuCI base `660a9b3`，
+CSS SHA `9018d7fa630a28733783db87b7553093d27ef4c751af06f13e2abc332f22bfea`；
+受測 IPK SHA `3d0255967472f1049908720319b40608f3505100ab618efe04fa8e9212e2ac0b`。
+Core／JS／交易邏輯未改，安裝包仍顯示 v86，不代表公開 v86 已包含此候選。
+
+- 原 v86 的黑色／白色 alpha 面板，在純黑／純白底與頁面同色；
+  [先前檢查](../.runtime/visual-audits/20261026-panel-surfaces/pixel-readings.json)保留首次失敗。
+  候選取 Trackly Muted 色票作低透明度疊加：light `#666666` 的 6%／10%，dark `#A1A1A6` 的 12%／20%；
+  頁面仍透明，主題辨識、文字、高亮、間距與操作不變。
+- 主代理親自對照桌面與 390px 手機的純黑、深灰、純白、淺灰共 8 組實際截圖與像素。
+  純黑下普通／重點面板讀為 `#141414`／`#202021`，純白下為 `#f6f6f6`／`#efefef`；
+  深灰、淺灰亦保留不同明度。這組只在獨立分頁暫改宿主底色及匹配外觀，明列為視覺診斷。
+- 原生 iStoreOS Argon light＋OS dark 的概覽與真實最近任務彈窗、dark＋OS light 的
+  概覽／網站桌面及網站390／概覽320通過。共享 VM 外層主題隨後由外部切成 Trackly，
+  保留該設定，完整 Argon 四頁與網站320未測，不藉後續 Trackly 結果補為 Argon PASS。
+- 原生 Trackly 四頁在 light／dark、桌面／390px 均取得有效畫面，概覽／網站320亦通過；
+  唯讀最近任務日誌與結果非空且可關閉。網站淺色390首次為 session 過期的 RPC／授權錯誤，
+  保留錯誤圖，正式重載後同一入口重試取得有效列表及390px無溢出，不把首次錯誤當通過。
+- 四張訂閱截圖經暫時 DOM visibility mask 重拍，未改欄位值；證據僅記長度／SHA。
+  原生任務彈窗由唯讀最近任務按鈕開啟，記內容非空、前景／背景與關閉結果，沒有建立新任務。
+- IPK／APK 已建置；本輪未驗 runtime／takeover／資料面／CRUD／更新，
+  [E39](#e39) 的運行中網站 controller 讀回逾時／回滾仍保留，不因色彩回驗而轉 PASS。
+- 證據：[主代理交叉檢查](../.runtime/visual-audits/20261026-gray-panels/primary-review.json)、
+  [像素讀值](../.runtime/visual-audits/20261026-gray-panels/pixel-readings.json)、
+  [Argon 範圍](../.runtime/istoreos-acceptance/20261026-luci-gray-panels/G99-summary.md)、
+  [Trackly 補驗](../.runtime/istoreos-acceptance/20261026-luci-gray-panels/followup-trackly/G99-summary.md)。
+
+<a id="e41"></a>
+### E41
+
+2026-10-26，訂閱輸入框至少五行的未發布工作區候選：LuCI base `660a9b3`，
+CSS SHA `d9697bd6178b8ff3cb6385af890bddc3e121e546af2be957676327ca384c0c2b`，
+subscription.js SHA `aafb5e18…b8a341`，IPK SHA `4cc655df…d8278`。
+只新增 `rows=5` 及此欄位專用的行高最小高度／padding；[E40](#e40) 灰度 token、訂閱儲存與 runtime 邏輯未改。
+
+- 正式頁面唯讀檢查發現 rows 缺省為2，Trackly 較高優先度規則把原192px最小高度蓋成38px，
+  實際高度約57.33px。改用欄位 ID 規則與 `calc(5lh + 34px)`、上下各16px padding，
+  最小內容區按實際行高維持五行，仍允許垂直放大。
+- 在既有可拋棄 iStoreOS／Trackly 透過 opkg 重裝候選，guest CSS／JS／IPK 身分匹配。
+  Light／dark 各在1440、390、320px共六組均為 rows5、行高20px、clientHeight132px、
+  扣除32px padding後內容100px，即完整五行，沒有水平溢出。
+  暫時要求高度1px後仍維持五行，測後恢復 inline style；未輸入、保存或刷新訂閱。
+- 主代理另在桌面與390px手機讀回相同幾何值並親自看圖；僅於截圖前遮蔽文字，保留輸入框邊界，
+  截圖後復原樣式，沒有讀出／落盤 URI。既有灰度面板仍保留。
+- JS 語法、訂閱 UI 聚焦檢查、IPK／APK 建置及差異格式檢查通過；
+  僅屬 LUCI-TASKS 的輸入尺寸範圍，完整訂閱管理、任務生命週期與網路能力未重跑。
+- 證據：[功能摘要](../.runtime/istoreos-acceptance/20261026-luci-subscription-five-lines/functional-summary.json)、
+  [六組原生幾何讀值](../.runtime/istoreos-acceptance/20261026-luci-subscription-five-lines/raw/metrics.json)、
+  [主代理桌面](../.runtime/istoreos-acceptance/20261026-luci-subscription-five-lines/primary/desktop-dark.json)、
+  [主代理手機](../.runtime/istoreos-acceptance/20261026-luci-subscription-five-lines/primary/mobile-light.json)、
+  [合併候選複核](../.runtime/istoreos-acceptance/20261026-luci-subscription-five-lines/primary/combined-review.json)。
+  複核時 VM 的 CSS／JS SHA 與工作區一致，IPK／APK 所帶 CSS 亦一致；原始 E40 灰度截圖與
+  E41 五行輸入框截圖已整理為同一份本機預覽，保留各自候選身分，未改寫歷史實測版本。
+
+<a id="e42"></a>
+### E42
+
+2026-10-26，LuCI v0.1.0-87 最終包選測：候選 commit `304e9581d77e763b636265a51a7b4a49883485ae`，
+IPK SHA `f2abdc05da0c39734c073ce76762cfc1e9575326843910fafd19ae05d9433311`；
+Core v0.1.104、原 iStoreOS 24.10.8 x86_64 QEMU、Meta 1.19.33，沿用 [E39](#e39) 的環境。
+CSS SHA `d9697bd6…84c0c2b`、subscription.js SHA `aafb5e18…b8a341` 與 [E41](#e41) 相同；
+本次凍結版本僅再變更 package release86→87。
+
+- 在原可拋棄工作區透過 opkg 安裝 exact IPK，保留既有 conffile；guest package／CSS／JS
+  讀回相符，原生概覽顯示 `LuCI 0.1.0-87 · localClash v0.1.104`。
+- 原生 Trackly 訂閱頁 light1440、dark390 的內容區均100px、行高20px、rows5，無水平溢出；
+  截圖僅遮蔽文字 glyph，保留輸入框背景和邊界，測後復原。未輸入／保存訂閱、建立新任務或改主題。
+- 主代理獨立讀回版本87／Core104、透明頁面與灰度面板，親自檢視兩張安全截圖。
+  [E40](#e40) 面板 token 與本版相同，僅多出欄位專用尺寸規則；[E41](#e41) 六組外觀／尺寸
+  使用相同 CSS／JS，維持原受測候選身分沿用，不改寫歷史成 v87 全功能驗收。
+- 選測範圍通過；LUCI-INSTALL／LUCI-TASKS 完整能力維持 PARTIAL。
+  [E39](#e39) 運行中網站 controller 讀回逾時／回滾仍保留 FAIL，
+  資料面、takeover、ARM runtime、APK runtime／離線安裝、CRUD、更新與完整取消／續接未重跑。
+- [主分支 CI](https://github.com/qoli/localclash-luci/actions/runs/40337228859) 通過；
+  主機／CI／資產檢查只證明來源與包裝，不取代上述 QEMU 畫面結果。
+- 證據：[G99](../.runtime/istoreos-acceptance/20261026-luci87-release/G99-summary.md)、
+  [功能摘要](../.runtime/istoreos-acceptance/20261026-luci87-release/functional-summary.json)、
+  [guest 安裝身分](../.runtime/istoreos-acceptance/20261026-luci87-release/raw/install-readback.json)、
+  [原生畫面讀回](../.runtime/istoreos-acceptance/20261026-luci87-release/raw/ui-readback.json)、
+  [發布前沿用審核](../.runtime/releases/luci-v0.1.0-87/impact-review.json)。
 
 <a id="pending-incidents"></a>
 ## 待核對事故與證據缺口
