@@ -127,6 +127,10 @@ exit 44
 func TestStartLaunchesBackgroundRuntime(t *testing.T) {
 	dir := t.TempDir()
 	core := filepath.Join(dir, "lc-mihomo-meta")
+	unused := []string{filepath.Join(dir, "lc-mihomo-smart"), core + ".pre-diagnostic"}
+	for _, path := range unused {
+		writeStartExecutable(t, path, "old core")
+	}
 	writeStartExecutable(t, core, `#!/bin/sh
 if [ "$1" = "-v" ]; then
   echo Mihomo Meta test
@@ -162,6 +166,14 @@ sleep 30
 	if !result.Started || result.AlreadyRunning || result.PID == 0 {
 		t.Fatalf("result = %+v, want started pid", result)
 	}
+	if len(result.RemovedCoreFiles) != len(unused) {
+		t.Fatalf("removed core files = %v", result.RemovedCoreFiles)
+	}
+	for _, path := range unused {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("unused core remains after successful activation: %s %v", path, err)
+		}
+	}
 	if result.LogFile != logPath || result.Config != config || result.ExternalUIURL != "http://127.0.0.1:9090/ui" {
 		t.Fatalf("result = %+v, want paths and ui url", result)
 	}
@@ -187,6 +199,8 @@ sleep 30
 func TestStartCleansUpNewProcessWhenControllerHealthFails(t *testing.T) {
 	dir := t.TempDir()
 	core := filepath.Join(dir, "lc-mihomo-meta")
+	previous := filepath.Join(dir, "lc-mihomo-smart")
+	writeStartExecutable(t, previous, "previous working core")
 	writeStartExecutable(t, core, `#!/bin/sh
 if [ "$1" = "-v" ]; then
   echo Mihomo Meta test
@@ -219,6 +233,9 @@ exec sleep 30
 	})
 	if err == nil || !strings.Contains(err.Error(), "controller unavailable") {
 		t.Fatalf("error = %v, want controller health failure", err)
+	}
+	if data, err := os.ReadFile(previous); err != nil || string(data) != "previous working core" {
+		t.Fatalf("previous core lost after failed activation: %q %v", data, err)
 	}
 	if !result.Started || result.PID == 0 {
 		t.Fatalf("result = %+v, want attempted process pid", result)

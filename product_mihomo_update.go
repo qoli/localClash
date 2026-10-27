@@ -12,11 +12,13 @@ import (
 	"localclash/internal/coredownload"
 	"localclash/internal/corerun"
 	"localclash/internal/mihomotest"
+	"localclash/internal/runtimeprofile"
 )
 
 type mihomoUpdateStatus struct {
 	Downloads          []coredownload.Result        `json:"downloads"`
 	Promoted           []string                     `json:"promoted"`
+	Removed            []string                     `json:"removed,omitempty"`
 	Changed            bool                         `json:"changed"`
 	ConfigValidation   *mihomotest.ValidationResult `json:"config_validation,omitempty"`
 	ValidationRequired bool                         `json:"validation_required"`
@@ -31,7 +33,26 @@ type mihomoPromotion struct {
 }
 
 func updateMihomoComponents(ctx context.Context, state appinit.RuntimeState) (mihomoUpdateStatus, error) {
+	return updateSelectedMihomo(ctx, state, true, "")
+}
+
+func updateSelectedMihomo(ctx context.Context, state appinit.RuntimeState, validateCurrentConfig bool, requestedMode string) (mihomoUpdateStatus, error) {
 	status := mihomoUpdateStatus{}
+	flavor, err := coredownload.FlavorForPath(state.Paths.CorePath)
+	if err != nil {
+		return status, err
+	}
+	target := coredownload.TargetHost
+	if state.Paths.RuntimeProfilePath != "" {
+		profile, err := runtimeprofile.StatusFor(state.Paths.RuntimeProfilePath)
+		if err != nil {
+			return status, err
+		}
+		target = coredownload.TargetForMode(profile.Mode)
+	}
+	if requestedMode != "" {
+		target = coredownload.TargetForMode(requestedMode)
+	}
 	candidateParent := filepath.Join(productWorkspaceRoot(state), ".runtime")
 	if err := os.MkdirAll(candidateParent, 0o755); err != nil {
 		return status, fmt.Errorf("create Mihomo update transaction root: %w", err)
@@ -44,9 +65,9 @@ func updateMihomoComponents(ctx context.Context, state appinit.RuntimeState) (mi
 
 	downloads, err := downloadCore(ctx, coredownload.Options{
 		Version:    "latest",
-		Flavor:     coredownload.FlavorAll,
-		Target:     coredownload.TargetRouter,
-		TargetOS:   "linux",
+		Flavor:     flavor,
+		Target:     target,
+		TargetOS:   runtime.GOOS,
 		TargetArch: runtime.GOARCH,
 		OutputDir:  candidateRoot,
 		Repo:       "MetaCubeX/mihomo",
@@ -57,7 +78,7 @@ func updateMihomoComponents(ctx context.Context, state appinit.RuntimeState) (mi
 		return status, err
 	}
 
-	candidates, err := checkedMihomoCandidates(downloads)
+	candidates, err := checkedMihomoCandidates(downloads, filepath.Base(state.Paths.CorePath))
 	if err != nil {
 		return status, err
 	}
@@ -69,7 +90,7 @@ func updateMihomoComponents(ctx context.Context, state appinit.RuntimeState) (mi
 	runtimeStatus := corerun.Status(runtimeStatusOptions(state))
 	_, configErr := os.Stat(state.Paths.GeneratedConfig)
 	switch {
-	case configErr == nil:
+	case configErr == nil && validateCurrentConfig:
 		status.ValidationRequired = true
 		validation, validateErr := mihomotest.ValidateCached(ctx, mihomotest.ValidationOptions{
 			CorePath:   selectedCandidate,
@@ -82,6 +103,9 @@ func updateMihomoComponents(ctx context.Context, state appinit.RuntimeState) (mi
 		if validateErr != nil {
 			return status, fmt.Errorf("validate candidate Mihomo against current generated config: %w", validateErr)
 		}
+	case configErr == nil:
+		// A different flavor must be tested against its newly rendered config,
+		// not the old flavor's generated groups. Configuration/start owns that test.
 	case os.IsNotExist(configErr) && runtimeStatus.Running:
 		return status, fmt.Errorf("current generated config %q is missing while Mihomo runtime is running", state.Paths.GeneratedConfig)
 	case os.IsNotExist(configErr):
@@ -107,6 +131,14 @@ func updateMihomoComponents(ctx context.Context, state appinit.RuntimeState) (mi
 	for index := range status.Downloads {
 		status.Downloads[index].OutputPath = filepath.Join(targetDir, filepath.Base(status.Downloads[index].OutputPath))
 	}
+	if status.ValidationRequired {
+		removed, cleanupErr := corerun.PruneUnusedCores(runtimeStatusOptions(state))
+		status.Removed = removed
+		status.Changed = status.Changed || len(removed) > 0
+		if cleanupErr != nil {
+			return status, cleanupErr
+		}
+	}
 	return status, nil
 }
 
@@ -131,11 +163,8 @@ func mihomoCandidatesChanged(candidates map[string]string, targetDir string) (bo
 	return false, nil
 }
 
-func checkedMihomoCandidates(downloads []coredownload.Result) (map[string]string, error) {
-	want := map[string]bool{
-		"lc-mihomo-meta":  true,
-		"lc-mihomo-smart": true,
-	}
+func checkedMihomoCandidates(downloads []coredownload.Result, selected string) (map[string]string, error) {
+	want := map[string]bool{selected: true}
 	candidates := make(map[string]string, len(want))
 	for _, result := range downloads {
 		name := filepath.Base(result.OutputPath)

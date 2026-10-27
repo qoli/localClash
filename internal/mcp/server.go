@@ -27,6 +27,8 @@ import (
 	"localclash/internal/configpatch"
 	"localclash/internal/configplan"
 	"localclash/internal/configrender"
+	"localclash/internal/coreconfig"
+	"localclash/internal/coredownload"
 	"localclash/internal/corerun"
 	"localclash/internal/customsites"
 	"localclash/internal/doctor"
@@ -45,6 +47,7 @@ import (
 )
 
 type Server struct {
+	downloadCore          coredownload.DownloadFunc
 	state                 *appinit.RuntimeState
 	startedAt             time.Time
 	taskCtx               context.Context
@@ -91,6 +94,7 @@ func newServer(state *appinit.RuntimeState) *Server {
 		rebuildChatGPT:      chatgptavailable.RebuildSelectedCandidateWithMihomo,
 		testMihomoConfig:    mihomotest.Test,
 		promoteMihomoConfig: mihomotest.PromoteConfig,
+		downloadCore:        coredownload.Download,
 	}
 }
 
@@ -531,7 +535,7 @@ func (s *Server) callTool(ctx context.Context, params json.RawMessage) (toolResu
 	case "config_status":
 		return s.callConfigStatus(args)
 	case "config_configure":
-		return s.callConfigConfigure(args)
+		return s.callConfigConfigure(ctx, args)
 	case "config_render":
 		return s.callMaybeAsyncTool(ctx, "config_render", args, s.callConfigRender)
 	case "config_patch_get":
@@ -3647,7 +3651,7 @@ func (s *Server) clearConfigPatchDraft(generation int64) {
 	}
 }
 
-func (s *Server) callConfigConfigure(args json.RawMessage) (toolResult, error) {
+func (s *Server) callConfigConfigure(ctx context.Context, args json.RawMessage) (toolResult, error) {
 	var req struct {
 		RuntimeProfile string `json:"runtime_profile"`
 		Core           string `json:"core"`
@@ -3716,8 +3720,33 @@ func (s *Server) callConfigConfigure(args json.RawMessage) (toolResult, error) {
 	configUpdated := false
 	var status runtimeprofile.Status
 	var err error
+	applyTemplate := func(profile runtimeprofile.Status) error {
+		if strings.TrimSpace(in.PolicyTemplate) == "" {
+			return nil
+		}
+		result, err := configpatch.ImportPolicyTemplate(ctx, configpatch.ImportTemplateOptions{
+			RegistryDir: in.PatchesDir, PolicyTemplatesDir: in.PolicyTemplatesDir,
+			PolicyTemplate: in.PolicyTemplate, ResetPatches: in.ResetPatches,
+			ConfigPath: in.Config, SelectionPath: in.Selection, OutputPath: in.Output,
+			Subscription: in.Subscription, SubscriptionConfig: in.SubscriptionConfig,
+			SubscriptionRuntime: in.SubscriptionRuntime, RulesCache: in.RulesCache,
+			RuntimeProfilePath: in.RuntimeProfileConfig, ValidationCache: in.ValidationCache,
+			CorePath: normalizeMCPStateCorePath(s.state, profile.CorePath), WorkDir: in.RuntimeDir,
+		})
+		if err != nil {
+			return err
+		}
+		importResult = &result
+		templateSummary = &result.Template
+		configUpdated = true
+		changed = append(changed, "policy_template")
+		return nil
+	}
 	if strings.TrimSpace(in.RuntimeProfile) != "" || strings.TrimSpace(in.Core) != "" {
-		status, err = runtimeprofile.Configure(in.RuntimeProfileConfig, in.RuntimeProfile, in.Core)
+		status, err = coreconfig.Configure(ctx, coreconfig.Options{
+			ProfilePath: in.RuntimeProfileConfig, WorkspaceRoot: root,
+			Mode: in.RuntimeProfile, Core: in.Core, Download: s.downloadCore,
+		}, applyTemplate)
 		if err != nil {
 			return toolResult{}, err
 		}
@@ -3732,32 +3761,9 @@ func (s *Server) callConfigConfigure(args json.RawMessage) (toolResult, error) {
 		if err != nil {
 			return toolResult{}, err
 		}
-	}
-	if strings.TrimSpace(in.PolicyTemplate) != "" {
-		result, err := configpatch.ImportPolicyTemplate(context.Background(), configpatch.ImportTemplateOptions{
-			RegistryDir:         in.PatchesDir,
-			PolicyTemplatesDir:  in.PolicyTemplatesDir,
-			PolicyTemplate:      in.PolicyTemplate,
-			ResetPatches:        in.ResetPatches,
-			ConfigPath:          in.Config,
-			SelectionPath:       in.Selection,
-			OutputPath:          in.Output,
-			Subscription:        in.Subscription,
-			SubscriptionConfig:  in.SubscriptionConfig,
-			SubscriptionRuntime: in.SubscriptionRuntime,
-			RulesCache:          in.RulesCache,
-			RuntimeProfilePath:  in.RuntimeProfileConfig,
-			ValidationCache:     in.ValidationCache,
-			CorePath:            status.CorePath,
-			WorkDir:             in.RuntimeDir,
-		})
-		if err != nil {
+		if err := applyTemplate(status); err != nil {
 			return toolResult{}, err
 		}
-		importResult = &result
-		templateSummary = &result.Template
-		configUpdated = true
-		changed = append(changed, "policy_template")
 	}
 	cacheWarnings := []string{}
 	if s.state != nil {
@@ -3765,7 +3771,7 @@ func (s *Server) callConfigConfigure(args json.RawMessage) (toolResult, error) {
 			corePath := normalizeMCPStateCorePath(s.state, status.CorePath)
 			runtimeRoot := mcpStateRuntimeRoot(s.state)
 			if runtimeRoot != "" {
-				_, err := appinit.RefreshCoreVersionCache(context.Background(), runtimeRoot, corePath)
+				_, err := appinit.RefreshCoreVersionCache(ctx, runtimeRoot, corePath)
 				if err != nil {
 					cacheWarnings = append(cacheWarnings, "core version cache refresh failed: "+err.Error())
 				}

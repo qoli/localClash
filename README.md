@@ -25,13 +25,28 @@ go run . core download --force
 go run . dashboard download --force
 ```
 
-The default target downloads the host Meta core, for example
-`bin/darwin-arm64/lc-mihomo-meta` on macOS arm64. For Linux router cores,
-select the target explicitly:
+The command downloads only the flavor selected in `localclash-runtime.json`
+(Meta for a new workspace), for example `bin/darwin-arm64/lc-mihomo-meta` on
+macOS arm64. For Linux router cores, select the target explicitly:
 
 ```bash
 go run . core download --target router --arch arm64 --force
 ```
+
+Use `--flavor meta` or `--flavor smart` to explicitly acquire a different flavor.
+The advanced `--flavor all --target router` option still downloads both when
+explicitly requested. Normal initialization and `component update mihomo --json`
+acquire only the selected flavor. An explicit core selection through
+`config apply-template`, `apply`, or MCP `config_configure` downloads the target
+only when it is missing, before saving the selection. Acquisition or template
+failure preserves the previous profile and core.
+
+Saving a different core selection does not restart the runtime. After successful
+runtime start/process restart, localClash removes the unused flavor and legacy
+`lc-mihomo-*.pre-*` backups from that platform directory. A validated component
+update also performs this cleanup unless the other flavor is still running.
+The selected binary remains available when the service is stopped. Update
+rollback files exist only for the duration of their transaction.
 
 For MCP-managed setup, start the server:
 

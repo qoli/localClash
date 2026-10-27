@@ -172,34 +172,48 @@ func StatusFor(path string) (Status, error) {
 
 func Configure(path, mode, core string) (Status, error) {
 	path = normalizePath(path)
-	mode = strings.TrimSpace(mode)
-	core = strings.TrimSpace(core)
-	file, _, err := Load(path)
+	file, err := PreviewConfigure(path, mode, core)
 	if err != nil {
-		return Status{}, err
-	}
-	if mode != "" {
-		if mode != ModeNormal && mode != ModeRouter {
-			return Status{}, fmt.Errorf("runtime mode %q is not supported; use %q or %q", mode, ModeNormal, ModeRouter)
-		}
-		file.Mode = mode
-	}
-	if core != "" {
-		if core != CoreMeta && core != CoreSmart {
-			return Status{}, fmt.Errorf("runtime core %q is not supported; use %q or %q", core, CoreMeta, CoreSmart)
-		}
-		file.Core = core
-	}
-	if mode == "" && core == "" {
-		return Status{}, errors.New("runtime profile configure requires mode or core")
-	}
-	if err := validate(file); err != nil {
 		return Status{}, err
 	}
 	if err := write(path, file); err != nil {
 		return Status{}, err
 	}
 	return StatusFor(path)
+}
+
+// PreviewConfigure resolves a requested selection without changing the profile.
+func PreviewConfigure(path, mode, core string) (File, error) {
+	path = normalizePath(path)
+	mode = strings.TrimSpace(mode)
+	core = strings.TrimSpace(core)
+	file := DefaultFile()
+	data, err := os.ReadFile(path)
+	if err == nil {
+		file, err = parseFile(data)
+	}
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return File{}, err
+	}
+	if mode != "" {
+		if mode != ModeNormal && mode != ModeRouter {
+			return File{}, fmt.Errorf("runtime mode %q is not supported; use %q or %q", mode, ModeNormal, ModeRouter)
+		}
+		file.Mode = mode
+	}
+	if core != "" {
+		if core != CoreMeta && core != CoreSmart {
+			return File{}, fmt.Errorf("runtime core %q is not supported; use %q or %q", core, CoreMeta, CoreSmart)
+		}
+		file.Core = core
+	}
+	if mode == "" && core == "" {
+		return File{}, errors.New("runtime profile configure requires mode or core")
+	}
+	if err := validate(file); err != nil {
+		return File{}, err
+	}
+	return file, nil
 }
 
 func ActiveProfile(path string) (File, Profile, bool, error) {

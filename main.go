@@ -21,6 +21,7 @@ import (
 	"localclash/internal/mihomotest"
 	"localclash/internal/reset"
 	"localclash/internal/rules"
+	"localclash/internal/runtimeprofile"
 	"localclash/internal/subdownload"
 )
 
@@ -67,7 +68,7 @@ Advanced/internal commands:
 
 Flags for core download:
   --version string   Meta core GitHub release tag, or "latest" (default "latest")
-  --flavor string    core flavor: all, meta, or smart (default "all")
+  --flavor string    core flavor: meta, smart, or explicit all (default selected runtime profile)
   --target string    download target: host or router (default "host")
   --os string        target OS (default current OS for host, linux for router)
   --arch string      target arch (default current arch)
@@ -204,7 +205,7 @@ func run(args []string) error {
 		return err
 	}
 	if len(args) >= 2 && args[0] == "core" && args[1] == "download" {
-		return runCoreDownload(args[2:])
+		return runCoreDownload(args[2:], state)
 	}
 	if len(args) >= 2 && (args[0] == "subscription" || args[0] == "sub") && args[1] == "download" {
 		return runSubscriptionDownload(args[2:])
@@ -271,13 +272,13 @@ func runReset(args []string) error {
 	return err
 }
 
-func runCoreDownload(args []string) error {
+func runCoreDownload(args []string, state appinit.RuntimeState) error {
 	fs := flag.NewFlagSet("core download", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 
 	opts := coredownload.Options{}
 	fs.StringVar(&opts.Version, "version", "latest", "Meta core GitHub release tag, or latest")
-	fs.StringVar(&opts.Flavor, "flavor", coredownload.FlavorAll, "core flavor: all, meta, or smart")
+	fs.StringVar(&opts.Flavor, "flavor", "", "core flavor: meta or smart (default: selected runtime profile); all explicitly downloads both router cores")
 	fs.StringVar(&opts.Target, "target", coredownload.TargetHost, "download target: host or router")
 	fs.StringVar(&opts.TargetOS, "os", "", "target OS")
 	fs.StringVar(&opts.TargetArch, "arch", runtime.GOARCH, "target arch")
@@ -293,6 +294,13 @@ func runCoreDownload(args []string) error {
 	}
 	if fs.NArg() != 0 {
 		return fmt.Errorf("unexpected positional arguments: %v", fs.Args())
+	}
+	if opts.Flavor == "" {
+		profile, err := runtimeprofile.StatusFor(state.Paths.RuntimeProfilePath)
+		if err != nil {
+			return err
+		}
+		opts.Flavor = profile.Core
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)

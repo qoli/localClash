@@ -202,8 +202,8 @@ func TestNormalizeOptionsUsesCurrentPlatformDefaults(t *testing.T) {
 	if got.OutputDir != "bin" {
 		t.Fatalf("OutputDir = %q, want bin", got.OutputDir)
 	}
-	if got.Flavor != FlavorAll {
-		t.Fatalf("Flavor = %q, want all", got.Flavor)
+	if got.Flavor != FlavorMeta {
+		t.Fatalf("Flavor = %q, want meta", got.Flavor)
 	}
 	if got.Target != TargetHost {
 		t.Fatalf("Target = %q, want host", got.Target)
@@ -236,14 +236,21 @@ func TestEffectiveFlavorsDefaultsHostToMetaOnly(t *testing.T) {
 	}
 }
 
-func TestEffectiveFlavorsDefaultsRouterToMetaAndSmart(t *testing.T) {
+func TestEffectiveFlavorsDefaultsRouterToMetaOnly(t *testing.T) {
 	opts := normalizeOptions(Options{Target: TargetRouter, TargetArch: "arm64"})
 	got := effectiveFlavors(opts)
 	if opts.TargetOS != "linux" {
 		t.Fatalf("router OS = %q, want linux", opts.TargetOS)
 	}
-	if len(got) != 2 || got[0] != FlavorMeta || got[1] != FlavorSmart {
-		t.Fatalf("flavors = %+v, want router meta and smart", got)
+	if len(got) != 1 || got[0] != FlavorMeta {
+		t.Fatalf("flavors = %+v, want router meta only", got)
+	}
+}
+
+func TestEffectiveFlavorsExplicitAllDownloadsBothRouterCores(t *testing.T) {
+	got := effectiveFlavors(normalizeOptions(Options{Target: TargetRouter, Flavor: FlavorAll}))
+	if !reflect.DeepEqual(got, []string{FlavorMeta, FlavorSmart}) {
+		t.Fatalf("explicit all = %v", got)
 	}
 }
 

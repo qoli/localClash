@@ -41,6 +41,7 @@ type StartStageEvent struct {
 }
 
 type StartResult struct {
+	RemovedCoreFiles   []string                    `json:"removed_core_files,omitempty"`
 	Started            bool                        `json:"started"`
 	AlreadyRunning     bool                        `json:"already_running"`
 	PID                int                         `json:"pid,omitempty"`
@@ -189,7 +190,7 @@ func startValidatedLocked(ctx context.Context, opts StartOptions, runOpts Option
 		result.AlreadyRunning = true
 		result.PID = process.PID
 		result.Warnings = append(result.Warnings, "Runtime is already running; run_runtime did not start a second process.")
-		return result, nil
+		return finishCoreActivation(runOpts, result)
 	}
 	finish(nil, 0)
 
@@ -241,6 +242,15 @@ func startValidatedLocked(ctx context.Context, opts StartOptions, runOpts Option
 	if err := completeRunningSupervisionLocked(runOpts.WorkDir, state, cmd.Process.Pid, time.Now()); err != nil {
 		markRuntimeStartFailure(runOpts.WorkDir, "state_write_failed", err, time.Now())
 		return result, err
+	}
+	return finishCoreActivation(runOpts, result)
+}
+
+func finishCoreActivation(opts Options, result StartResult) (StartResult, error) {
+	removed, err := PruneUnusedCores(StatusOptions{CorePath: opts.CorePath, ConfigPath: opts.ConfigPath, WorkDir: opts.WorkDir})
+	result.RemovedCoreFiles = removed
+	if err != nil {
+		return result, fmt.Errorf("runtime is running but unused core cleanup failed: %w", err)
 	}
 	return result, nil
 }

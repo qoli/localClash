@@ -52,7 +52,7 @@ type ToolsListResult struct {
 
 func Registry() []Tool {
 	tools := []Tool{
-		{Name: "config_configure", SafetyLevel: SafeWrite, Description: "Configure localClash base product state with optional core, runtime_profile, and policy_template. Policy templates are imported into patches/*.json and compiled into localclash-intent.json; reset_patches=true restores default template patches."},
+		{Name: "config_configure", SafetyLevel: SafeWrite, Description: "Configure localClash base product state with optional core, runtime_profile, and policy_template. An explicit core selection downloads that flavor only when missing, before saving the profile; it does not start or switch the running process. Policy templates are imported into patches/*.json and compiled into localclash-intent.json; reset_patches=true restores default template patches."},
 		{Name: "config_status", SafetyLevel: SafeRead, Description: "Inspect localClash config status: durable patches/*.json registry, compiled localclash-intent.json, .runtime/mihomo/config.yaml build artifact, and render readiness. Default output is lightweight; pass patches=true for patch inventory, resolve=true for selected-node matches, or detail=true for generated-summary/overlay audit."},
 		{Name: "doctor", SafetyLevel: SafeRead, Description: "Run read-only localClash diagnostics."},
 		{Name: "environment_inspect", SafetyLevel: SafeRead, Description: "Inspect host, network capability evidence, and localClash state without exposing credentials."},
@@ -154,7 +154,7 @@ func inputSchemaForTool(name string) map[string]any {
 			"type":                 "object",
 			"additionalProperties": false,
 			"properties": map[string]any{
-				"core":            map[string]any{"type": "string", "enum": []string{"meta", "smart"}, "description": "Optional Mihomo core flavor to activate."},
+				"core":            map[string]any{"type": "string", "enum": []string{"meta", "smart"}, "description": "Optional selected Mihomo flavor. Downloads only this core when missing; activation requires runtime start or process restart."},
 				"runtime_profile": map[string]any{"type": "string", "enum": []string{"normal", "router"}, "description": "Optional runtime profile mode to activate."},
 				"policy_template": map[string]any{"type": "string", "description": "Optional policy template id loaded from policy-templates/. Built-ins include minimal and localclash-default."},
 				"reset_patches":   map[string]any{"type": "boolean", "description": "Replace patches/*.json with policy-template defaults before compiling. Use to restore default strategies."},

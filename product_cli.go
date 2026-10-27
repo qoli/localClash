@@ -9,7 +9,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -22,6 +21,7 @@ import (
 	"localclash/internal/configinspect"
 	"localclash/internal/configpatch"
 	"localclash/internal/configrender"
+	"localclash/internal/coreconfig"
 	"localclash/internal/coredownload"
 	"localclash/internal/corerun"
 	"localclash/internal/customsites"
@@ -913,10 +913,31 @@ func executeDesiredState(input desiredStateInput, state appinit.RuntimeState) ([
 			warnings = append(warnings, "localClash core update is owned by the LuCI helper/bootstrap layer in V1.")
 		}
 		if input.Components.Mihomo == "installed_or_latest" {
-			if _, err := downloadCore(ctx, coredownload.Options{Version: "latest", Flavor: coredownload.FlavorAll, Target: coredownload.TargetRouter, TargetOS: "linux", TargetArch: runtime.GOARCH, OutputDir: productWorkspacePath(state, "bin"), Repo: "MetaCubeX/mihomo", Force: true}); err != nil {
+			targetState := state
+			targetMode := ""
+			if input.Config != nil {
+				mode, core := input.Config.RuntimeProfile, input.Config.Core
+				if mode == "leave" {
+					mode = ""
+				}
+				if core == "leave" {
+					core = ""
+				}
+				if mode != "" || core != "" {
+					file, err := runtimeprofile.PreviewConfigure(state.Paths.RuntimeProfilePath, mode, core)
+					if err != nil {
+						return changes, warnings, err
+					}
+					targetState.Paths.CorePath = normalizeCorePathForState(state, runtimeprofile.ActiveCorePathFromFile(file))
+					targetMode = file.Mode
+				}
+			}
+			if _, err := updateSelectedMihomo(ctx, targetState, targetState.Paths.CorePath == state.Paths.CorePath, targetMode); err != nil {
 				return changes, warnings, err
 			}
-			warnings = append(warnings, refreshCoreVersionCacheWarnings(ctx, state, "")...)
+			if targetState.Paths.CorePath == state.Paths.CorePath {
+				warnings = append(warnings, refreshCoreVersionCacheWarnings(ctx, targetState, "")...)
+			}
 			changes = append(changes, "mihomo_updated")
 		}
 		if input.Components.Dashboard == "installed_or_latest" {
@@ -931,21 +952,54 @@ func executeDesiredState(input desiredStateInput, state appinit.RuntimeState) ([
 			}
 		}
 	}
-	configChanged, configWarnings, err := executeDesiredConfig(ctx, input.Config, state)
-	if err != nil {
-		return changes, warnings, err
-	}
-	warnings = append(warnings, configWarnings...)
-	if configChanged {
-		changes = append(changes, "config_updated")
-	}
-	if configChanged || contains(changes, "subscriptions_refreshed") {
-		_, renderWarnings, err := renderProductConfig(state)
+	previousCore := state.Paths.CorePath
+	applyConfig := func() error {
+		configChanged, configWarnings, err := executeDesiredConfig(ctx, input.Config, state)
 		if err != nil {
-			return changes, warnings, err
+			return err
 		}
-		warnings = append(warnings, renderWarnings...)
-		changes = append(changes, "config_rendered")
+		warnings = append(warnings, configWarnings...)
+		if configChanged {
+			changes = append(changes, "config_updated")
+			profile, err := runtimeprofile.StatusFor(state.Paths.RuntimeProfilePath)
+			if err != nil {
+				return err
+			}
+			state.Paths.CorePath = normalizeCorePathForState(state, profile.CorePath)
+		}
+		if configChanged || contains(changes, "subscriptions_refreshed") {
+			_, renderWarnings, err := renderProductConfig(state)
+			if err != nil {
+				return err
+			}
+			warnings = append(warnings, renderWarnings...)
+			changes = append(changes, "config_rendered")
+		}
+		if state.Paths.CorePath != previousCore {
+			_, err := mihomotest.ValidateCached(ctx, mihomotest.ValidationOptions{
+				CorePath: state.Paths.CorePath, ConfigPath: state.Paths.GeneratedConfig,
+				WorkDir: state.Paths.MihomoRuntimeDir,
+			})
+			return err
+		}
+		return nil
+	}
+	var configErr error
+	if input.Config != nil && emptyAsLeave(input.Config.Core) != "leave" {
+		// A new flavor must validate its newly rendered groups before its selection
+		// is committed. Keep the old profile and generated materials on failure.
+		configErr = materialtxn.Run([]string{
+			state.Paths.RuntimeProfilePath, state.Paths.GeneratedConfig,
+			productWorkspacePath(state, configpatch.RegistryDirName),
+			productWorkspacePath(state, "localclash-intent.json"),
+			productWorkspacePath(state, "localclash-packs.gob"),
+			appinit.CoreVersionCachePath(state.Paths.RuntimeRoot),
+		}, applyConfig)
+	} else {
+		configErr = applyConfig()
+	}
+	if configErr != nil {
+		return changes, warnings, configErr
 	}
 	runtimeChanges, runtimeWarnings, err := executeDesiredRuntime(input.Runtime, state)
 	if err != nil {
@@ -995,7 +1049,10 @@ func executeDesiredConfig(ctx context.Context, input *desiredConfig, state appin
 		_, warnings, err := applyTemplateInput(ctx, configInput{Version: 1, Template: template, RuntimeProfile: mode, Core: core, AllowOverwriteModified: allow}, state)
 		return true, warnings, err
 	}
-	profile, err := runtimeprofile.Configure(state.Paths.RuntimeProfilePath, mode, core)
+	profile, err := coreconfig.Configure(ctx, coreconfig.Options{
+		ProfilePath: state.Paths.RuntimeProfilePath, WorkspaceRoot: productWorkspaceRoot(state),
+		Mode: mode, Core: core, Download: downloadCore,
+	}, nil)
 	if err != nil {
 		return false, nil, err
 	}
@@ -1409,27 +1466,31 @@ func applyTemplateMutation(ctx context.Context, input configInput, state appinit
 			return nil, nil, err
 		}
 	}
-	profile, err := runtimeprofile.Configure(state.Paths.RuntimeProfilePath, input.RuntimeProfile, input.Core)
-	if err != nil {
-		return nil, nil, err
-	}
-	patchResult, err := configpatch.ImportPolicyTemplate(ctx, configpatch.ImportTemplateOptions{
-		RegistryDir:         productWorkspacePath(state, configpatch.RegistryDirName),
-		PolicyTemplatesDir:  productWorkspacePath(state, policytemplate.DefaultDir),
-		PolicyTemplate:      input.Template,
-		ResetPatches:        input.ResetPatches,
-		ConfigPath:          configPath,
-		SelectionPath:       productWorkspacePath(state, "localclash-packs.gob"),
-		OutputPath:          state.Paths.GeneratedConfig,
-		Subscription:        state.Paths.SubscriptionPath,
-		SubscriptionConfig:  state.Paths.SubscriptionConfig,
-		SubscriptionRuntime: state.Paths.SubscriptionRuntime,
-		RulesCache:          state.Paths.RulesCacheDir,
-		RuntimeProfilePath:  state.Paths.RuntimeProfilePath,
-		CorePath:            normalizeCorePathForState(state, profile.CorePath),
-		WorkDir:             state.Paths.MihomoRuntimeDir,
-		RefreshTemplateOnly: input.RefreshPolicyTemplatePatches,
-		SkipArtifactBuild:   skipArtifactBuild,
+	var patchResult configpatch.ImportTemplateResult
+	profile, err := coreconfig.Configure(ctx, coreconfig.Options{
+		ProfilePath: state.Paths.RuntimeProfilePath, WorkspaceRoot: productWorkspaceRoot(state),
+		Mode: input.RuntimeProfile, Core: input.Core, Download: downloadCore,
+	}, func(profile runtimeprofile.Status) error {
+		var err error
+		patchResult, err = configpatch.ImportPolicyTemplate(ctx, configpatch.ImportTemplateOptions{
+			RegistryDir:         productWorkspacePath(state, configpatch.RegistryDirName),
+			PolicyTemplatesDir:  productWorkspacePath(state, policytemplate.DefaultDir),
+			PolicyTemplate:      input.Template,
+			ResetPatches:        input.ResetPatches,
+			ConfigPath:          configPath,
+			SelectionPath:       productWorkspacePath(state, "localclash-packs.gob"),
+			OutputPath:          state.Paths.GeneratedConfig,
+			Subscription:        state.Paths.SubscriptionPath,
+			SubscriptionConfig:  state.Paths.SubscriptionConfig,
+			SubscriptionRuntime: state.Paths.SubscriptionRuntime,
+			RulesCache:          state.Paths.RulesCacheDir,
+			RuntimeProfilePath:  state.Paths.RuntimeProfilePath,
+			CorePath:            normalizeCorePathForState(state, profile.CorePath),
+			WorkDir:             state.Paths.MihomoRuntimeDir,
+			RefreshTemplateOnly: input.RefreshPolicyTemplatePatches,
+			SkipArtifactBuild:   skipArtifactBuild,
+		})
+		return err
 	})
 	if err != nil {
 		return nil, nil, err

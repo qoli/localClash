@@ -224,7 +224,7 @@ func normalizeOptions(opts Options) Options {
 		opts.TargetArch = runtime.GOARCH
 	}
 	if opts.Flavor == "" {
-		opts.Flavor = FlavorAll
+		opts.Flavor = FlavorMeta
 	}
 	opts.Flavor = strings.ToLower(strings.TrimSpace(opts.Flavor))
 	opts.TargetOS = strings.ToLower(opts.TargetOS)

@@ -258,6 +258,10 @@ func TestToolsCallConfigConfigureAndRuntimeProfileStatus(t *testing.T) {
 	server := NewServerWithState(appinit.RuntimeState{
 		Paths: appinit.RuntimePaths{RuntimeProfilePath: path},
 	})
+	if err := os.MkdirAll(filepath.Dir(filepath.Join(dir, runtimeprofile.SmartCorePath)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeExecutable(t, filepath.Join(dir, runtimeprofile.SmartCorePath), "#!/bin/sh\necho 'Mihomo smart test'\n")
 
 	configure := callHandleWithServer(t, server, map[string]any{
 		"jsonrpc": "2.0",
@@ -581,6 +585,10 @@ func TestToolsCallConfigConfigureDoesNotRenderGeneratedConfig(t *testing.T) {
 
 func TestToolsCallConfigConfigureWritesLocalClashDefaultTemplate(t *testing.T) {
 	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Dir(filepath.Join(dir, runtimeprofile.SmartCorePath)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeExecutable(t, filepath.Join(dir, runtimeprofile.SmartCorePath), "#!/bin/sh\necho 'Mihomo smart test'\n")
 	configPath := filepath.Join(dir, "localclash-intent.json")
 	cacheDir := filepath.Join(dir, ".runtime", "rules", "packs")
 	templatesDir := filepath.Join(dir, "policy-templates")

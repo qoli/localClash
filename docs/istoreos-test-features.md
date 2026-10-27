@@ -80,15 +80,15 @@
 
 | 功能 ID | 功能／驗證內容 | 責任／核心範圍 | 最後實測版本；結果；證據 |
 | --- | --- | --- | --- |
-| CORE-PROFILE | **核心與運行 profile 設定**：選用正確 flavor、binary、profile 及啟動參數；設定與實際程序／controller 身分一致。LuCI 的核心選擇由初始化入口提供，不虛構運行中切換按鈕。[實作入口](../product_cli.go) | Core／按核心差異 | v0.1.83／0.1.0-76；PASS；Meta／Smart profile、binary／命令列／controller 身分及 LuCI 初始化選擇 [E05](#e05) |
-| RUNTIME-MANAGEMENT | **核心生命週期管理**：啟動、停止、程序重啟及必要的重複操作結果正確；配置路徑、workdir、PID／controller 與狀態一致，啟動失敗有終態，不影響非受管程序。[實作入口](../product_cli.go) | Core／按核心差異 | v0.1.83／不適用；PASS；Meta／Smart 啟停／重啟／重複操作、PID／controller、失敗終態及非受管程序保留 [E05](#e05) |
+| CORE-PROFILE | **核心與運行 profile 設定**：按需取得所選 flavor 後保存 profile；下載／配置驗證失敗保留原選擇與核心；新 runtime 成功後清理舊 flavor，設定與實際程序／controller 身分一致。LuCI 的核心選擇由初始化入口提供，不虛構運行中切換按鈕。[實作入口](../internal/coreconfig/configure.go) | Core／按核心差異 | 未發布 r2 `1258d576…da1f`／本地 v87 候選；PARTIAL（單核心存儲／身分）；同一官方 v0.1.104 workspace 的 Smart→Meta→Smart 正式選擇、render、隔離驗證、啟動及 controller 身分通過，成功啟動後移除舊核心；原生 LuCI 初始化及 LAN 資料面 NOT_RUN [E43](#e43)；完整歷史契約保留 [E05](#e05) |
+| RUNTIME-MANAGEMENT | **核心生命週期管理**：啟動、停止、程序重啟及必要的重複操作結果正確；配置路徑、workdir、PID／controller 與狀態一致；成功啟動後清理未選用核心與歷史 pre-* 備份，失敗不誤刪原核心；啟動失敗有終態，不影響非受管程序。[實作入口](../product_cli.go) | Core／按核心差異 | 未發布 r2 `1258d576…da1f`／不適用；PARTIAL（清理範圍）；Meta／Smart 正式啟動及 controller 身分讀回、舊 flavor／pre-* 備份清理與測後停止通過；完整生命週期／LAN 資料面未重跑 [E43](#e43)，歷史範圍保留 [E05](#e05) |
 
 <a id="updates"></a>
 ## 元件更新
 
 | 功能 ID | 功能／驗證內容 | 責任／核心範圍 | 最後實測版本；結果；證據 |
 | --- | --- | --- | --- |
-| COMPONENT-MIHOMO | **Mihomo 核心取得與更新**：依平台／架構取得選定來源的兩份核心，核對版本／SHA；成對更新與失敗恢復一致，preflight 使用活躍核心，更新後保留選擇並正常啟動。[實作入口](../product_mihomo_update.go) | Core／共用交易，按核心差異驗啟動 | Core `f23554d`／LuCI `a25a3cc`；PASS（本輪影響範圍，Meta active）；Meta／Smart 成對 SHA、changed／identical pair、現有核心保留、缺核心失敗及單一最終 runtime commit [E18](#e18)；其餘契約沿用 [E05](#e05) |
+| COMPONENT-MIHOMO | **Mihomo 核心取得與更新**：依平台／架構只取得目前選用的 flavor，核對版本／SHA；候選隔離驗證通過後提交並清理未使用核心，停止狀態仍保留所選 binary；切換中的舊核心保留至新 runtime 成功，更新失敗保留原核心與選擇，交易回滾檔成功後清除。[實作入口](../product_mihomo_update.go) | Core／共用交易，按核心差異驗啟動 | 未發布 r2 `1258d576…da1f`／本地 v87 候選；PARTIAL（單核心存儲）；官方 v0.1.104 同一 workspace 升級，所選 Smart 缺失時只取得 Smart；r2 相同 SHA 更新回報 unchanged；雙向切換後只餘所選核心；guest WAN 中斷時明確失敗、原 SHA／選擇保留，恢復後可再啟動；LuCI 真 UI、獨立 LAN oracle 及正式 ARM64 NOT_RUN [E43](#e43)；舊成對契約僅作歷史 [E18](#e18) [E05](#e05) |
 | COMPONENT-ASSETS | **基礎資源更新**：取得並安裝基礎資源，版本／完整性正確；更新失敗不假報完成，保留正在使用的資料檔映射，之後配置生成可使用實際安裝的資源。[實作入口](../product_cli.go) | Core／共用 | 2026-10-02 更新至 Core v0.1.93／LuCI 0.1.0-83；FAIL；運行中 Smart 讀取 ASN.mmdb 時 SIGBUS，準備階段原地截斷資料檔；修正候選的主機回歸已通過，iStoreOS 功能回驗 NOT_RUN [E19](#e19)；歷史安裝範圍見 [E05](#e05) |
 | COMPONENT-DASHBOARD | **Dashboard 資源管理**：取得、更新及提供面板資源，檔案／入口與 controller 連接設定一致；能開啟面板，不驗 Dashboard 自身全部功能。[實作入口](../product_cli.go) | Core；LuCI 提供連結／共用 | Core `11ee263`／LuCI `2ac337f`；PASS；有效 archive 更新、component status、`external-ui`、controller `/ui/`，以及 5 次失敗後 optional skip／原 hash 保留 [E07](#e07) |
 
@@ -1336,6 +1336,44 @@ CSS SHA `d9697bd6…84c0c2b`、subscription.js SHA `aafb5e18…b8a341` 與 [E41]
   [guest 安裝身分](../.runtime/istoreos-acceptance/20261026-luci87-release/raw/install-readback.json)、
   [原生畫面讀回](../.runtime/istoreos-acceptance/20261026-luci87-release/raw/ui-readback.json)、
   [發布前沿用審核](../.runtime/releases/luci-v0.1.0-87/impact-review.json)。
+
+<a id="e43"></a>
+### E43
+
+2026-10-28，單核心下載重構的未發布工作區候選：Core base `70a4d6f`，
+最終 Linux amd64 r2 binary SHA `1258d576dcf3500e593b37d3567313c4932f6f771e7941342258eb60c364da1f`，
+版本 `dev-selected-core-20261028-r2`；LuCI base `304e958`，helper SHA `f16295e5…525abe`，
+本地候選 IPK SHA `c98cced7…53fe26`。套件版本沿用 v87，不能視為已發布的官方 v87 資產。
+
+- 新建可拋棄 iStoreOS 24.10.8 x86_64 QEMU clone，官方 firmware SHA `2ce609e2…e9a9c`。
+  先安裝官方 Core v0.1.104（SHA `175a56cf…4f29`）、matching base-assets（`9e2be884…2ca3`）
+  及官方 LuCI v87（IPK `f2abdc05…3311`），正式建立並使用 workspace 後，停止舊 runtime，
+  保留該 workspace 換入候選。真實訂閱經 `subscription-sync` 唯讀串流匯入，guest 回報
+  2 sources／30 proxies；host 不保存 URI。未修改正式路由器或既有共用 VM。
+- 最終 r2 的 `doctor --json` exit 0：真實訂閱、生成配置、安全基線及隔離 config-test 均為 ok。
+  所選 Smart 缺失時正式 component update 只下載 Smart；r2 再次更新的 Smart SHA 相同，
+  回報 changed=false，獨立檔案讀回只有選定 binary。r1 初步觀察到刪除未選用 Meta；
+  只作診斷背景，不把 r1 結果升格為 r2 未執行的狀態轉移。
+- r2 正式 Smart→Meta→Smart 選擇／render／隔離驗證／啟動後，controller 回報相應身分，
+  檔案與 SHA 讀回確認舊 flavor 被清理；Smart 啟動亦清除受控放置的真實 Meta pre-* 備份。
+  首次 Meta config-test 在未 render 時遇到舊 Smart 配置，保留原始失敗；依正式流程 render
+  後通過，不把這次操作次序錯誤宣稱為產品負向能力 PASS。
+- guest WAN 受控中斷時，正式更新明確回報下載 metadata 失敗；恢復 WAN 後，原 Smart SHA
+  與 profile selection 未變，正式啟動及 controller 身分可再次讀回。
+- 本輪獨立 oracle 僅涵蓋核心檔案／SHA／存儲清理與 controller 身分。沒有獨立 LAN client
+  TCP／UDP／DNS oracle，也沒有真 LuCI 頁面操作；Slirp WAN 與 guest endpoint probe
+  不足以證明完全排除宿主透明代理。因此完整 CORE-PROFILE／RUNTIME-MANAGEMENT／
+  COMPONENT-MIHOMO 維持 PARTIAL；WORKSPACE-INIT、LUCI-INIT、LUCI-UPDATE 新下載編排的
+  完整首次初始化／真 UI／資料面為 NOT_RUN，不提高其歷史實測版本。
+- 主機 `go test ./...`、LuCI bootstrap／one-click update／takeover restore 腳本、語法與
+  IPK／APK 建置通過；單元測試涵蓋下載／驗證／render 失敗、舊 profile／核心保留、
+  相同 SHA 更新、顯式雙核心下載、只清理受管檔案及舊 flavor 尚在運行時延後清理。
+  這些主機結果不取代 QEMU 功能驗收。測後 runtime／QEMU 已停止，qcow2 check 無錯。
+- 證據：[驗收索引](../.runtime/istoreos-acceptance/20261028-selected-core-download/report.md)、
+  [主機檢查與候選身分](../.runtime/istoreos-acceptance/20261028-selected-core-download/candidate/primary-verification.json)、
+  [r2 doctor](../.runtime/istoreos-acceptance/20261028-selected-core-download/raw/candidate-r2-doctor-final.json)、
+  [Meta 啟動與清理](../.runtime/istoreos-acceptance/20261028-selected-core-download/raw/meta-runtime-start-retry.json)、
+  [Smart 啟動與清理](../.runtime/istoreos-acceptance/20261028-selected-core-download/raw/smart-runtime-start-switch.json)。
 
 <a id="pending-incidents"></a>
 ## 待核對事故與證據缺口

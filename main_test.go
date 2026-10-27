@@ -1141,6 +1141,29 @@ func TestRunProductConfigStatusRejectsInvalidUserProfile(t *testing.T) {
 	}
 }
 
+func TestCoreDownloadDefaultsToSelectedSmartFlavor(t *testing.T) {
+	dir := t.TempDir()
+	profile := filepath.Join(dir, runtimeprofile.DefaultPath)
+	writeMainTestFile(t, profile, `{"version":2,"mode":"router","core":"smart"}`)
+	requests := 0
+	metadata := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if r.URL.Path != "/repos/qoli/mihomo-Alpha/releases/tags/Prerelease-Alpha" {
+			t.Errorf("unexpected release request %s", r.URL.Path)
+		}
+		_, _ = io.WriteString(w, `{"tag_name":"Prerelease-Alpha","assets":[{"name":"mihomo-linux-arm64-alpha-smart-test.gz","browser_download_url":"https://example.com/smart.gz"}]}`)
+	}))
+	defer metadata.Close()
+	t.Setenv("LOCALCLASH_GITHUB_MIRROR", "")
+	t.Setenv("LOCALCLASH_GITHUB_API_MIRRORS", metadata.URL)
+	output := captureStdout(t, func() error {
+		return runCoreDownload([]string{"--target", "router", "--arch", "arm64", "--dry-run"}, appinit.RuntimeState{Paths: appinit.RuntimePaths{RuntimeProfilePath: profile}})
+	})
+	if requests != 1 || !strings.Contains(output, "flavor: smart\n") || strings.Contains(output, "flavor: meta") {
+		t.Fatalf("core download requests=%d output=%s", requests, output)
+	}
+}
+
 func TestRunProductComponentUpdateMihomoRefreshesCoreVersionCache(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("LOCALCLASH_WORKDIR", dir)
@@ -1148,13 +1171,13 @@ func TestRunProductComponentUpdateMihomoRefreshesCoreVersionCache(t *testing.T) 
 	core := filepath.Join(dir, runtimeprofile.MetaCorePath)
 	oldDownloadCore := downloadCore
 	downloadCore = func(ctx context.Context, opts coredownload.Options) ([]coredownload.Result, error) {
+		if opts.Flavor != coredownload.FlavorMeta {
+			t.Fatalf("requested flavor = %q, want selected meta only", opts.Flavor)
+		}
 		meta := filepath.Join(opts.OutputDir, "linux-"+runtime.GOARCH, runtimeprofile.ManagedMetaCoreName)
-		smart := filepath.Join(opts.OutputDir, "linux-"+runtime.GOARCH, runtimeprofile.ManagedSmartCoreName)
 		writeMainExecutableCore(t, meta, "Mihomo component update")
-		writeMainExecutableCore(t, smart, "Mihomo smart component update")
 		return []coredownload.Result{
 			{OutputPath: meta, Flavor: coredownload.FlavorMeta, Target: opts.Target},
-			{OutputPath: smart, Flavor: coredownload.FlavorSmart, Target: opts.Target},
 		}, nil
 	}
 	t.Cleanup(func() {
@@ -1181,23 +1204,21 @@ func TestRunProductComponentUpdateMihomoRefreshesCoreVersionCache(t *testing.T) 
 	}
 }
 
-func TestRunProductComponentUpdateMihomoReportsIdenticalPairUnchanged(t *testing.T) {
+func TestRunProductComponentUpdateMihomoReportsIdenticalSelectedCoreUnchanged(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("LOCALCLASH_WORKDIR", dir)
 	t.Chdir(dir)
 	metaTarget := filepath.Join(dir, runtimeprofile.MetaCorePath)
-	smartTarget := filepath.Join(filepath.Dir(metaTarget), runtimeprofile.ManagedSmartCoreName)
 	writeMainExecutableCore(t, metaTarget, "Mihomo identical meta")
-	writeMainExecutableCore(t, smartTarget, "Mihomo identical smart")
 	oldDownloadCore := downloadCore
 	downloadCore = func(ctx context.Context, opts coredownload.Options) ([]coredownload.Result, error) {
+		if opts.Flavor != coredownload.FlavorMeta {
+			t.Fatalf("requested flavor = %q, want selected meta only", opts.Flavor)
+		}
 		meta := filepath.Join(opts.OutputDir, "linux-"+runtime.GOARCH, runtimeprofile.ManagedMetaCoreName)
-		smart := filepath.Join(opts.OutputDir, "linux-"+runtime.GOARCH, runtimeprofile.ManagedSmartCoreName)
 		writeMainExecutableCore(t, meta, "Mihomo identical meta")
-		writeMainExecutableCore(t, smart, "Mihomo identical smart")
 		return []coredownload.Result{
 			{OutputPath: meta, Flavor: coredownload.FlavorMeta, Target: opts.Target},
-			{OutputPath: smart, Flavor: coredownload.FlavorSmart, Target: opts.Target},
 		}, nil
 	}
 	t.Cleanup(func() { downloadCore = oldDownloadCore })
@@ -1217,7 +1238,7 @@ func TestRunProductComponentUpdateMihomoReportsIdenticalPairUnchanged(t *testing
 		t.Fatalf("component update JSON = %q, error = %v", output, err)
 	}
 	if !result.OK || result.Changed || result.Status.Changed || len(result.Status.Promoted) != 0 {
-		t.Fatalf("component update result = %+v, want byte-identical pair unchanged without promotion", result)
+		t.Fatalf("component update result = %+v, want byte-identical selected core unchanged without promotion", result)
 	}
 }
 
