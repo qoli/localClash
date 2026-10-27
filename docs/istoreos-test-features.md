@@ -80,15 +80,15 @@
 
 | 功能 ID | 功能／驗證內容 | 責任／核心範圍 | 最後實測版本；結果；證據 |
 | --- | --- | --- | --- |
-| CORE-PROFILE | **核心與運行 profile 設定**：按需取得所選 flavor 後保存 profile；下載／配置驗證失敗保留原選擇與核心；新 runtime 成功後清理舊 flavor，設定與實際程序／controller 身分一致。LuCI 的核心選擇由初始化入口提供，不虛構運行中切換按鈕。[實作入口](../internal/coreconfig/configure.go) | Core／按核心差異 | 未發布 r2 `1258d576…da1f`／本地 v87 候選；PARTIAL（單核心存儲／身分）；同一官方 v0.1.104 workspace 的 Smart→Meta→Smart 正式選擇、render、隔離驗證、啟動及 controller 身分通過，成功啟動後移除舊核心；原生 LuCI 初始化及 LAN 資料面 NOT_RUN [E43](#e43)；完整歷史契約保留 [E05](#e05) |
-| RUNTIME-MANAGEMENT | **核心生命週期管理**：啟動、停止、程序重啟及必要的重複操作結果正確；配置路徑、workdir、PID／controller 與狀態一致；成功啟動後清理未選用核心與歷史 pre-* 備份，失敗不誤刪原核心；啟動失敗有終態，不影響非受管程序。[實作入口](../product_cli.go) | Core／按核心差異 | 未發布 r2 `1258d576…da1f`／不適用；PARTIAL（清理範圍）；Meta／Smart 正式啟動及 controller 身分讀回、舊 flavor／pre-* 備份清理與測後停止通過；完整生命週期／LAN 資料面未重跑 [E43](#e43)，歷史範圍保留 [E05](#e05) |
+| CORE-PROFILE | **核心與運行 profile 設定**：按需取得所選 flavor 後保存 profile；下載／配置驗證失敗保留原選擇與核心；新 runtime 成功後清理舊 flavor，設定與實際程序／controller 身分一致。LuCI 的核心選擇由初始化入口提供，不虛構運行中切換按鈕。[實作入口](../internal/coreconfig/configure.go) | Core／按核心差異 | 未發布 Core `1adf4c2`／LuCI `3536b8b`（本地 v87 候選）；PARTIAL（單核心存儲／身分）；官方 v0.1.104 同一 workspace 升級，正式 Smart→Meta→Smart 選擇、render、隔離驗證及啟動後，controller 分別讀回 7 個 Smart／URLTest 群組；只保留所選核心，下載故障保留原 SHA／profile；LAN DNS 有回應但 HTTP／UDP oracle FAIL，原生初始化 UI NOT_RUN [E44](#e44)；前次工作區候選 [E43](#e43)，完整歷史契約保留 [E05](#e05) |
+| RUNTIME-MANAGEMENT | **核心生命週期管理**：啟動、停止、程序重啟及必要的重複操作結果正確；配置路徑、workdir、PID／controller 與狀態一致；成功啟動後清理未選用核心與歷史 pre-* 備份，失敗不誤刪原核心；啟動失敗有終態，不影響非受管程序。[實作入口](../product_cli.go) | Core／按核心差異 | 未發布 Core `1adf4c2`／LuCI `3536b8b`；PARTIAL（清理／啟動範圍）；Meta／Smart 正式 render、隔離驗證及啟動，群組類型與 controller 身分讀回一致；舊 flavor／pre-* 備份移除，Smart 自行下載模型後 doctor ok；LAN HTTP／UDP oracle FAIL，完整生命週期未重跑 [E44](#e44)；前次工作區候選 [E43](#e43)，歷史範圍保留 [E05](#e05) |
 
 <a id="updates"></a>
 ## 元件更新
 
 | 功能 ID | 功能／驗證內容 | 責任／核心範圍 | 最後實測版本；結果；證據 |
 | --- | --- | --- | --- |
-| COMPONENT-MIHOMO | **Mihomo 核心取得與更新**：依平台／架構只取得目前選用的 flavor，核對版本／SHA；候選隔離驗證通過後提交並清理未使用核心，停止狀態仍保留所選 binary；切換中的舊核心保留至新 runtime 成功，更新失敗保留原核心與選擇，交易回滾檔成功後清除。[實作入口](../product_mihomo_update.go) | Core／共用交易，按核心差異驗啟動 | 未發布 r2 `1258d576…da1f`／本地 v87 候選；PARTIAL（單核心存儲）；官方 v0.1.104 同一 workspace 升級，所選 Smart 缺失時只取得 Smart；r2 相同 SHA 更新回報 unchanged；雙向切換後只餘所選核心；guest WAN 中斷時明確失敗、原 SHA／選擇保留，恢復後可再啟動；LuCI 真 UI、獨立 LAN oracle 及正式 ARM64 NOT_RUN [E43](#e43)；舊成對契約僅作歷史 [E18](#e18) [E05](#e05) |
+| COMPONENT-MIHOMO | **Mihomo 核心取得與更新**：依平台／架構只取得目前選用的 flavor，核對版本／SHA；候選隔離驗證通過後提交並清理未使用核心，停止狀態仍保留所選 binary；切換中的舊核心保留至新 runtime 成功，更新失敗保留原核心與選擇，交易回滾檔成功後清除。[實作入口](../product_mihomo_update.go) | Core／共用交易，按核心差異驗啟動 | 未發布 Core `1adf4c2`／LuCI `3536b8b`（本地 v87 候選）；PARTIAL（單核心存儲）；官方 v0.1.104 同一 workspace 升級，只下載所選 flavor；乾淨狀態同 SHA 重複更新 changed=false，雙向切換後只餘所選核心並清理受控 pre-* 備份；guest WAN 中斷時明確失敗、原 Smart SHA／選擇保留，恢復後可啟動；LAN HTTP／UDP oracle FAIL，LuCI 一鍵更新 UI／正式 ARM64 NOT_RUN [E44](#e44)；前次工作區候選保留 [E43](#e43)，舊成對契約僅作歷史 [E18](#e18) [E05](#e05) |
 | COMPONENT-ASSETS | **基礎資源更新**：取得並安裝基礎資源，版本／完整性正確；更新失敗不假報完成，保留正在使用的資料檔映射，之後配置生成可使用實際安裝的資源。[實作入口](../product_cli.go) | Core／共用 | 2026-10-02 更新至 Core v0.1.93／LuCI 0.1.0-83；FAIL；運行中 Smart 讀取 ASN.mmdb 時 SIGBUS，準備階段原地截斷資料檔；修正候選的主機回歸已通過，iStoreOS 功能回驗 NOT_RUN [E19](#e19)；歷史安裝範圍見 [E05](#e05) |
 | COMPONENT-DASHBOARD | **Dashboard 資源管理**：取得、更新及提供面板資源，檔案／入口與 controller 連接設定一致；能開啟面板，不驗 Dashboard 自身全部功能。[實作入口](../product_cli.go) | Core；LuCI 提供連結／共用 | Core `11ee263`／LuCI `2ac337f`；PASS；有效 archive 更新、component status、`external-ui`、controller `/ui/`，以及 5 次失敗後 optional skip／原 hash 保留 [E07](#e07) |
 
@@ -122,7 +122,7 @@
 | LUCI-INIT | **初始化引導**：由頁面提供訂閱、模板及核心，完成 Core 呼叫、配置、啟動及接管；重新開頁顯示真實狀態，失敗可定位。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI 編排＋Core／按影響 | v0.1.83／0.1.0-76；PASS；空工作區 Meta／Smart 初始化、訂閱／模板／Core、UI 啟動並接管、重開讀回及可定位失敗後恢復 [E05](#e05) |
 | LUCI-UPDATE | **一鍵更新與資料保留**：從頁面更新，兩個檢查點、來源版本及結果可讀回；重跑／舊版升級保持訂閱、網站順序、偏好及核心選擇；Mihomo 下載失敗時保留運行中程序並停止後續切換，原本停止或未初始化的狀態不擅自啟動。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI 編排＋Core／按影響 | Core v0.1.102 → v0.1.103／LuCI v0.1.0-85；PARTIAL；正式 ARM64 同一一鍵更新 RPC 成功，預設同步／資料保留、官方 Core與Smart活躍SHA、runtime／接管及外部Safari實播通過；初次GUI session過期未啟任務，不記GUI成功，02 HTTP403沿用快取並警告 [E37](#e37)；下載失敗／停止狀態未重跑，歷史 FAIL／缺口 [E19](#e19)；前次GUI及其他範圍 [E34](#e34) [E18](#e18) [E17](#e17) |
 | LUCI-TASKS | **介面與長任務交互**：訂閱、網站、初始化及更新頁面操作與後端一致；日誌、取消、互斥、重新連接與終態可用，無重複交易／無限 busy；依各操作是否支援取消驗證。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI／共用 | Core v0.1.104／LuCI v0.1.0-87；PARTIAL；最終包概覽版本及 light 桌面／dark390 訂閱五行回驗通過 [E42](#e42)；CSS `d9697bd6`／訂閱 JS `aafb5e18` 與原候選相同，灰度及原生四頁沿用原實測 [E40](#e40)，六組五行／縮小下限沿用 [E41](#e41)；主題／日誌及其他操作保留原版本 [E39](#e39)，完整取消／互斥／續接等保留 [E17](#e17) [E05](#e05) |
-| LUCI-TAKEOVER | **OpenWrt 網路接管**：從正式入口套用及停止防火牆、策略路由與 DNS 接管；獨立 LAN client 的實際 TCP／UDP／DNS 請求按配置到達受控 WAN endpoint，停止後恢復原資料面，且非本產品規則保留。內部 effective、規則或 lease 只能解釋結果。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI／共用 | Core v0.1.96 `d5506d9`／LuCI v0.1.0-85 `d24de8e`；PARTIAL；正式 ARM64 路由器 Smart 的 IPv4 UDP／TCP DNS 接管、Mac 混合大小寫／PTR 與公開 A／AAAA 通過，TCP socket 歸屬證明 53→7874；IPv6 GUA／link-local 通過；正式 LAN 開啟 SLAAC 後原生 Mac ULA UDP／TCP 14/14 與本地 PTR 通過，53→7874 接管及 LAN 回程已確認 [E26](#e26)，取代 [E22](#e22) 的自動來源 ULA FAIL；診斷與 VM 原生 RA 對照見 [E23](#e23)／[E24](#e24)／[E25](#e25)；歷史狀態轉移保留 [E21](#e21) |
+| LUCI-TAKEOVER | **OpenWrt 網路接管**：從正式入口套用及停止防火牆、策略路由與 DNS 接管；獨立 LAN client 的實際 TCP／UDP／DNS 請求按配置到達受控 WAN endpoint，停止後恢復原資料面，且非本產品規則保留。內部 effective、規則或 lease 只能解釋結果。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI／共用 | 未發布 Core `1adf4c2`／LuCI `3536b8b`；PARTIAL；本輪 iStoreOS x86_64 獨立 LAN client 的 UDP／TCP DNS fake-IP 一致，HTTP nonce／UDP echo oracle FAIL，舊版亦重現；停止／恢復資料面未完整覆蓋 [E44](#e44)；正式 ARM64 原版本 Core v0.1.96 `d5506d9`／LuCI v0.1.0-85 `d24de8e`，Smart 的 IPv4 UDP／TCP DNS 接管、Mac 混合大小寫／PTR 與公開 A／AAAA 通過，TCP socket 歸屬證明 53→7874；IPv6 GUA／link-local 通過；正式 LAN 開啟 SLAAC 後原生 Mac ULA UDP／TCP 14/14 與本地 PTR 通過，53→7874 接管及 LAN 回程已確認 [E26](#e26)，取代 [E22](#e22) 的自動來源 ULA FAIL；診斷與 VM 原生 RA 對照見 [E23](#e23)／[E24](#e24)／[E25](#e25)；歷史狀態轉移保留 [E21](#e21) |
 | LUCI-RESTORE | **接管及服務恢復**：開機、WAN 事件、受管程序退出及依賴故障後，按使用者意圖恢復或撤回接管；每次轉移後由獨立 client 重跑相同資料面 oracle，明確停止後不自行重開。內部狀態與 lease 不代表服務可用。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI＋Core 生命週期／共用 | Core `9881182`／LuCI `18c3b7c` + 發布前候選（binary `596c797d…4d17`、IPK `e5218681…ac7e`）；PARTIAL；停止 Mihomo 後不清理 firewall，租約到期轉 dnsmasq，正式重新授租後完整 IPv4 UDP／TCP 查詢集成功；到期階段僅四項查詢、受控故障敏感度及 IPv6 尚未完整覆蓋 [E21](#e21)；開機／WAN 歷史範圍保留 [E05](#e05) [E11](#e11) |
 
 ## 舊記錄的保留方式
@@ -1374,6 +1374,78 @@ CSS SHA `d9697bd6…84c0c2b`、subscription.js SHA `aafb5e18…b8a341` 與 [E41]
   [r2 doctor](../.runtime/istoreos-acceptance/20261028-selected-core-download/raw/candidate-r2-doctor-final.json)、
   [Meta 啟動與清理](../.runtime/istoreos-acceptance/20261028-selected-core-download/raw/meta-runtime-start-retry.json)、
   [Smart 啟動與清理](../.runtime/istoreos-acceptance/20261028-selected-core-download/raw/smart-runtime-start-switch.json)。
+
+<a id="e44"></a>
+### E44
+
+2026-10-28，先提交後重新建置的單核心下載候選：Core `1adf4c20cfdbe9faec81e795eef2620e013035fc`，
+LuCI `3536b8b1ee50aee821d979342e5e18c28aa26c10`；兩倉庫均在原 main checkout 提交，未發布或部署正式路由器。
+Core 版本 `acceptance-1adf4c2`，Linux amd64 binary SHA
+`ecb59def8a50a405ee63c2069186f1773f6024b4a8c761c68cace66d6e27a077`，Go build info 的
+`vcs.revision` 對應提交、`vcs.modified=false`。本地 LuCI 套件仍標 v87，IPK SHA
+`c98cced70ef052741702edda278e1a4a426f6c0ab687a088f3a1772b9653fe26`；不是公開 v87 的替換資產。
+
+- 另建可拋棄 iStoreOS 24.10.8 x86_64 router／LAN client QEMU，firmware SHA `2ce609e2…e9a9c`。
+  同一 router clone 先安裝官方 Core v0.1.104（`175a56cf…4f29`）、匹配資產（`9e2be884…2ca3`）
+  及官方 LuCI v87（`f2abdc05…3311`），經正式入口建立及啟動 workspace；真實訂閱由正式路由器
+  唯讀串流匯入，2 sources／30 proxies，host 不保存 URI。停止舊 runtime 後保留 workspace 升級候選。
+  舊版控制面可啟動，但受控 LAN HTTP／UDP oracle 已失敗，不當成連通性正常的升級基線。
+- 正式 Smart→Meta→Smart 選擇、下載、render、隔離 config-test 及啟動後，controller 分別讀回
+  Smart `alpha-smart-ab65458`／7 個 Smart 群組與 Meta `v1.19.33`／7 個 URLTest 群組；
+  檔案及 SHA 讀回只餘所選核心。Smart SHA `385c291c…ecfe4`、Meta SHA `19cbe7ba…a1afa`。
+  正式 component update 移除未選用核心及受控的真實 Meta `.pre-b1` 備份；該備份是清理 fixture，
+  不冒充一般安裝原本具有的歷史檔案。切斷 guest WAN 後下載明確失敗，原 Smart SHA／profile 保留，
+  恢復後可重新啟動。乾淨狀態再由正式 workspace 更新，changed=false、Smart SHA／profile 不變，
+  仍只有 Smart；首次錯誤 cwd 產生的 `/root/bin` 測試檔另行移除，不計入產品目錄。
+  controller 與 doctor 僅輔助說明，不代替 LAN oracle。
+- 首次舊版初始化把 refresh 放入 apply-template 時遇到材料交易 `.` 路徑錯誤；另曾在切換後漏 render，
+  Smart binary 仍載入 URLTest 配置。兩次首次失敗及 A0 快照保留；按正式分階段初始化順序與
+  render／隔離驗證／重啟重走後，最終 Smart config SHA `0a92efee…18b2d`、Meta `d684ed07…7ea2`。
+  不把操作次序修正或舊配置可啟動當成負向能力 PASS。
+- 正確 Smart 配置首次下載模型曾 DNS 失敗；後續正式 Meta→Smart 重啟由 Mihomo 自行下載成功，
+  未手動補模型。`Model.bin` 18,357,364 bytes，SHA `6a17dffb…3cfaa`；最終 doctor exit 0／ok。
+  A1 才是具備模型及 Smart 群組的實際工作狀態；A0 無模型的較小體積不作最終存儲數字。
+- 獨立 LAN client 經 192.168.100.1 查詢受控域名，UDP／TCP DNS 取得相同 fake IP；
+  HTTP nonce／UDP echo 核對失敗，oracle 為 FAIL。舊版與候選的失敗及 Mihomo
+  `dns resolve failed: couldn't find ip` 診斷保留；內部 takeover effective 不覆蓋失敗。
+  原生 Arc 概覽只做唯讀版本／運行／接管畫面核對；初始化與一鍵更新 UI 操作 **NOT_RUN**。
+  因此本輪整體 **PARTIAL**，不宣稱完整網路、初始化、一鍵更新或正式 ARM64 驗收通過。
+
+以下為 A1 的實際配置及已分配空間，1 MiB = 1,048,576 bytes；不是壓縮下載檔體積。
+工作目錄用 `du -sk`，獨立檔案用 `stat` 的 512-byte blocks；LuCI 只加總套件擁有的 regular files，
+不把共用 `/usr/lib`、`/usr/bin` 父目錄算入產品。
+
+| 內容物 | 路徑／範圍 | 實佔 MiB |
+| --- | --- | ---: |
+| Smart 核心 | `bin/linux-amd64/lc-mihomo-smart` | 49.64 |
+| GEO 資料 | ASN／Country mmdb、geoip／geosite dat | 43.05 |
+| Smart 模型 | `.runtime/mihomo/Model.bin` | 17.51 |
+| Dashboard | `.runtime/mihomo/ui` | 8.10 |
+| 規則快取 | `.runtime/rules` | 2.96 |
+| 其他設定、訂閱、規則索引、快取、日誌及目錄 | 工作目錄其餘內容 | 0.75 |
+| **工作目錄小計** | `/root/localclash` | **122.00** |
+| localClash 主程式 | `/usr/local/bin/localclash` | 10.66 |
+| LuCI 檔案 | 套件擁有的 regular files | 0.46 |
+| **產品合計** | 上述範圍，不含 OpenWrt 本身及共用依賴 | **133.12** |
+
+- B0 舊版實測工作目錄 163.62 MiB（雙核心、Meta 運行、尚無 Smart 模型）→ A1 122.00 MiB，
+  淨減少 **41.62 MiB／25.44%**。移除未用 Meta 本身省 59.21 MiB，模型新增 17.51 MiB，
+  另有少量配置／快取變動；兩種核心的運行狀態差異一併列明。
+- B1 另外放入一份真實 Meta pre-* 副本，使工作目錄暫增至 222.83 MiB；額外 59.21 MiB 的清理
+  不納入 B0→A1 的正常節省。原本正式 ARM64 路由器的兩份 Smart 備份亦不套用這台 x86_64 的數字。
+- A1 overlay used 152,916 KiB、available 1,819,156 KiB（8%）；這是整個檔案系統，與產品小計分開。
+  本次沒有變更 GEO／small-flash 配置模式，不能把 GEO 用量下降列為本次成效。
+- 主機 Go 全套、LuCI bootstrap／更新／恢復腳本與語法、IPK／APK 建置結果沿用本次來源的獨立紀錄，
+  不取代 QEMU 功能結果。正式停止 runtime 後 takeover／DNS lease 已撤回；本輪 router、client、
+  endpoint 均已停止，主代理另查 PID 不存在，兩份 qcow2 保留且完整性檢查無錯。
+  [收尾核對](../.runtime/istoreos-acceptance/20261028-selected-core-committed/primary-cleanup-review.json)。
+  證據：[候選身分](../.runtime/istoreos-acceptance/20261028-selected-core-committed/candidate/committed-build.json)、
+  [空間與比較](../.runtime/istoreos-acceptance/20261028-selected-core-committed/storage-summary.json)、
+  [功能摘要](../.runtime/istoreos-acceptance/20261028-selected-core-committed/functional-summary.json)、
+  [主代理即時 SHA／du／df](../.runtime/istoreos-acceptance/20261028-selected-core-committed/primary-live-files.txt)、
+  [主代理最終 doctor](../.runtime/istoreos-acceptance/20261028-selected-core-committed/primary-live-doctor.json)、
+  [候選 LAN oracle](../.runtime/istoreos-acceptance/20261028-selected-core-committed/network/candidate-final2-client-oracle.json)、
+  [主代理原生概覽](../.runtime/istoreos-acceptance/20261028-selected-core-committed/primary-overview.json)。
 
 <a id="pending-incidents"></a>
 ## 待核對事故與證據缺口
