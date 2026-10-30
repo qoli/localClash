@@ -510,7 +510,15 @@ class ArcCDPPublisher:
 
         text = article.locator('div[data-testid="tweetText"]')
         text.wait_for(state="visible")
-        actual_visible_text = text.evaluate("element => element.innerText")
+        # X adds hidden URL prefixes and layout line breaks to innerText.
+        # Read text nodes without those link decorations; targets are checked below.
+        actual_visible_text = text.evaluate(
+            """element => {
+                const copy = element.cloneNode(true);
+                copy.querySelectorAll('a [aria-hidden="true"]').forEach(node => node.remove());
+                return copy.textContent;
+            }"""
+        )
         missing_lines = missing_expected_text_fragments(post.request.text, actual_visible_text)
         if missing_lines:
             raise ScriptError(f"Published X post is missing expected text lines: {missing_lines!r}")
