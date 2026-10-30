@@ -109,9 +109,9 @@ def channel_from_title(title: str) -> str | None:
 
 def tags_from_title(title: str, channel: str) -> list[str]:
     if channel == "core":
-        return re.findall(r"v\d+\.\d+\.\d+", title)
+        return re.findall(r"v\d+\.\d+(?:\.\d+)?", title)
     if channel == "luci":
-        return re.findall(r"v\d+\.\d+\.\d+-\d+", title)
+        return re.findall(r"v\d+\.\d+(?:\.\d+-\d+)?", title)
     return []
 
 

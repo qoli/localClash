@@ -351,6 +351,12 @@ binaries, base assets, checksums, and `localclash-release-manifest.json`.
 LuCI consumes the manifest for online updates; a Core release does not
 require a LuCI release. LuCI offline bundles pin Core separately.
 
+New public versions use two integer components: keep the major number and
+increment the second number for each delivery. Core migrates from
+`v0.1.104` to `v0.105`, then `v0.106`; LuCI's next release migrates from
+`v0.1.0-87` to `v0.88`, then `v0.89`. LuCI package revisions remain separate
+from its public tag. Published historical tags stay unchanged.
+
 - [更新日誌](docs/changelog.md) supplies X cards and Telegram announcements.
 - [功能測試表](docs/istoreos-test-features.md) preserves last tested versions,
   failures, partial results, and evidence.

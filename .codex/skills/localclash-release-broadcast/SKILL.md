@@ -10,6 +10,51 @@ preserve unrelated edits and use the current checkout. Core and LuCI have
 separate release channels. Updating Core or its source lock alone does not
 require publishing LuCI.
 
+## Version Contract
+
+Public versions use `x.y`, two integer components. Keep `x` and increment `y`
+for each new delivery; `0.99 -> 0.100` is valid. Change size does not introduce
+a third component or automatically increment the major number. Repeating,
+recovering, or announcing the same delivery keeps its chosen version.
+
+- Core migrates `v0.1.104 -> v0.105`; subsequent releases are `v0.106`,
+  `v0.107`, and so on. `version.go` remains `dev` in source; release builds
+  inject the exact tag into the binary and manifest.
+- LuCI's next release migrates `v0.1.0-87 -> v0.88`, then `v0.89`. Set
+  `PKG_VERSION` to the two-part public version and `PKG_RELEASE` to `1` for
+  a new delivery. Public tags are `v<PKG_VERSION>`; IPK/APK keep their normal
+  package revision suffixes. Do not publish another public release just by
+  incrementing `PKG_RELEASE` under an existing public version.
+- Preserve published legacy tags and their download URLs. Historical manual
+  recovery, changelog parsing, cursors, and offline Core locks must still
+  accept the old formats; new tag creation uses the two-part contract.
+- Core and LuCI advance independently. Core-only authorization does not
+  require a LuCI version bump, package publication, or offline Core lock update.
+
+This project uses its native GitHub Actions tag workflow. There is currently
+no `.new-version.env`; do not initialize or migrate the general new-version
+runner as an incidental release step.
+
+## Core Release Procedure
+
+Review all source changes since the latest official Core release and complete
+affected acceptance or evidence reuse before publication. Prepare release notes
+with concrete behavior, tested scope, and remaining failures. Commit the reviewed
+source in the current checkout, then use:
+
+```bash
+scripts/trigger-github-release.sh v0.105 --create-tag --watch
+```
+
+Use the actual chosen version in that example. The helper creates an annotated
+tag at HEAD and pushes it; the Release workflow tests and builds that exact tag.
+Use dispatch mode only to recover an existing unpublished tag. Never move a
+public tag or replace published assets. Verify workflow success, remote tag
+commit, binary versions/build provenance, the exact seven owned assets,
+manifest URLs and SHA-256 values, and packaged policy/rule sources. Record the
+release in `docs/changelog.md` only after it exists. X and Telegram publication
+still require their own explicit authorization below.
+
 ## Release Facts and Acceptance
 
 Before latest-version claims, inspect `gh release list --limit 8` in the
@@ -42,7 +87,10 @@ Use sibling `../localclash-luci`. Its workflows/scripts define build details:
 
 1. Review the current version commit, `openwrt/luci-app-localclash/Makefile`
    `PKG_VERSION`/`PKG_RELEASE`, recent releases, and successful main CI.
-   The tag must be `v<PKG_VERSION>-<PKG_RELEASE>` and point to the reviewed commit.
+   New tags must be `v<PKG_VERSION>` and point to the reviewed commit;
+   `scripts/generate-release-notes.py --print-tag` derives the expected tag.
+   Legacy three-part package versions retain `v<PKG_VERSION>-<PKG_RELEASE>`
+   only for historical recovery.
 2. Complete affected QEMU acceptance, evidence reuse review, defect disposition,
    and G99 risk summary before pushing a release tag. If source/assets changed,
    reassess affected evidence rather than automatically rerunning all.
@@ -62,8 +110,8 @@ Ordinary LuCI packages do not embed Core; offline bundles pin it explicitly.
 
 Never bypass failed CI with `gh release create`, `gh release upload`,
 `--clobber`, or locally rebuilt substitutes. Do not move/rebind public tags
-or overwrite public releases. Correct a bad public package by bumping
-`PKG_RELEASE` and publishing a new tag through the workflow.
+or overwrite public releases. Correct a bad public package by advancing the
+second public-version component and publishing a new tag through the workflow.
 
 ### Offline Bundle Contract
 

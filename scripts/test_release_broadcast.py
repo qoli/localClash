@@ -112,6 +112,27 @@ Changes:
         self.assertTrue(closes_page_in_finally)
 
 
+class ReleaseVersionMigrationTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.module = load_script(f"telegram_version_test_{id(self)}", "telegram-channel-update.py")
+
+    def test_core_migration_preserves_history_and_cursor_order(self) -> None:
+        tags = self.module.tags_from_title("localClash Core v0.1.104 到 v0.105", "core")
+        self.assertEqual(tags, ["v0.1.104", "v0.105"])
+        self.assertEqual(self.module.latest_tag(tags), "v0.105")
+        self.assertTrue(self.module.should_announce(tags, "v0.1.104"))
+        self.assertFalse(self.module.should_announce(tags, "v0.105"))
+        self.assertTrue(self.module.should_announce(["v0.106"], "v0.105"))
+
+    def test_luci_migration_preserves_history_and_cursor_order(self) -> None:
+        tags = self.module.tags_from_title("localclash-luci v0.1.0-87 到 v0.88", "luci")
+        self.assertEqual(tags, ["v0.1.0-87", "v0.88"])
+        self.assertEqual(self.module.latest_tag(tags), "v0.88")
+        self.assertTrue(self.module.should_announce(tags, "v0.1.0-87"))
+        self.assertFalse(self.module.should_announce(tags, "v0.88"))
+        self.assertTrue(self.module.should_announce(["v0.89"], "v0.88"))
+
+
 class XPostPublisherTests(unittest.TestCase):
     def setUp(self) -> None:
         self.module = load_script(f"x_post_test_{id(self)}", "x-post.py")

@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag to build, for example v0.1.0"
+        description: "Existing release tag to build, for example v0.105"
         required: true
         type: string
 
@@ -18,6 +18,20 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
+      - name: Validate release version format
+        env:
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          RELEASE_EVENT: ${{ github.event_name }}
+        run: |
+          pattern='^v[0-9]+\.[0-9]+$'
+          if [ "$RELEASE_EVENT" = workflow_dispatch ]; then
+            pattern='^v[0-9]+\.[0-9]+(\.[0-9]+)?$'
+          fi
+          printf '%s\n' "$RELEASE_TAG" | grep -Eq "$pattern" || {
+            printf 'new Core releases require v<major>.<sequence>: %s\n' "$RELEASE_TAG" >&2
+            exit 1
+          }
+
       - name: Checkout
         uses: actions/checkout@v6
         with:

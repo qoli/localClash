@@ -8,8 +8,8 @@ usage:
   scripts/trigger-github-release.sh <tag> --create-tag [--watch]
 
 Examples:
-  scripts/trigger-github-release.sh v0.1.17
-  scripts/trigger-github-release.sh v0.1.18 --create-tag --watch
+  scripts/trigger-github-release.sh v0.105
+  scripts/trigger-github-release.sh v0.106 --create-tag --watch
 
 Modes:
   default       Trigger the existing GitHub Actions Release workflow with
@@ -121,6 +121,10 @@ case "$tag" in
 	v*) ;;
 	*) die "release tag must start with v, got $tag" ;;
 esac
+
+if [ "$mode" = "create-tag" ] && ! printf '%s\n' "$tag" | grep -Eq '^v[0-9]+\.[0-9]+$'; then
+	die "new Core release tags must use v<major>.<sequence>, for example v0.105"
+fi
 
 need git
 
