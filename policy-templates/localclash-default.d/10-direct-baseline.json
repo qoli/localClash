@@ -23,6 +23,17 @@
     },
     "custom_rules": [
       {
+        "id": "openai-static-download-direct",
+        "target": "DIRECT",
+        "reason": "Route the public persistent.oaistatic.com CDN directly before the OpenAI service pack.",
+        "rules": [
+          {
+            "type": "domain",
+            "value": "persistent.oaistatic.com"
+          }
+        ]
+      },
+      {
         "id": "nvidia-download-direct",
         "target": "DIRECT",
         "reason": "Keep NVIDIA driver downloads direct without changing routing for other NVIDIA services.",
