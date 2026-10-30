@@ -72,7 +72,7 @@
 | CONFIG-TEMPLATE | **策略模板設定**：選取完整預設或 minimal 模板、配置 profile，產生相應補丁及 intent；重設模板只依明示選項處理既有補丁，不默默覆蓋自訂設定。[實作入口](../product_cli.go) | Core／共用 | v0.1.104／不適用；PARTIAL（ViuTV 同步範圍）；同一 QEMU 由官方 v0.1.103 升級，改用共享香港／DIRECT，保留原排序、12 份其他補丁、訂閱配置、profile 與自訂網站；minimal／完整模板契約未重跑 [E38](#e38)；歷史範圍 [E37](#e37) [E36](#e36) [E34](#e34) [E33](#e33) [E27](#e27) [E15](#e15) [E20](#e20) |
 | CONFIG-PATCHES | **配置補丁管理**：讀取、預覽、套用、移除、啟停及排序補丁；預覽不落盤，套用後 registry／intent 一致，失效草稿或非法引用明確拒絕。[實作入口](../product_cli.go) | Core／共用 | v0.1.99／不適用；PARTIAL（MCP／能力快照範圍）；同一 v0.1.98 workspace 升級，候選完成無關 DIRECT 補丁新增／修改／移除／啟停／排序、過期草稿與缺快照恢復；官方 binary 草稿／套用及 fresh MCP 持久讀回通過；真實零合格節點未測 [E30](#e30)；完整歷史範圍保留 [E05](#e05) |
 | CONFIG-RENDER | **Mihomo 配置生成**：由訂閱、模板、補丁與 profile 生成正確配置。Meta 自動組為 url-test，Smart 為 smart 並移除 tolerance；Smart 參數、群組 priority 與 defaults 按 intent 傳遞且不覆蓋既有值；生成不等於已載入。[實作入口](../product_cli.go) | Core／按核心差異 | v0.1.104／不適用；PARTIAL（Smart／ViuTV 範圍）；QEMU 升級後生成 109 proxies／71 rules，五條服務規則保留，ViuTV 改引用共享香港 Smart／DIRECT；香港外部請求因節點逾時 FAIL，Meta／完整參數契約未實測 [E38](#e38)；歷史範圍 [E37](#e37) [E36](#e36) [E34](#e34) [E33](#e33) [E30](#e30) [E29](#e29) [E28](#e28) [E27](#e27) [E16](#e16) [E21](#e21) |
-| CONFIG-VALIDATION | **配置驗證**：用所選核心驗證生成配置，記錄對應 hash；非法配置不取得通過證明；驗證與活躍程序隔離，不爭用工作目錄。[實作入口](../product_cli.go) | Core／按核心差異 | v0.1.104／不適用；PARTIAL（Smart／ViuTV 範圍）；同一 QEMU 的舊版及候選 isolated config-test／SHA attestation 通過；候選配置 SHA ec4919da，非法配置／Meta／正式 ARM64 未重跑 [E38](#e38)；歷史範圍 [E37](#e37) [E36](#e36) [E34](#e34) [E33](#e33) [E30](#e30) [E29](#e29) [E28](#e28) [E27](#e27) [E16](#e16) [E21](#e21) |
+| CONFIG-VALIDATION | **配置驗證**：用所選核心驗證生成配置，記錄對應 hash；非法配置不取得通過證明；驗證與活躍程序隔離，不爭用工作目錄。[實作入口](../product_cli.go) | Core／按核心差異 | 未發布 Core `bbbbe8e`（v0.105 同源）／不適用；PARTIAL（固定 Meta 的 MCP 範圍）；實際 MCP process SHA 與候選一致，Meta-only render／isolated config-test／SHA attestation 通過；舊 MCP＋新 CLI 的外部 setup 變更後舊路徑 FAIL 另記，不升格為新 binary 結果；新初始化契約、非法配置及 ARM64 未測 [E46](#e46)；Smart／ViuTV 原版本結果保留 [E38](#e38)，歷史範圍 [E37](#e37) [E36](#e36) [E34](#e34) [E33](#e33) [E30](#e30) [E29](#e29) [E28](#e28) [E27](#e27) [E16](#e16) [E21](#e21) |
 | CONFIG-APPLY | **配置套用**：按所選入口核對候選檔提交或 runtime 載入；config-promote 是其中一個檔案提交入口，不是所有流程的前置。驗證 hash、實際載入規則／組及失敗結果符合契約，提交檔案不當成已熱載入，生成檔存在不當成已生效。[實作入口](../product_cli.go) | Core／按核心差異 | v0.1.104／不適用；PARTIAL（Smart／ViuTV 範圍）；QEMU 官方 v0.1.103 升級、套用／載入及資料保留通過；指定 ViuTV 的 DIRECT 外部請求 PASS、香港節點逾時 FAIL；一般連通重啟須手動切直連才恢復，未驗地理／DRM／實播 [E38](#e38)；歷史範圍 [E37](#e37) [E36](#e36) [E34](#e34) [E33](#e33) [E30](#e30) [E29](#e29) [E28](#e28) [E27](#e27) [E15](#e15) |
 
 <a id="cores"></a>
@@ -100,7 +100,7 @@
 | STATUS-INSPECT | **產品狀態查詢**：查配置、元件、訂閱及 runtime facts，未初始化／停止／運行／錯誤狀態與實際資料一致；唯讀不改狀態，版本化 facts 不把宿主接管當 Core 所有。[實作入口](../internal/mcp/registry.go) | Core／共用 | v0.1.83／不適用；PASS；未初始化／停止／運行／錯誤、元件／訂閱／runtime facts、唯讀 hash 與接管責任界線 [E05](#e05) |
 | DIAG-ROUTING | **路由設定解釋**：按域名、服務或出口查詢編譯 intent 的規則、群組及來源；能對照自訂網站及補丁變更，不把 intent 解釋當活躍流量證據。[實作入口](../internal/mcp/registry.go) | Core／共用 | v0.1.83／不適用；PASS；domain／service／exit 查詢、自訂規則／patch provenance 及 intent／流量證據界線 [E05](#e05) |
 | DIAG-HEALTH | **診斷與日誌取得**：執行 doctor／環境檢查、收集產品日誌及讀取受限 controller 日誌／連線；診斷可定位問題、讀取有界且不洩漏秘密，不由缺少連線推論未來路由。[實作入口](../internal/mcp/registry.go) | Core／共用 | v0.1.83／不適用；PASS；doctor、受限日誌／controller／connections、redaction 與空連線推論界線 [E05](#e05) |
-| MCP-SERVICE | **MCP 服務與工具存取**：連接正確服務並完成協定初始化、工具發現與呼叫；工具結果／錯誤／權限符合入口契約。檔案讀改與 controller 存取受限定，不把 MCP 當任意路徑或任意 URL 代理。[實作入口](../internal/mcp/registry.go) | Core；LuCI 管理 procd／共用 | v0.1.97／0.1.0-76；PASS（本輪變更範圍）；實際 MCP initialize／tools/list、`custom_sites_list`／`custom_sites_transact`、結構化錯誤及服務停止敏感度／恢復通過 [E27](#e27)；完整安全矩陣歷史範圍見 [E05](#e05) |
+| MCP-SERVICE | **MCP 服務與工具存取**：連接正確服務並完成協定初始化、工具發現與呼叫；工具結果／錯誤／權限符合入口契約。檔案讀改與 controller 存取受限定，不把 MCP 當任意路徑或任意 URL 代理。[實作入口](../internal/mcp/registry.go) | Core；LuCI 管理 procd／共用 | 未發布 Core `bbbbe8e`（v0.105 同源）／不適用；PARTIAL（HTTP 工具／程序身分）；fresh MCP 的固定 Meta 查詢、render／config-test／doctor 通過；舊程序回報磁碟新 SHA、核心路徑過時及錯誤標記差異已重現；通用檔案介面繞過產品流程由 host fixture 確認；初始化工具重建尚未實作 [E46](#e46)；v0.1.97／LuCI76 協定／網站／停止恢復原測保留 [E27](#e27)，完整歷史矩陣 [E05](#e05) |
 
 <a id="workspace"></a>
 ## 工作區管理
@@ -1488,6 +1488,52 @@ Core 版本 `acceptance-1adf4c2`，Linux amd64 binary SHA
 [模板與連線證據](../.runtime/routing-probes/20261031-045003-persistent-oaistatic-default.json)、
 [發佈前範圍及風險](../.runtime/releases/v0.105/preflight.json)、
 [官方資產核對](../.runtime/releases/v0.105/asset-verification.json)。
+
+<a id="e46"></a>
+### E46
+
+2026-10-31，以 Core `v0.105` 為基線 review MCP 的 38 個工具及初始化介面。
+本輪 fresh 本地候選來自 `bbbbe8e0abceb247d4ca38ea23d570e45ed33f91`，`vcs.modified=false`，
+Linux amd64 SHA `99e8b2b7b228bbc7a2af7213c1fcd6ffcccef172c54b5fffb21e3fcdbd5d7918`。
+相關 MCP／核心管理 Go 路徑與 `v0.105`、E44 的 `1adf4c2` 相同；不是公開 release 資產的替換。
+
+- 正式 ARM64 路由器僅唯讀觀察：仍為 Core v0.1.104，MCP Smart doctor ok；其正常結果不當成
+  新版單核心候選驗收。功能檢查重用 E44 的可拋棄 iStoreOS x86_64 workspace 與真實輸入，
+  本次沒有重新宣稱首次初始化、訂閱匯入／刷新或完整舊版升級通過。
+- 初始 VM 的長駐 MCP PID 8948 實際仍載入 E44 binary（`/proc/8948/exe` SHA `ecb59def…a077`），
+  磁碟 CLI 已換成新候選 `99e8b2b7…7918`。最初 nohup 啟動回報 PID 16240 不能證明新程序已服務。
+  主代理獨立讀回 executable 為 `(deleted)`，因此這組標為**舊 MCP＋新 CLI 混合版本證據**，
+  不升格為新 candidate 的 Smart／協定 PASS；最初 dirty candidate 亦保留身分且未作最終候選。
+- 該舊 MCP 保持同 PID，外部 CLI 正式選擇／render／驗證／啟動 Meta 並清除 Smart 後，
+  `runtime_profile_status` 已回報 Meta，`mihomo_config_test`／doctor 卻仍使用快取的 Smart 路徑，
+  回報 missing core；render 仍能生成 Meta 配置。主代理以真 HTTP 及檔案 SHA 獨立重現。
+  這是初始化 context／核心路徑同步缺口，不將持續換核列為未來需維持的 MCP 能力。
+- 同一次觀察中，`tools_list.server.binary_sha256` 回報磁碟新候選 SHA，與實際執行的舊程序不符。
+  工具失敗亦出現 `passed=false`、`isError=false`；保留作為程序身分及錯誤契約 review 證據。
+- 隨後只重啟 MCP，保持 Meta profile／Mihomo runtime 不變，不再切換核心。fresh MCP PID 17014 的
+  `/proc/PID/exe` 與磁碟 SHA 均為 `99e8b2b7…7918`；Meta PID 16512 與實際檔案 SHA 均為
+  `19cbe7ba…a1afa`，controller 為 v1.19.33。真 HTTP 的 render、隔離 config-test／attestation、
+  doctor 通過；主代理另行取得 `wait=true` config-test、程序 SHA 及 controller 讀回。
+  這項只證明**固定 Meta、單核心的 MCP 產物／驗證範圍**，整列能力仍為 PARTIAL。
+- 主機不使用 test cache 的 MCP／coreconfig／coredownload／corerun／appinit 測試通過。
+  另以 ignored Go overlay 重現外部 profile 變更後的舊核心路徑 FAIL；synthetic 檔案探針確認
+  `sed_file` 可不經核心取得／驗證直接改 profile，`nl_file` 會返回測試用私密來源字串。
+  這些是主機診斷，沒有讀取真實訂閱內容，不作 iStoreOS 功能 PASS。
+- 使用者已明確將核心選擇定位為**初始化能力**。本輪 review 因此以初始化／日常配置分離、
+  固定核心的 runtime 管理、移出繞過產品流程的通用入口、明確任務結果與程序身分為重建方向。
+  **新工具及初始化限制尚未實作／驗收**，現行 `config_configure` 仍保留舊契約；沒有修改 Go、
+  registry、schema、CLI 或 LuCI 行為，亦未發布或更新正式路由器。
+- LAN／takeover 資料面、新初始化、完整權限矩陣與 ARM64 candidate runtime 為 NOT_RUN；
+  E44 的既有 LAN FAIL 及 E45 的 ERROR／NOT_RUN 不因本輪檢查轉 PASS。
+  本輪 client 未啟動；測後 runtime、測試 MCP、router QEMU 均停止，兩份 qcow2 保留且 check 無錯。
+
+證據：[設計 review 與提議契約](../.runtime/istoreos-acceptance/20261031-single-core-mcp/design-review.json)、
+[功能與身分摘要](../.runtime/istoreos-acceptance/20261031-single-core-mcp/functional-summary.json)、
+[混合程序身分](../.runtime/istoreos-acceptance/20261031-single-core-mcp/primary-vm-live-identity.txt)、
+[舊路徑真 HTTP 失敗](../.runtime/istoreos-acceptance/20261031-single-core-mcp/primary-vm-mihomo_config_test.json)、
+[fresh 程序身分](../.runtime/istoreos-acceptance/20261031-single-core-mcp/primary-fresh-meta-process-identity.txt)、
+[fresh 真核心驗證](../.runtime/istoreos-acceptance/20261031-single-core-mcp/primary-fresh-meta-mihomo_config_test.json)、
+[收尾核對](../.runtime/istoreos-acceptance/20261031-single-core-mcp/primary-cleanup-review.json)。
 
 <a id="pending-incidents"></a>
 ## 待核對事故與證據缺口
