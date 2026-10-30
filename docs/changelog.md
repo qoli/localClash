@@ -18,8 +18,38 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
-| localClash Core | [v0.1.104](https://github.com/qoli/localClash/releases/tag/v0.1.104) | 2026-10-26 UTC+8 |
+| localClash Core | [v0.105](https://github.com/qoli/localClash/releases/tag/v0.105) | 2026-10-31 UTC+8 |
 | localclash-luci | [v0.1.0-87](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-87) | 2026-10-26 UTC+8 |
+
+## 2026-10-31
+
+### localClash Core v0.105
+
+Changes:
+
+- Core 公開版本採用兩段整數，由 `v0.1.104` 接續為 `v0.105`，之後依序遞增第二段；
+  發版 Skill、標籤入口及公告解析同步新規則，保留歷史版本與下載連結。
+- Core CLI／MCP 的核心選擇與元件更新只取得所選 Mihomo flavor；成功啟動或更新後
+  清理未使用核心及歷史 `pre-*` 備份，取得失敗保留原選擇與可用核心。
+- 預設直連基線加入精確的 `DOMAIN,persistent.oaistatic.com,DIRECT`，讓公開靜態 CDN／
+  安裝包下載先於 OpenAI 整包規則直連，登入與對話網域仍沿用 ChatGPT 策略。
+- 本次只發佈 Core。LuCI 維持 `v0.1.0-87`；該版 Smart 首次初始化仍有舊式預下載步驟，
+  移除步驟的 LuCI 改善留待下一次套件發佈。更新時保留「同步最新默认策略」勾選以套用新規則。
+
+Release:
+
+[localClash v0.105](https://github.com/qoli/localClash/releases/tag/v0.105)
+
+Verification:
+
+- 全套 Go 測試、go vet、17 項公告工具測試及發版 Skill 格式驗證通過；
+  [Release CI](https://github.com/qoli/localClash/actions/runs/41130185509) 成功。
+- 七項官方資產、manifest／checksum 與 19 份打包策略／規則來源核對通過；雙架構 binary 的
+  `vcs.revision` 均為 `77af27f`、`vcs.modified=false`。官方 ARM64 binary 在隔離暫存 workspace
+  的正式 status 入口讀回 `v0.105`；只驗版本，未啟動或替換正式 runtime。
+- 既有路由器配合新模板的精確 DIRECT 連線證據及本輪 QEMU 嘗試見 [E45](istoreos-test-features.md#e45)。
+  QEMU 因環境／guest 控制問題，候選升級與外部 oracle 為 **ERROR／NOT_RUN**；
+  單核心流程沿用 [E44](istoreos-test-features.md#e44) 的原實測版本與 PARTIAL／LAN FAIL，不提升為新版完整 PASS。
 
 ## 2026-10-26
 

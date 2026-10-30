@@ -1447,6 +1447,48 @@ Core 版本 `acceptance-1adf4c2`，Linux amd64 binary SHA
   [候選 LAN oracle](../.runtime/istoreos-acceptance/20261028-selected-core-committed/network/candidate-final2-client-oracle.json)、
   [主代理原生概覽](../.runtime/istoreos-acceptance/20261028-selected-core-committed/primary-overview.json)。
 
+<a id="e45"></a>
+### E45
+
+2026-10-31，Core `v0.105` 發佈來源 `77af27fba512ed8e90655bfbe4e53f41840e07d4`。
+本輪選測預設 CDN 直連規則的 CONFIG-RENDER／CONFIG-VALIDATION／CONFIG-APPLY 範圍；
+候選升級與資料面結果保留 **ERROR／NOT_RUN**，不更改上表各能力最後真正實測的版本。
+
+- 單核心取得、設定、更新及清理程式與 E44 的 `1adf4c2` 完全相同，逐路徑 diff 已核對。
+  CORE-PROFILE／RUNTIME-MANAGEMENT／COMPONENT-MIHOMO 沿用 E44 的原實測版本、
+  PARTIAL 及既有 LAN HTTP／UDP FAIL，不把歷史控制面結果改記為 `v0.105` 新測。
+- 可拋棄 QEMU 的官方 v0.1.104 binary SHA `175a56cf…4f29`、匹配 base-assets
+  `9e2be884…2ca3` 與 firmware `2ce609e2…e9a9c` 已核對。候選 amd64 binary SHA
+  `a2264482…e6de00a`，來源 `77af27f`、`vcs.modified=false`；該本地候選不是官方資產的替換品。
+- 首次長路徑的 Unix socket 超限，改用短暫存目錄後觀察到韌體 LAN `192.168.100.1`
+  與腳本子網不一致。修正本輪 disposable LAN 後，初始 SSH banner 逾時；稍後主代理讀回
+  LuCI HTTP 200，但 SSH 為 `Permission denied (publickey,password)`，serial key-setup marker
+  亦未成功。這些初始錯誤與後續變化均保留；沒有取得有效 guest 產品控制。
+- 因此官方 v104 升級 workspace、正式 guest 訂閱匯入、候選模板套用／render／隔離驗證／啟動，
+  以及獨立 LAN HTTPS oracle 均為 **NOT_RUN**。HTTP 200、主機 binary 身分與候選檔案存在
+  不構成功能 PASS；未使用 synthetic 狀態、fixture 或正式路由器資料面替代 QEMU 升級現場。
+- 另有較早的實體路由器模板範圍證據：既有 Core 載入模板 SHA `635a541b…bbfc5`，
+  移除先前自訂序號 7 後，載入 `DOMAIN,persistent.oaistatic.com,DIRECT` 在 index 19，
+  先於 Cloudflare index 36 與 OpenAI index 48；Mac LAN 新建 HTTPS 連線只含 `DIRECT` chain，
+  16 MiB range 下載成功。其他群組選擇及既有自訂代理清單 SHA 保留。這不是 `v0.105` binary 驗收，
+  也不提升完整 SITE-ROUTING 或 LUCI-TAKEOVER 的實測版本。
+- 官方 [Release CI](https://github.com/qoli/localClash/actions/runs/41130185509) 通過，
+  `v0.105` annotated tag 的遠端目標為 `77af27f`；七項公開資產／manifest／checksum 與
+  19 份打包來源逐一核對。雙架構 `vcs.revision` 正確、`vcs.modified=false`；官方 ARM64
+  binary SHA `445f8614…7ceab1` 在隔離暫存 workspace 以正式 status 入口讀回 `v0.105`，
+  未啟動、安裝或替換正式 runtime。這只證明版本與產物，不構成 ARM runtime 功能 PASS。
+- **G99 發佈判定**：本輪攜帶 QEMU ERROR／NOT_RUN 與 E44 的原 PARTIAL／FAIL 限制發佈，
+  更新說明未宣稱完整初始化、升級、資料面或 ARM 功能驗收通過。LuCI 未發佈或推送新版本，
+  套件維持公開 v87；其未發佈的 Smart 引導改善不算入此次 Core 的公開行為。
+- 測後本輪 QEMU、短暫存 runtime 與 guest 輸入已清理，主代理確認 PID 不存在；
+  本輪 QEMU 驗收未改動正式路由器的已安裝程式／配置、原預設 QEMU 或 E44 證據。
+
+證據：[本輪報告](../.runtime/istoreos-acceptance/20261031-core-v0.105/report.md)、
+[清理證明](../.runtime/istoreos-acceptance/20261031-core-v0.105/cleanup.json)、
+[模板與連線證據](../.runtime/routing-probes/20261031-045003-persistent-oaistatic-default.json)、
+[發佈前範圍及風險](../.runtime/releases/v0.105/preflight.json)、
+[官方資產核對](../.runtime/releases/v0.105/asset-verification.json)。
+
 <a id="pending-incidents"></a>
 ## 待核對事故與證據缺口
 
