@@ -1830,7 +1830,7 @@ func TestToolsCallProxyGroupBuildReturnsReusableIntent(t *testing.T) {
 }
 
 func TestToolsCallProxyGroupBuildRejectsReservedCustomSiteNames(t *testing.T) {
-	for _, name := range []string{localconfig.CustomProxySitesPolicyGroupName, localconfig.CustomDirectSitesPolicyGroupName} {
+	for _, name := range []string{localconfig.CustomProxySitesPolicyGroupName, localconfig.CustomDirectSitesPolicyGroupName, localconfig.CustomRejectSitesPolicyGroupName} {
 		t.Run(name, func(t *testing.T) {
 			resp := callHandle(t, map[string]any{
 				"jsonrpc": "2.0",
@@ -1891,7 +1891,7 @@ func TestToolsCallPolicyGroupBuildReturnsReusableIntent(t *testing.T) {
 }
 
 func TestToolsCallPolicyGroupBuildRejectsReservedCustomSiteNames(t *testing.T) {
-	for _, name := range []string{localconfig.CustomProxySitesPolicyGroupName, localconfig.CustomDirectSitesPolicyGroupName} {
+	for _, name := range []string{localconfig.CustomProxySitesPolicyGroupName, localconfig.CustomDirectSitesPolicyGroupName, localconfig.CustomRejectSitesPolicyGroupName} {
 		t.Run(name, func(t *testing.T) {
 			resp := callHandle(t, map[string]any{
 				"jsonrpc": "2.0",

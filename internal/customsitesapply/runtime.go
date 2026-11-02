@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sort"
 	"time"
 
 	"localclash/internal/appinit"
@@ -13,6 +12,7 @@ import (
 	"localclash/internal/customsites"
 	"localclash/internal/mihomoapi"
 	"localclash/internal/mihomotest"
+	"localclash/internal/rules"
 )
 
 type MihomoRequestFunc func(context.Context, mihomoapi.RequestOptions) (mihomoapi.Response, error)
@@ -20,7 +20,7 @@ type MihomoRequestFunc func(context.Context, mihomoapi.RequestOptions) (mihomoap
 // TransactRuntime applies the product custom-site transaction against the
 // runtime state shared by the CLI, LuCI adapter, and MCP server.
 func TransactRuntime(ctx context.Context, state appinit.RuntimeState, input TransactionInput, progress func(stage, message string)) (TransactionResult, error) {
-	paths := customsites.Paths{Proxy: state.Paths.CustomSitesProxy, Direct: state.Paths.CustomSitesDirect}
+	paths := customsites.Paths{Proxy: state.Paths.CustomSitesProxy, Direct: state.Paths.CustomSitesDirect, Reject: state.Paths.CustomSitesReject}
 	return Transact(ctx, runtimeTransactionOptions(state, paths, input, progress))
 }
 
@@ -42,6 +42,7 @@ func runtimeTransactionOptions(state appinit.RuntimeState, paths customsites.Pat
 					RuntimeProfilePath: state.Paths.RuntimeProfilePath,
 					CustomSitesProxy:   candidatePaths.Proxy,
 					CustomSitesDirect:  candidatePaths.Direct,
+					CustomSitesReject:  candidatePaths.Reject,
 					Force:              true,
 				})
 				return err
@@ -130,7 +131,7 @@ func runtimeTransactionOptions(state appinit.RuntimeState, paths customsites.Pat
 	}
 }
 
-func WaitForRuntimeReadBack(ctx context.Context, pair customsites.Pair, request MihomoRequestFunc, timeout, interval time.Duration) (int, error) {
+func WaitForRuntimeReadBack(ctx context.Context, pair customsites.State, request MihomoRequestFunc, timeout, interval time.Duration) (int, error) {
 	if timeout <= 0 {
 		timeout = 10 * time.Second
 	}
@@ -170,7 +171,7 @@ func WaitForRuntimeReadBack(ctx context.Context, pair customsites.Pair, request 
 	}
 }
 
-func VerifyRuntimeReadBack(pair customsites.Pair, rulesResponse, proxiesResponse mihomoapi.Response) error {
+func VerifyRuntimeReadBack(pair customsites.State, rulesResponse, proxiesResponse mihomoapi.Response) error {
 	if rulesResponse.Truncated || proxiesResponse.Truncated {
 		return errors.New("custom site runtime read-back response was truncated")
 	}
@@ -182,13 +183,23 @@ func VerifyRuntimeReadBack(pair customsites.Pair, rulesResponse, proxiesResponse
 	if !ok {
 		return errors.New("Mihomo /proxies read-back is missing proxies")
 	}
-	for _, name := range []string{customsites.ProxyPolicyGroup, customsites.DirectPolicyGroup} {
+	for _, name := range []string{customsites.ProxyPolicyGroup, customsites.DirectPolicyGroup, customsites.RejectPolicyGroup} {
 		_, exists := proxyMap[name]
+		if name == customsites.RejectPolicyGroup && pair.LegacyTwoFiles && !exists {
+			continue
+		}
 		if pair.Initialized && !exists {
 			return fmt.Errorf("Mihomo /proxies read-back is missing reserved policy group %q", name)
 		}
 		if !pair.Initialized && exists {
 			return fmt.Errorf("Mihomo /proxies read-back unexpectedly retains reserved policy group %q", name)
+		}
+	}
+	if _, exists := proxyMap[customsites.RejectPolicyGroup]; pair.Initialized && exists {
+		group, _ := proxyMap[customsites.RejectPolicyGroup].(map[string]any)
+		choices, _ := group["all"].([]any)
+		if len(choices) != 1 || choices[0] != rules.TerminalReject || group["now"] != rules.TerminalReject {
+			return errors.New("Mihomo reserved reject policy group must contain and select only REJECT")
 		}
 	}
 	rulesDoc, ok := rulesResponse.JSON.(map[string]any)
@@ -206,20 +217,11 @@ func VerifyRuntimeReadBack(pair customsites.Pair, rulesResponse, proxiesResponse
 			return errors.New("Mihomo /rules read-back contains a non-object rule")
 		}
 		proxy, _ := rule["proxy"].(string)
-		if proxy == customsites.ProxyPolicyGroup || proxy == customsites.DirectPolicyGroup {
+		if proxy == customsites.ProxyPolicyGroup || proxy == customsites.DirectPolicyGroup || proxy == customsites.RejectPolicyGroup {
 			actual = append(actual, rule)
 		}
 	}
-	expected := append([]customsites.Entry{}, pair.Proxy.Entries...)
-	for index := range expected {
-		expected[index].Route = customsites.RouteProxy
-	}
-	direct := append([]customsites.Entry{}, pair.Direct.Entries...)
-	for index := range direct {
-		direct[index].Route = customsites.RouteDirect
-	}
-	expected = append(expected, direct...)
-	sort.SliceStable(expected, func(i, j int) bool { return expected[i].Sequence > expected[j].Sequence })
+	expected := pair.OrderedEntries()
 	if len(actual) != len(expected) {
 		return fmt.Errorf("Mihomo /rules custom site count %d does not match durable count %d", len(actual), len(expected))
 	}
@@ -231,6 +233,8 @@ func VerifyRuntimeReadBack(pair customsites.Pair, rulesResponse, proxiesResponse
 		wantProxy := customsites.DirectPolicyGroup
 		if entry.Route == customsites.RouteProxy {
 			wantProxy = customsites.ProxyPolicyGroup
+		} else if entry.Route == customsites.RouteReject {
+			wantProxy = customsites.RejectPolicyGroup
 		}
 		gotType, _ := actual[index]["type"].(string)
 		gotPayload, _ := actual[index]["payload"].(string)

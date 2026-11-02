@@ -903,6 +903,7 @@ func renderConfigIntentPreview(result *configIntentInspectContextResult, in conf
 		RuntimeProfilePath: in.RuntimeProfile,
 		CustomSitesProxy:   customSitePaths.Proxy,
 		CustomSitesDirect:  customSitePaths.Direct,
+		CustomSitesReject:  customSitePaths.Reject,
 		Force:              true,
 	})
 	if err != nil {
@@ -1511,6 +1512,7 @@ func renderCurrentConfig(ctx context.Context, in configToolInput, force bool) (m
 		RuntimeProfilePath: in.RuntimeProfile,
 		CustomSitesProxy:   customSitePaths.Proxy,
 		CustomSitesDirect:  customSitePaths.Direct,
+		CustomSitesReject:  customSitePaths.Reject,
 		OnStage:            configRenderTaskLogger(ctx, "render_generated_config"),
 	})
 	if err != nil {
@@ -2629,6 +2631,7 @@ func (s *Server) evaluateLocalClashAfterRefresh(ctx context.Context, configPath,
 		RuntimeProfilePath: presetPath,
 		CustomSitesProxy:   customSitePaths.Proxy,
 		CustomSitesDirect:  customSitePaths.Direct,
+		CustomSitesReject:  customSitePaths.Reject,
 		Force:              true,
 		OnStage:            configRenderTaskLogger(ctx, "evaluate_localclash_impact.render_after_refresh"),
 	})

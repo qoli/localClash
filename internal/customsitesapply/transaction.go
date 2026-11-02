@@ -131,6 +131,7 @@ func Transact(ctx context.Context, opts TransactionOptions) (TransactionResult, 
 	candidatePaths := customsites.Paths{
 		Proxy:  filepath.Join(tempRoot, customsites.ProxyFilename),
 		Direct: filepath.Join(tempRoot, customsites.DirectFilename),
+		Reject: filepath.Join(tempRoot, customsites.RejectFilename),
 	}
 	if err := writeCandidateDocuments(candidatePaths, candidate); err != nil {
 		return result, err
@@ -167,6 +168,7 @@ func Transact(ctx context.Context, opts TransactionOptions) (TransactionResult, 
 	targets := []promotionTarget{
 		{candidate: candidatePaths.Proxy, final: opts.Paths.Proxy},
 		{candidate: candidatePaths.Direct, final: opts.Paths.Direct},
+		{candidate: candidatePaths.Reject, final: opts.Paths.Reject},
 		{candidate: candidateConfig, final: opts.GeneratedConfig},
 		{candidate: candidateAttestation, final: opts.AttestationPath},
 	}
@@ -241,8 +243,8 @@ func validateTransactionOptions(opts TransactionOptions) error {
 	if opts.Input.Version != customsites.SchemaVersion {
 		return fmt.Errorf("version must be %d", customsites.SchemaVersion)
 	}
-	if strings.TrimSpace(opts.Paths.Proxy) == "" || strings.TrimSpace(opts.Paths.Direct) == "" {
-		return errors.New("custom site proxy and direct paths are required")
+	if strings.TrimSpace(opts.Paths.Proxy) == "" || strings.TrimSpace(opts.Paths.Direct) == "" || strings.TrimSpace(opts.Paths.Reject) == "" {
+		return errors.New("custom site proxy, direct and reject paths are required")
 	}
 	if strings.TrimSpace(opts.GeneratedConfig) == "" {
 		return errors.New("generated config path is required")
@@ -268,24 +270,25 @@ func validateTransactionOptions(opts TransactionOptions) error {
 	return nil
 }
 
-func applyInput(pair customsites.Pair, input TransactionInput, now time.Time) (customsites.Pair, customsites.Entry, error) {
+func applyInput(pair customsites.State, input TransactionInput, now time.Time) (customsites.State, customsites.Entry, error) {
 	switch strings.TrimSpace(input.Operation) {
 	case OperationAdd:
 		return customsites.Add(pair, input.Route, input.Pattern, now)
 	case OperationDelete:
 		return customsites.Delete(pair, input.ID)
 	default:
-		return customsites.Pair{}, customsites.Entry{}, fmt.Errorf("unsupported custom site operation %q", input.Operation)
+		return customsites.State{}, customsites.Entry{}, fmt.Errorf("unsupported custom site operation %q", input.Operation)
 	}
 }
 
-func writeCandidateDocuments(paths customsites.Paths, pair customsites.Pair) error {
+func writeCandidateDocuments(paths customsites.Paths, pair customsites.State) error {
 	for _, item := range []struct {
 		path     string
 		document customsites.Document
 	}{
 		{path: paths.Proxy, document: pair.Proxy},
 		{path: paths.Direct, document: pair.Direct},
+		{path: paths.Reject, document: pair.Reject},
 	} {
 		data, err := customsites.MarshalDocument(item.document)
 		if err != nil {

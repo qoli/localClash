@@ -235,7 +235,7 @@ There is no `dnsqualify` input or WAN-resolver promotion.
 
 ## Custom Website Routing
 
-For a persistent website proxy/direct decision through existing exits:
+For a persistent website proxy, direct, or reject decision:
 
 ```bash
 localclash custom-sites list --json
@@ -251,13 +251,24 @@ Plain hosts compile to `DOMAIN-SUFFIX`, covering the host and subdomains.
 Patterns containing `*` or `?` compile to whole-host `DOMAIN-WILDCARD` and
 may cross dots. Enter host patterns without URLs, ports, paths, IPs, CIDRs,
 or regex. After the safety baseline, highest matching sequence wins across
-both lists. Older overlaps remain; deleting the newest may reveal an older
+all three lists. Older overlaps remain; deleting the newest may reveal an older
 decision. LuCI's same-pattern warning does not block saving.
 
 `proxy` uses the current reserved `自訂代理網站` exit; `direct` uses
-`自訂直連網站` → `DIRECT`. Named-country or Smart-selection requests need a
-service-owned routing patch. Lists live under `custom-sites/` and survive
+`自訂直連網站` → `DIRECT`; `reject` uses `自訂禁止訪問網站` → `REJECT` with no
+other exit choices. Use `"route":"reject"` in the same add request to block a
+host pattern. For example, a later direct decision for `api.example.com` can
+override an earlier reject decision for `example.com`; deleting the exception
+reveals the earlier reject decision. Local safety rules remain first.
+
+Named-country or Smart-selection requests need a service-owned routing patch.
+Lists live under `custom-sites/` and survive
 default-policy sync and `reset_patches`; general workspace reset deletes them.
+Existing workspaces with only `proxy.json` and `direct.json` read as having an
+empty reject list, without rewriting those files. The next successful custom-site
+transaction saves all three documents, including `reject.json`. An existing but
+invalid reject document is an error. List snapshots include `reject`,
+`reject_count`, and `reject_sha256`, alongside the proxy/direct fields.
 
 The transaction validates, renders, runs `mihomo -t`, promotes, and, if runtime
 is active, hot reloads and reads back rules/groups. A stopped runtime stays

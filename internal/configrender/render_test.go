@@ -233,10 +233,14 @@ enabled_packs:
 `)
 	customPaths := customsites.DefaultPaths(paths.dir)
 	addedAt := time.Date(2026, 8, 29, 0, 0, 0, 0, time.UTC).Format(time.RFC3339Nano)
-	pair := customsites.EmptyPair()
+	pair := customsites.EmptyState()
 	pair.Direct.Entries = []customsites.Entry{{ID: "older", Match: customsites.MatchFull, Pattern: "abc.com", Sequence: 1, AddedAt: addedAt}}
 	pair.Proxy.Entries = []customsites.Entry{{ID: "newer", Match: customsites.MatchWildcard, Pattern: "abc.*cdn.com", Sequence: 2, AddedAt: addedAt}}
-	for path, document := range map[string]customsites.Document{customPaths.Proxy: pair.Proxy, customPaths.Direct: pair.Direct} {
+	pair.Reject.Entries = []customsites.Entry{
+		{ID: "reject-plain", Match: customsites.MatchFull, Pattern: "abc.com", Sequence: 3, AddedAt: addedAt},
+		{ID: "reject-wild", Match: customsites.MatchWildcard, Pattern: "*.example.com", Sequence: 4, AddedAt: addedAt},
+	}
+	for path, document := range map[string]customsites.Document{customPaths.Proxy: pair.Proxy, customPaths.Direct: pair.Direct, customPaths.Reject: pair.Reject} {
 		data, err := customsites.MarshalDocument(document)
 		if err != nil {
 			t.Fatal(err)
@@ -257,6 +261,7 @@ enabled_packs:
 		RuntimeProfilePath: filepath.Join(paths.dir, "localclash-runtime.json"),
 		CustomSitesProxy:   customPaths.Proxy,
 		CustomSitesDirect:  customPaths.Direct,
+		CustomSitesReject:  customPaths.Reject,
 		Force:              true,
 	})
 	if err != nil {
@@ -266,13 +271,21 @@ enabled_packs:
 	renderedRules := testStringSlice(config["rules"])
 	newer := indexOf(renderedRules, "DOMAIN-WILDCARD,abc.*cdn.com,"+customsites.ProxyPolicyGroup)
 	older := indexOf(renderedRules, "DOMAIN-SUFFIX,abc.com,"+customsites.DirectPolicyGroup)
+	rejectPlain := indexOf(renderedRules, "DOMAIN-SUFFIX,abc.com,"+customsites.RejectPolicyGroup)
+	rejectWild := indexOf(renderedRules, "DOMAIN-WILDCARD,*.example.com,"+customsites.RejectPolicyGroup)
 	pack := indexOf(renderedRules, "RULE-SET,sukkaw_ai_non_ip,AI")
-	if newer <= 0 || older <= newer || pack <= older {
-		t.Fatalf("custom/pack rule indexes newer=%d older=%d pack=%d rules=%+v", newer, older, pack, renderedRules)
+	if rejectWild < len(LocalBaselineRuleLines()) || rejectPlain <= rejectWild || newer <= rejectPlain || older <= newer || pack <= older {
+		t.Fatalf("custom rules must follow baseline, newest first before packs: %+v", renderedRules)
 	}
 	groups := proxyGroupNamesFromConfig(config)
-	if !groups[customsites.ProxyPolicyGroup] || !groups[customsites.DirectPolicyGroup] {
+	if !groups[customsites.ProxyPolicyGroup] || !groups[customsites.DirectPolicyGroup] || !groups[customsites.RejectPolicyGroup] {
 		t.Fatalf("generated proxy groups = %+v, want reserved custom-site groups", groups)
+	}
+	for _, raw := range config["proxy-groups"].([]any) {
+		group := raw.(map[string]any)
+		if group["name"] == customsites.RejectPolicyGroup && strings.Join(testStringSlice(group["proxies"]), ",") != "REJECT" {
+			t.Fatalf("reject group = %+v, want only REJECT", group)
+		}
 	}
 }
 

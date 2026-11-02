@@ -58,7 +58,7 @@
 
 | 功能 ID | 功能／驗證內容 | 責任／核心範圍 | 最後實測版本；結果；證據 |
 | --- | --- | --- | --- |
-| SITE-ROUTING | **自訂網站分流**：新增、刪除普通域名與萬用字元，設定直連／代理並重新開頁；保存、生成規則、熱載入及 controller 讀回一致；合法 DomainSuffix 不被誤判回滾。另驗衝突順序及非法輸入不破壞既有設定。[實作入口](../internal/customsitesapply/transaction.go) | Core；LuCI 提供頁面／共用 | v0.1.104／v0.1.0-86；PARTIAL；LuCI 停止 runtime 的普通域名／代理萬用字元新增、重開、刪除與讀回通過，回報 pending-next-start；運行中熱載入在 controller `/proxies` 讀回逾時並回滾，該狀態 FAIL；本輪無獨立 LAN 資料面 [E39](#e39)；v0.1.97 active MCP／其他範圍保留原版本 [E27](#e27) [E05](#e05) |
+| SITE-ROUTING | **自訂網站分流**：新增、刪除普通域名與萬用字元，設定直連／代理／禁止訪問並重新開頁；三組最後新增優先，刪除後揭露較早決定；禁止訪問群組僅 REJECT。舊兩檔工作區相容讀取，首次成功保存補齊第三檔；模板同步保留三組。保存、生成規則、熱載入及 controller 讀回一致；合法 DomainSuffix 不被誤判回滾；獨立 LAN 請求驗證封鎖與恢復。非法輸入不破壞既有設定。[實作入口](../internal/customsitesapply/transaction.go) | Core；LuCI 提供頁面／共用 | 未發佈 Core `v0.105-reject-dev`／LuCI `f6338d6`＋源碼覆蓋；PARTIAL；官方 v0.105 舊兩檔相容、停止保存、三組排序／刪除揭露、CLI／rpcd 運行中熱載入及讀回、模板保留通過；真頁面／獨立 LAN 封鎖恢復 NOT_RUN，套件建置 ERROR [E47](#e47)；原 LuCI 頁面範圍保留 v0.1.104／v86 的 PARTIAL／FAIL [E39](#e39)，其他歷史範圍 [E27](#e27) [E05](#e05) |
 | RULE-PACKS | **規則包查詢與材料取得**：搜尋目錄、查看指定規則包、預取及查詢其規則；來源／類型／快取缺口如實顯示，目錄建議出口不當成已啟用設定。[實作入口](../internal/mcp/registry.go) | Core／共用 | v0.1.83／不適用；PASS；目錄搜尋／查看／預取／讀取／查詢、來源型別、快取缺口及建議出口界線 [E05](#e05) |
 | RULE-CUSTOM | **自訂規則與外部規則來源**：建立域名、CIDR、GEOIP 規則及外部 rule-provider 設定，經配置補丁保存並生成；拒絕非法值或無效引用，順序與目標正確。[實作入口](../internal/mcp/registry.go) | Core／共用 | v0.1.83／不適用；PASS；Domain／CIDR／GEOIP／provider 生成、順序與目標、非法值／引用拒絕 [E05](#e05) |
 | PROXY-GROUPS | **代理群組設定**：由精確節點或 selector 建立群組，經補丁保存／修改／移除；查詢解析結果及生成成員正確，builder 預覽不冒充已保存或已載入。[實作入口](../internal/mcp/registry.go) | Core／共用 | v0.1.83／不適用；PASS；精確節點／selector builder、保存／修改／移除、解析成員及預覽界線 [E05](#e05) |
@@ -1534,6 +1534,50 @@ Linux amd64 SHA `99e8b2b7b228bbc7a2af7213c1fcd6ffcccef172c54b5fffb21e3fcdbd5d791
 [fresh 程序身分](../.runtime/istoreos-acceptance/20261031-single-core-mcp/primary-fresh-meta-process-identity.txt)、
 [fresh 真核心驗證](../.runtime/istoreos-acceptance/20261031-single-core-mcp/primary-fresh-meta-mihomo_config_test.json)、
 [收尾核對](../.runtime/istoreos-acceptance/20261031-single-core-mcp/primary-cleanup-review.json)。
+
+<a id="e47"></a>
+### E47
+
+2026-11-01，自訂網站加入禁止訪問的未發佈候選，選測 SITE-ROUTING 及模板保留交互。
+Core 基線 `bcfec32e`＋本輪工作區，binary 版本 `v0.105-reject-dev`，SHA
+`7124a77f…d21532`；LuCI 基線 `f6338d6`＋本輪工作區，四份變更檔的源碼覆蓋包 SHA
+`c301c183…faf3dc`。這是來源候選驗證，未發布或安裝到正式路由器。
+
+- 在可拋棄 iStoreOS VM 安裝官方 Core v0.105 與 LuCI v0.1.0-87，透過正式入口及
+  real-scene 腳本建立真實訂閱工作區，合併 30 個節點；第二來源既有 transport EOF
+  警告保留。先由官方舊 CLI 建立直連／代理兩檔，再替換候選；新版讀回原 ID、序號及
+  兩組 canonical SHA 均保留，第三組為空，讀取／render 不建立 reject.json。
+- 正式 CLI 停止狀態新增普通域名與萬用字元封鎖，保存、隔離配置驗證及
+  pending-next-start 通過；首次成功交易補齊第三檔。啟動後 controller 證明
+  `自訂禁止訪問網站` 的唯一選項及目前選擇均為 REJECT。
+- 三組按序號倒序載入；運行中刪除最新封鎖後揭露代理，再刪代理揭露直連；
+  active add／delete 的驗證、保存、熱載入與群組／規則讀回通過。
+  模板同步前後三組條目與 canonical SHA 相同；未刷新訂閱所對應的能力警告保留。
+- 透過真實 LuCI rpcd／ubus 新增及刪除 reject 條目，交易與 active 語義讀回通過。
+  **真實瀏覽器頁面操作未執行**；主機端 view 事件測試不代替 LuCI UI 功能驗收。
+- 候選在已初始化 VM 的最終 render、隔離 Mihomo config-test 及 doctor 通過。
+  主代理另行核對舊／新兩檔清單、active 交易結果、REJECT 群組、模板 SHA 保留及收尾證據。
+- 主機 `go test ./...`、LuCI 網站／一鍵更新 UI、rpcd 網站交易／一鍵更新及語法檢查通過。
+  host regression 包含三組排序、舊檔唯讀相容、回滾移除新檔、舊配置回滾讀回、
+  REJECT 唯一出口、保留驗證只改第三組亦會失敗；這些不構成 iStoreOS 功能 PASS。
+- **資料面 ERROR／NOT_RUN**：獨立 LAN client QEMU 的 SSH forward 12242 持續重設連線，
+  沒有取得 client 的封鎖／允許／刪除恢復 oracle。host 與 router WAN 的受控 endpoint
+  回應只證明 endpoint 可達，不代替 LAN 資料面；本輪不宣稱全面禁止訪問驗收通過。
+- **打包 ERROR**：標準 IPK／APK 腳本拉取 Ubuntu／Alpine 官方映像時，Docker registry
+  token 請求 EOF。主機取得相同官方映像的 metadata／config 後，layer 下載亦 TLS EOF；
+  未載入替代映像。LuCI VM 結果僅屬四份版本擁有檔案的源碼覆蓋，不是套件安裝驗收。
+- 功能結果為 **PARTIAL**；真 UI、獨立 LAN 資料面及 VM 受控失敗回滾維持 NOT_RUN。
+  本輪停止測試 runtime、router／client QEMU 與 endpoint；主代理確認程序不存在，
+  保留的兩份 overlay 均通過 qemu-img check。未改寫先前輪次或正式路由器運行設定。
+
+證據：[功能與限制摘要](../.runtime/istoreos-acceptance/custom-sites-reject-20261101/functional-summary.json)、
+[候選身分](../.runtime/istoreos-acceptance/custom-sites-reject-20261101/candidate-identity.json)、
+[主機檢查摘要](../.runtime/istoreos-acceptance/custom-sites-reject-20261101/host-verification-summary.json)、
+[官方舊兩檔](../.runtime/istoreos-acceptance/custom-sites-reject-20261101/raw/official-legacy-two-file-readback.txt)、
+[新版相容讀回](../.runtime/istoreos-acceptance/custom-sites-reject-20261101/raw/candidate-legacy-two-file-readback.txt)、
+[active 交易](../.runtime/istoreos-acceptance/custom-sites-reject-20261101/raw/candidate-active-reveal-and-add.txt)、
+[模板保留](../.runtime/istoreos-acceptance/custom-sites-reject-20261101/raw/candidate-template-sync.txt)、
+[主代理清理核對](../.runtime/istoreos-acceptance/custom-sites-reject-20261101/primary-cleanup-review.json)。
 
 <a id="pending-incidents"></a>
 ## 待核對事故與證據缺口

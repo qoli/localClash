@@ -36,7 +36,7 @@ func TestNormalizePatternUsesMihomoFullAndWildcardKinds(t *testing.T) {
 }
 
 func TestSnapshotCheckedHashesCanonicalDocumentOrder(t *testing.T) {
-	first := EmptyPair()
+	first := EmptyState()
 	first.Proxy.Entries = []Entry{
 		{ID: "older", Match: MatchFull, Pattern: "a.example", Sequence: 1, AddedAt: "2026-08-01T00:00:00Z"},
 		{ID: "newer", Match: MatchWildcard, Pattern: "*.example", Sequence: 2, AddedAt: "2026-08-02T00:00:00Z"},
@@ -57,7 +57,7 @@ func TestSnapshotCheckedHashesCanonicalDocumentOrder(t *testing.T) {
 }
 
 func TestLastAddedRuleSortsFirstAcrossDocuments(t *testing.T) {
-	pair := EmptyPair()
+	pair := EmptyState()
 	var err error
 	pair, older, err := Add(pair, RouteDirect, "abc.com", time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC))
 	if err != nil {
@@ -107,7 +107,7 @@ func TestApplyToSelectionUsesRequiredAndAvailableRegionalExits(t *testing.T) {
 	selection.ProxyGroups["🇭🇰 香港节点"] = rules.ProxyGroup{Auto: true, Optional: true, Nodes: []string{"HK 1"}}
 	selection.ProxyGroups["🇯🇵 日本节点"] = rules.ProxyGroup{Auto: true, Optional: true}
 	selection.ProxyGroups["ChatGPT-available"] = rules.ProxyGroup{Auto: true, Optional: true, Nodes: []string{"US 1"}}
-	pair := EmptyPair()
+	pair := EmptyState()
 	pair, _, _ = Add(pair, RouteProxy, "abc.*cdn.com", time.Now())
 
 	resolved, err := ApplyToSelection(selection, pair)
@@ -122,8 +122,8 @@ func TestApplyToSelectionUsesRequiredAndAvailableRegionalExits(t *testing.T) {
 	if got := resolved.PolicyGroups[DirectPolicyGroup].Exits; len(got) != 1 || got[0] != rules.TerminalDirect {
 		t.Fatalf("custom direct exits = %+v", got)
 	}
-	if got := resolved.RequiredTargets; len(got) < 2 || got[len(got)-2] != ProxyPolicyGroup || got[len(got)-1] != DirectPolicyGroup {
-		t.Fatalf("required targets = %+v, want both reserved policy groups", got)
+	if got := resolved.RequiredTargets; len(got) < 3 || got[len(got)-3] != ProxyPolicyGroup || got[len(got)-2] != DirectPolicyGroup || got[len(got)-1] != RejectPolicyGroup {
+		t.Fatalf("required targets = %+v, want all reserved policy groups", got)
 	}
 }
 
@@ -133,7 +133,7 @@ func TestLoadRequiresBothStrictDocuments(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(paths.Proxy), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	data, err := MarshalDocument(EmptyPair().Proxy)
+	data, err := MarshalDocument(EmptyState().Proxy)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,19 +151,19 @@ func TestLoadRequiresBothStrictDocuments(t *testing.T) {
 	}
 }
 
-func TestValidatePairRejectsDuplicateSequence(t *testing.T) {
-	pair := EmptyPair()
+func TestValidateStateRejectsDuplicateSequence(t *testing.T) {
+	pair := EmptyState()
 	pair.Proxy.Entries = []Entry{{ID: "proxy", Match: MatchFull, Pattern: "a.com", Sequence: 1, AddedAt: time.Now().UTC().Format(time.RFC3339Nano)}}
 	pair.Direct.Entries = []Entry{{ID: "direct", Match: MatchFull, Pattern: "b.com", Sequence: 1, AddedAt: time.Now().UTC().Format(time.RFC3339Nano)}}
-	if err := ValidatePair(pair); err == nil || !strings.Contains(err.Error(), "duplicate custom site sequence") {
-		t.Fatalf("ValidatePair error = %v", err)
+	if err := ValidateState(pair); err == nil || !strings.Contains(err.Error(), "duplicate custom site sequence") {
+		t.Fatalf("ValidateState error = %v", err)
 	}
 }
 
 func TestApplyToSelectionRejectsReservedNameInSharedTargetNamespace(t *testing.T) {
 	selection := testSelection()
 	selection.ProxyGroups[ProxyPolicyGroup] = rules.ProxyGroup{Manual: true, Nodes: []string{"A"}}
-	if _, err := ApplyToSelection(selection, EmptyPair()); err == nil || !strings.Contains(err.Error(), "reserved_policy_group_name") {
+	if _, err := ApplyToSelection(selection, EmptyState()); err == nil || !strings.Contains(err.Error(), "reserved_policy_group_name") {
 		t.Fatalf("ApplyToSelection error = %v, want reserved name failure", err)
 	}
 }

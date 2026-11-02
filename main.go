@@ -395,6 +395,7 @@ func runConfigRender(args []string, state appinit.RuntimeState) error {
 	fs.StringVar(&opts.RuntimeProfilePath, "runtime-profile", state.Paths.RuntimeProfilePath, "runtime profile JSON")
 	opts.CustomSitesProxy = state.Paths.CustomSitesProxy
 	opts.CustomSitesDirect = state.Paths.CustomSitesDirect
+	opts.CustomSitesReject = state.Paths.CustomSitesReject
 	fs.BoolVar(&opts.Force, "force", false, "overwrite output if it exists")
 
 	if err := fs.Parse(args); err != nil {

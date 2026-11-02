@@ -145,8 +145,9 @@ func (s *Server) customSitePaths() (customsites.Paths, error) {
 	paths := customsites.Paths{
 		Proxy:  strings.TrimSpace(s.state.Paths.CustomSitesProxy),
 		Direct: strings.TrimSpace(s.state.Paths.CustomSitesDirect),
+		Reject: strings.TrimSpace(s.state.Paths.CustomSitesReject),
 	}
-	if paths.Proxy == "" || paths.Direct == "" {
+	if paths.Proxy == "" || paths.Direct == "" || paths.Reject == "" {
 		return customsites.Paths{}, errors.New("custom-site paths are unavailable in server runtime state")
 	}
 	return paths, nil

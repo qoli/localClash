@@ -27,6 +27,7 @@ type Options struct {
 	RuntimeProfilePath  string
 	CustomSitesProxy    string
 	CustomSitesDirect   string
+	CustomSitesReject   string
 }
 
 type RuntimeState struct {
@@ -55,6 +56,7 @@ type RuntimePaths struct {
 	RuntimeProfilePath  string `json:"runtime_profile_path"`
 	CustomSitesProxy    string `json:"custom_sites_proxy"`
 	CustomSitesDirect   string `json:"custom_sites_direct"`
+	CustomSitesReject   string `json:"custom_sites_reject"`
 }
 
 type CoreState struct {
@@ -117,6 +119,7 @@ func Bootstrap(ctx context.Context, opts Options) RuntimeState {
 			RuntimeProfilePath:  opts.RuntimeProfilePath,
 			CustomSitesProxy:    opts.CustomSitesProxy,
 			CustomSitesDirect:   opts.CustomSitesDirect,
+			CustomSitesReject:   opts.CustomSitesReject,
 		},
 		Core:   CoreState{Path: opts.CorePath},
 		Rules:  RulesState{CacheDir: opts.RulesCacheDir, Details: map[string]rules.PackDetail{}},
@@ -169,6 +172,9 @@ func normalizeOptions(opts Options) Options {
 	if strings.TrimSpace(opts.CustomSitesDirect) == "" {
 		opts.CustomSitesDirect = customSitePaths.Direct
 	}
+	if strings.TrimSpace(opts.CustomSitesReject) == "" {
+		opts.CustomSitesReject = customSitePaths.Reject
+	}
 	if strings.TrimSpace(opts.CorePath) == "" {
 		if corePath, err := runtimeprofile.ActiveCorePath(opts.RuntimeProfilePath); err == nil && strings.TrimSpace(corePath) != "" {
 			opts.CorePath = defaultPath(baseDir, corePath)
@@ -210,7 +216,8 @@ func hasExplicitPath(opts Options) bool {
 		strings.TrimSpace(opts.PacksSelectionPath) != "" ||
 		strings.TrimSpace(opts.RuntimeProfilePath) != "" ||
 		strings.TrimSpace(opts.CustomSitesProxy) != "" ||
-		strings.TrimSpace(opts.CustomSitesDirect) != ""
+		strings.TrimSpace(opts.CustomSitesDirect) != "" ||
+		strings.TrimSpace(opts.CustomSitesReject) != ""
 }
 
 func looksLikeWorkDir(dir string) bool {

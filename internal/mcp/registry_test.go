@@ -162,6 +162,9 @@ func TestCustomSitesTransactSchemaDescribesDurableCoexistingLayer(t *testing.T) 
 	schema := inputSchemaForTool("custom_sites_transact")
 	properties := schema["properties"].(map[string]any)
 	route := properties["route"].(map[string]any)
+	if got := strings.Join(route["enum"].([]string), ","); got != "proxy,direct,reject" {
+		t.Fatalf("custom-site routes = %q", got)
+	}
 	if description, _ := route["description"].(string); !strings.Contains(description, "does not modify default policy patches") {
 		t.Fatalf("route description = %q", description)
 	}

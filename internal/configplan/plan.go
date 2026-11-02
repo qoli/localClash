@@ -359,6 +359,7 @@ func Render(ctx context.Context, opts Options) (Result, error) {
 		RuntimeProfilePath: opts.RuntimeProfilePath,
 		CustomSitesProxy:   customSitePaths.Proxy,
 		CustomSitesDirect:  customSitePaths.Direct,
+		CustomSitesReject:  customSitePaths.Reject,
 		Force:              true,
 		OnStage:            nestedConfigRenderStage(opts.OnStage, "render_candidate"),
 	}); err != nil {
@@ -493,6 +494,7 @@ func Apply(ctx context.Context, opts ApplyOptions) (ApplyResult, error) {
 		RuntimeProfilePath: opts.RuntimeProfilePath,
 		CustomSitesProxy:   customSitePaths.Proxy,
 		CustomSitesDirect:  customSitePaths.Direct,
+		CustomSitesReject:  customSitePaths.Reject,
 		Force:              true,
 		OnStage:            nestedConfigRenderStage(opts.OnStage, "render_candidate"),
 	})

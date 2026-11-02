@@ -145,7 +145,7 @@ func TestBootstrapDefaultsToDetectedRouterWorkDir(t *testing.T) {
 	if got := defaultWorkDirPath(state.Paths.RuntimeRoot, "localclash-intent.json"); got != filepath.Join(routerDir, "localclash-intent.json") {
 		t.Fatalf("localclash config path = %q, want detected router workdir", got)
 	}
-	if state.Paths.CustomSitesProxy != filepath.Join(routerDir, "custom-sites", "proxy.json") || state.Paths.CustomSitesDirect != filepath.Join(routerDir, "custom-sites", "direct.json") {
+	if state.Paths.CustomSitesProxy != filepath.Join(routerDir, "custom-sites", "proxy.json") || state.Paths.CustomSitesDirect != filepath.Join(routerDir, "custom-sites", "direct.json") || state.Paths.CustomSitesReject != filepath.Join(routerDir, "custom-sites", "reject.json") {
 		t.Fatalf("custom site paths = %q/%q, want detected router workdir", state.Paths.CustomSitesProxy, state.Paths.CustomSitesDirect)
 	}
 	if _, err := os.Stat(filepath.Join(wrongDir, ".runtime")); !os.IsNotExist(err) {

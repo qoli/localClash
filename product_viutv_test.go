@@ -149,8 +149,8 @@ func TestRunProductDefaultTemplateAddsViuTVWithoutOrderCollision(t *testing.T) {
 			}
 
 			sites := customsites.DefaultPaths(dir)
-			pair := customsites.EmptyPair()
-			for route, pattern := range map[string]string{customsites.RouteDirect: "keep.example.invalid", customsites.RouteProxy: "proxy.example.invalid"} {
+			pair := customsites.EmptyState()
+			for route, pattern := range map[string]string{customsites.RouteDirect: "keep.example.invalid", customsites.RouteProxy: "proxy.example.invalid", customsites.RouteReject: "reject.example.invalid"} {
 				pair, _, err = customsites.Add(pair, route, pattern, time.Unix(1, 0).UTC())
 				if err != nil {
 					t.Fatal(err)
@@ -160,7 +160,7 @@ func TestRunProductDefaultTemplateAddsViuTVWithoutOrderCollision(t *testing.T) {
 				t.Fatal(err)
 			}
 			beforeSiteFiles := map[string][]byte{}
-			for path, doc := range map[string]customsites.Document{sites.Proxy: pair.Proxy, sites.Direct: pair.Direct} {
+			for path, doc := range map[string]customsites.Document{sites.Proxy: pair.Proxy, sites.Direct: pair.Direct, sites.Reject: pair.Reject} {
 				data, err := customsites.MarshalDocument(doc)
 				if err != nil {
 					t.Fatal(err)

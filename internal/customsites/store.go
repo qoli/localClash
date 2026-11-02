@@ -24,16 +24,19 @@ const (
 
 	RouteProxy  = "proxy"
 	RouteDirect = "direct"
+	RouteReject = "reject"
 
 	MatchFull     = "full"
 	MatchWildcard = "wildcard"
 
 	ProxyPolicyGroup  = "自訂代理網站"
 	DirectPolicyGroup = "自訂直連網站"
+	RejectPolicyGroup = "自訂禁止訪問網站"
 
 	DefaultDir         = "custom-sites"
 	ProxyFilename      = "proxy.json"
 	DirectFilename     = "direct.json"
+	RejectFilename     = "reject.json"
 	RequiredAutoExit   = "⚡ 自动选择"
 	RequiredManualExit = "🎯 手动选择"
 )
@@ -52,6 +55,7 @@ var RegionalExits = []string{
 type Paths struct {
 	Proxy  string `json:"proxy"`
 	Direct string `json:"direct"`
+	Reject string `json:"reject"`
 }
 
 func DefaultPaths(root string) Paths {
@@ -59,6 +63,7 @@ func DefaultPaths(root string) Paths {
 	return Paths{
 		Proxy:  filepath.Join(dir, ProxyFilename),
 		Direct: filepath.Join(dir, DirectFilename),
+		Reject: filepath.Join(dir, RejectFilename),
 	}
 }
 
@@ -81,68 +86,90 @@ type Snapshot struct {
 	Initialized  bool    `json:"initialized"`
 	Proxy        []Entry `json:"proxy"`
 	Direct       []Entry `json:"direct"`
+	Reject       []Entry `json:"reject"`
 	MaxSequence  uint64  `json:"max_sequence"`
 	ProxyCount   int     `json:"proxy_count"`
 	DirectCount  int     `json:"direct_count"`
+	RejectCount  int     `json:"reject_count"`
 	ProxySHA256  string  `json:"proxy_sha256,omitempty"`
 	DirectSHA256 string  `json:"direct_sha256,omitempty"`
+	RejectSHA256 string  `json:"reject_sha256,omitempty"`
 }
 
-type Pair struct {
+type State struct {
 	Initialized bool
 	Proxy       Document
 	Direct      Document
+	Reject      Document
+	// LegacyTwoFiles records a read of the pre-reject format. Its saved config
+	// may omit the empty reject group when a failed first transaction rolls back.
+	LegacyTwoFiles bool
 }
 
-func EmptyPair() Pair {
-	return Pair{
+func EmptyState() State {
+	return State{
 		Initialized: true,
 		Proxy:       Document{Version: SchemaVersion, Route: RouteProxy, Entries: []Entry{}},
 		Direct:      Document{Version: SchemaVersion, Route: RouteDirect, Entries: []Entry{}},
+		Reject:      Document{Version: SchemaVersion, Route: RouteReject, Entries: []Entry{}},
 	}
 }
 
-func Load(paths Paths) (Pair, error) {
+func Load(paths Paths) (State, error) {
 	proxyExists, err := regularFileExists(paths.Proxy)
 	if err != nil {
-		return Pair{}, err
+		return State{}, err
 	}
 	directExists, err := regularFileExists(paths.Direct)
 	if err != nil {
-		return Pair{}, err
+		return State{}, err
 	}
-	if !proxyExists && !directExists {
-		return Pair{}, nil
+	rejectExists, err := regularFileExists(paths.Reject)
+	if err != nil {
+		return State{}, err
+	}
+	if !proxyExists && !directExists && !rejectExists {
+		return State{}, nil
 	}
 	if !proxyExists || !directExists {
-		return Pair{}, fmt.Errorf("custom site state is incomplete: proxy_exists=%t direct_exists=%t", proxyExists, directExists)
+		return State{}, fmt.Errorf("custom site state is incomplete: proxy_exists=%t direct_exists=%t reject_exists=%t", proxyExists, directExists, rejectExists)
 	}
 	proxy, err := loadDocument(paths.Proxy, RouteProxy)
 	if err != nil {
-		return Pair{}, err
+		return State{}, err
 	}
 	direct, err := loadDocument(paths.Direct, RouteDirect)
 	if err != nil {
-		return Pair{}, err
+		return State{}, err
 	}
-	pair := Pair{Initialized: true, Proxy: proxy, Direct: direct}
-	if err := ValidatePair(pair); err != nil {
-		return Pair{}, err
+	// Existing workspaces have only proxy.json and direct.json. Reading them
+	// supplies an empty reject document without writing or changing old entries.
+	state := EmptyState()
+	state.Proxy, state.Direct = proxy, direct
+	state.LegacyTwoFiles = !rejectExists
+	if rejectExists {
+		state.Reject, err = loadDocument(paths.Reject, RouteReject)
+		if err != nil {
+			return State{}, err
+		}
 	}
-	return pair, nil
+	if err := ValidateState(state); err != nil {
+		return State{}, err
+	}
+	return state, nil
 }
 
-func ValidatePair(pair Pair) error {
-	if !pair.Initialized {
+func ValidateState(state State) error {
+	if !state.Initialized {
 		return nil
 	}
 	ids := map[string]string{}
 	sequences := map[uint64]string{}
-	for _, document := range []Document{pair.Proxy, pair.Direct} {
+	for _, document := range []Document{state.Proxy, state.Direct, state.Reject} {
 		if document.Version != SchemaVersion {
 			return fmt.Errorf("custom site %s document version mismatch: expected %d, got %d", document.Route, SchemaVersion, document.Version)
 		}
-		if document.Route != RouteProxy && document.Route != RouteDirect {
+		if document.Route != RouteProxy && document.Route != RouteDirect && document.Route != RouteReject {
 			return fmt.Errorf("custom site document route %q is invalid", document.Route)
 		}
 		for index, entry := range document.Entries {
@@ -162,40 +189,49 @@ func ValidatePair(pair Pair) error {
 	return nil
 }
 
-func SnapshotFor(pair Pair) Snapshot {
-	if !pair.Initialized {
-		return Snapshot{Proxy: []Entry{}, Direct: []Entry{}}
+func SnapshotFor(state State) Snapshot {
+	if !state.Initialized {
+		return Snapshot{Proxy: []Entry{}, Direct: []Entry{}, Reject: []Entry{}}
 	}
 	snapshot := Snapshot{
 		Initialized: true,
-		Proxy:       cloneEntries(pair.Proxy.Entries, RouteProxy),
-		Direct:      cloneEntries(pair.Direct.Entries, RouteDirect),
+		Proxy:       cloneEntries(state.Proxy.Entries, RouteProxy),
+		Direct:      cloneEntries(state.Direct.Entries, RouteDirect),
+		Reject:      cloneEntries(state.Reject.Entries, RouteReject),
 	}
 	sortEntries(snapshot.Proxy)
 	sortEntries(snapshot.Direct)
+	sortEntries(snapshot.Reject)
 	snapshot.ProxyCount = len(snapshot.Proxy)
 	snapshot.DirectCount = len(snapshot.Direct)
-	for _, entry := range append(append([]Entry{}, snapshot.Proxy...), snapshot.Direct...) {
-		if entry.Sequence > snapshot.MaxSequence {
-			snapshot.MaxSequence = entry.Sequence
+	snapshot.RejectCount = len(snapshot.Reject)
+	for _, entries := range [][]Entry{snapshot.Proxy, snapshot.Direct, snapshot.Reject} {
+		for _, entry := range entries {
+			if entry.Sequence > snapshot.MaxSequence {
+				snapshot.MaxSequence = entry.Sequence
+			}
 		}
 	}
 	return snapshot
 }
 
-func SnapshotChecked(pair Pair) (Snapshot, error) {
-	snapshot := SnapshotFor(pair)
-	if !pair.Initialized {
+func SnapshotChecked(state State) (Snapshot, error) {
+	snapshot := SnapshotFor(state)
+	if !state.Initialized {
 		return snapshot, nil
 	}
 	var err error
-	snapshot.ProxySHA256, err = documentSHA256(pair.Proxy)
+	snapshot.ProxySHA256, err = documentSHA256(state.Proxy)
 	if err != nil {
 		return Snapshot{}, fmt.Errorf("hash custom site proxy document: %w", err)
 	}
-	snapshot.DirectSHA256, err = documentSHA256(pair.Direct)
+	snapshot.DirectSHA256, err = documentSHA256(state.Direct)
 	if err != nil {
 		return Snapshot{}, fmt.Errorf("hash custom site direct document: %w", err)
+	}
+	snapshot.RejectSHA256, err = documentSHA256(state.Reject)
+	if err != nil {
+		return Snapshot{}, fmt.Errorf("hash custom site reject document: %w", err)
 	}
 	return snapshot, nil
 }
@@ -211,28 +247,28 @@ func documentSHA256(document Document) (string, error) {
 	return hex.EncodeToString(sum[:]), nil
 }
 
-func Add(pair Pair, route, pattern string, now time.Time) (Pair, Entry, error) {
-	if !pair.Initialized {
-		pair = EmptyPair()
+func Add(state State, route, pattern string, now time.Time) (State, Entry, error) {
+	if !state.Initialized {
+		state = EmptyState()
 	}
-	if err := ValidatePair(pair); err != nil {
-		return Pair{}, Entry{}, err
+	if err := ValidateState(state); err != nil {
+		return State{}, Entry{}, err
 	}
 	route = strings.ToLower(strings.TrimSpace(route))
-	if route != RouteProxy && route != RouteDirect {
-		return Pair{}, Entry{}, fmt.Errorf("custom site route must be %q or %q", RouteProxy, RouteDirect)
+	if route != RouteProxy && route != RouteDirect && route != RouteReject {
+		return State{}, Entry{}, fmt.Errorf("custom site route must be %q, %q or %q", RouteProxy, RouteDirect, RouteReject)
 	}
 	normalized, match, err := NormalizePattern(pattern)
 	if err != nil {
-		return Pair{}, Entry{}, err
+		return State{}, Entry{}, err
 	}
-	max := SnapshotFor(pair).MaxSequence
+	max := SnapshotFor(state).MaxSequence
 	if max == ^uint64(0) {
-		return Pair{}, Entry{}, errors.New("custom site sequence is exhausted")
+		return State{}, Entry{}, errors.New("custom site sequence is exhausted")
 	}
 	id, err := newID()
 	if err != nil {
-		return Pair{}, Entry{}, err
+		return State{}, Entry{}, err
 	}
 	if now.IsZero() {
 		now = time.Now()
@@ -245,39 +281,44 @@ func Add(pair Pair, route, pattern string, now time.Time) (Pair, Entry, error) {
 		AddedAt:  now.UTC().Format(time.RFC3339Nano),
 		Route:    route,
 	}
-	if route == RouteProxy {
-		pair.Proxy.Entries = append(pair.Proxy.Entries, entry)
-	} else {
-		pair.Direct.Entries = append(pair.Direct.Entries, entry)
+	switch route {
+	case RouteProxy:
+		state.Proxy.Entries = append(state.Proxy.Entries, entry)
+	case RouteDirect:
+		state.Direct.Entries = append(state.Direct.Entries, entry)
+	case RouteReject:
+		state.Reject.Entries = append(state.Reject.Entries, entry)
 	}
-	if err := ValidatePair(pair); err != nil {
-		return Pair{}, Entry{}, err
+	if err := ValidateState(state); err != nil {
+		return State{}, Entry{}, err
 	}
-	return pair, entry, nil
+	state.LegacyTwoFiles = false
+	return state, entry, nil
 }
 
-func Delete(pair Pair, id string) (Pair, Entry, error) {
-	if !pair.Initialized {
-		return Pair{}, Entry{}, errors.New("custom site state is not initialized")
+func Delete(state State, id string) (State, Entry, error) {
+	if !state.Initialized {
+		return State{}, Entry{}, errors.New("custom site state is not initialized")
 	}
-	if err := ValidatePair(pair); err != nil {
-		return Pair{}, Entry{}, err
+	if err := ValidateState(state); err != nil {
+		return State{}, Entry{}, err
 	}
 	id = strings.TrimSpace(id)
 	if id == "" {
-		return Pair{}, Entry{}, errors.New("custom site id is required")
+		return State{}, Entry{}, errors.New("custom site id is required")
 	}
-	for _, target := range []*Document{&pair.Proxy, &pair.Direct} {
+	for _, target := range []*Document{&state.Proxy, &state.Direct, &state.Reject} {
 		for index, entry := range target.Entries {
 			if entry.ID != id {
 				continue
 			}
 			entry.Route = target.Route
 			target.Entries = append(target.Entries[:index], target.Entries[index+1:]...)
-			return pair, entry, nil
+			state.LegacyTwoFiles = false
+			return state, entry, nil
 		}
 	}
-	return Pair{}, Entry{}, fmt.Errorf("custom site id %q was not found", id)
+	return State{}, Entry{}, fmt.Errorf("custom site id %q was not found", id)
 }
 
 func NormalizePattern(value string) (string, string, error) {
@@ -306,25 +347,21 @@ func NormalizePattern(value string) (string, string, error) {
 	return value, match, nil
 }
 
-func ApplyToSelection(selection rules.Selection, pair Pair) (rules.Selection, error) {
-	if !pair.Initialized {
+func ApplyToSelection(selection rules.Selection, state State) (rules.Selection, error) {
+	if !state.Initialized {
 		return selection, nil
 	}
-	if err := ValidatePair(pair); err != nil {
+	if err := ValidateState(state); err != nil {
 		return rules.Selection{}, err
 	}
 	out := cloneSelection(selection)
-	if _, exists := out.PolicyGroups[ProxyPolicyGroup]; exists {
-		return rules.Selection{}, fmt.Errorf("reserved_policy_group_name: %s", ProxyPolicyGroup)
-	}
-	if _, exists := out.ProxyGroups[ProxyPolicyGroup]; exists {
-		return rules.Selection{}, fmt.Errorf("reserved_policy_group_name: %s", ProxyPolicyGroup)
-	}
-	if _, exists := out.PolicyGroups[DirectPolicyGroup]; exists {
-		return rules.Selection{}, fmt.Errorf("reserved_policy_group_name: %s", DirectPolicyGroup)
-	}
-	if _, exists := out.ProxyGroups[DirectPolicyGroup]; exists {
-		return rules.Selection{}, fmt.Errorf("reserved_policy_group_name: %s", DirectPolicyGroup)
+	for _, name := range []string{ProxyPolicyGroup, DirectPolicyGroup, RejectPolicyGroup} {
+		if _, exists := out.PolicyGroups[name]; exists {
+			return rules.Selection{}, fmt.Errorf("reserved_policy_group_name: %s", name)
+		}
+		if _, exists := out.ProxyGroups[name]; exists {
+			return rules.Selection{}, fmt.Errorf("reserved_policy_group_name: %s", name)
+		}
 	}
 	for _, required := range []string{RequiredAutoExit, RequiredManualExit} {
 		group, exists := out.ProxyGroups[required]
@@ -344,15 +381,17 @@ func ApplyToSelection(selection rules.Selection, pair Pair) (rules.Selection, er
 	exits = append(exits, regionNames...)
 	out.PolicyGroups[ProxyPolicyGroup] = rules.PolicyGroup{Exits: exits, Manual: true}
 	out.PolicyGroups[DirectPolicyGroup] = rules.PolicyGroup{Exits: []string{rules.TerminalDirect}, Manual: true}
-	out.RequiredTargets = append(out.RequiredTargets, ProxyPolicyGroup, DirectPolicyGroup)
+	out.PolicyGroups[RejectPolicyGroup] = rules.PolicyGroup{Exits: []string{rules.TerminalReject}, Manual: true}
+	out.RequiredTargets = append(out.RequiredTargets, ProxyPolicyGroup, DirectPolicyGroup, RejectPolicyGroup)
 
-	entries := append(cloneEntries(pair.Proxy.Entries, RouteProxy), cloneEntries(pair.Direct.Entries, RouteDirect)...)
-	sortEntries(entries)
+	entries := state.OrderedEntries()
 	priority := make([]rules.CustomRule, 0, len(entries))
 	for _, entry := range entries {
 		target := DirectPolicyGroup
 		if entry.Route == RouteProxy {
 			target = ProxyPolicyGroup
+		} else if entry.Route == RouteReject {
+			target = RejectPolicyGroup
 		}
 		ruleType := "domain_suffix"
 		if entry.Match == MatchWildcard {
@@ -367,6 +406,16 @@ func ApplyToSelection(selection rules.Selection, pair Pair) (rules.Selection, er
 	}
 	out.PriorityCustomRules = append(priority, out.PriorityCustomRules...)
 	return out, nil
+}
+
+// OrderedEntries returns independent copies of all decisions, newest first
+// across routes. Rendering and runtime read-back share this ordering contract.
+func (state State) OrderedEntries() []Entry {
+	entries := cloneEntries(state.Proxy.Entries, RouteProxy)
+	entries = append(entries, cloneEntries(state.Direct.Entries, RouteDirect)...)
+	entries = append(entries, cloneEntries(state.Reject.Entries, RouteReject)...)
+	sortEntries(entries)
+	return entries
 }
 
 func MarshalDocument(document Document) ([]byte, error) {
@@ -387,7 +436,7 @@ func cloneSelection(selection rules.Selection) rules.Selection {
 		value.Nodes = append([]string{}, value.Nodes...)
 		out.ProxyGroups[key] = value
 	}
-	out.PolicyGroups = make(map[string]rules.PolicyGroup, len(selection.PolicyGroups)+2)
+	out.PolicyGroups = make(map[string]rules.PolicyGroup, len(selection.PolicyGroups)+3)
 	for key, value := range selection.PolicyGroups {
 		value.Exits = append([]string{}, value.Exits...)
 		out.PolicyGroups[key] = value
@@ -447,7 +496,7 @@ func validateEntry(entry Entry, route string) error {
 	if _, err := time.Parse(time.RFC3339Nano, entry.AddedAt); err != nil {
 		return fmt.Errorf("added_at is invalid: %w", err)
 	}
-	if route != RouteProxy && route != RouteDirect {
+	if route != RouteProxy && route != RouteDirect && route != RouteReject {
 		return fmt.Errorf("route %q is invalid", route)
 	}
 	return nil

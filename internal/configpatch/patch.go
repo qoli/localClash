@@ -1044,6 +1044,7 @@ func buildArtifacts(ctx context.Context, config localconfig.Config, opts buildOp
 		RuntimeProfilePath: opts.RuntimeProfilePath,
 		CustomSitesProxy:   customSitePaths.Proxy,
 		CustomSitesDirect:  customSitePaths.Direct,
+		CustomSitesReject:  customSitePaths.Reject,
 		Force:              true,
 	})
 	if err != nil {

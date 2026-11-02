@@ -130,14 +130,16 @@ func TestRunCustomSitesListReportsUninitializedAuthoritativeSnapshot(t *testing.
 			Initialized  bool   `json:"initialized"`
 			ProxyCount   int    `json:"proxy_count"`
 			DirectCount  int    `json:"direct_count"`
+			RejectCount  int    `json:"reject_count"`
 			ProxySHA256  string `json:"proxy_sha256"`
 			DirectSHA256 string `json:"direct_sha256"`
+			RejectSHA256 string `json:"reject_sha256"`
 		} `json:"custom_sites"`
 	}
 	if err := json.Unmarshal([]byte(output), &result); err != nil {
 		t.Fatalf("custom-sites list JSON = %q, error = %v", output, err)
 	}
-	if !result.OK || result.CustomSites.Initialized || result.CustomSites.ProxyCount != 0 || result.CustomSites.DirectCount != 0 || result.CustomSites.ProxySHA256 != "" || result.CustomSites.DirectSHA256 != "" {
+	if !result.OK || result.CustomSites.Initialized || result.CustomSites.ProxyCount != 0 || result.CustomSites.DirectCount != 0 || result.CustomSites.RejectCount != 0 || result.CustomSites.ProxySHA256 != "" || result.CustomSites.DirectSHA256 != "" || result.CustomSites.RejectSHA256 != "" {
 		t.Fatalf("result = %+v, want explicit uninitialized empty snapshot", result)
 	}
 }
@@ -170,12 +172,13 @@ func TestRunCustomSitesTransactFailureKeepsTopLevelContract(t *testing.T) {
 }
 
 func TestVerifyCustomSitesRuntimeReadBackRequiresSemanticOrderAndGroups(t *testing.T) {
-	pair := customsites.EmptyPair()
+	pair := customsites.EmptyState()
 	pair.Direct.Entries = []customsites.Entry{{ID: "old", Match: customsites.MatchFull, Pattern: "abc.com", Sequence: 1, AddedAt: "2026-08-01T00:00:00Z"}}
 	pair.Proxy.Entries = []customsites.Entry{{ID: "new", Match: customsites.MatchWildcard, Pattern: "abc.*cdn.com", Sequence: 2, AddedAt: "2026-08-05T00:00:00Z"}}
 	proxies := mihomoapi.Response{JSON: map[string]any{"proxies": map[string]any{
 		customsites.ProxyPolicyGroup:  map[string]any{},
 		customsites.DirectPolicyGroup: map[string]any{},
+		customsites.RejectPolicyGroup: map[string]any{"all": []any{"REJECT"}, "now": "REJECT"},
 	}}}
 	rules := mihomoapi.Response{JSON: map[string]any{"rules": []any{
 		map[string]any{"type": "DomainWildcard", "payload": "abc.*cdn.com", "proxy": customsites.ProxyPolicyGroup},
@@ -198,7 +201,7 @@ func TestVerifyCustomSitesRuntimeReadBackRequiresSemanticOrderAndGroups(t *testi
 }
 
 func TestVerifyCustomSitesRuntimeReadBackAcceptsUninitializedAbsence(t *testing.T) {
-	pair := customsites.Pair{Initialized: false}
+	pair := customsites.State{Initialized: false}
 	proxies := mihomoapi.Response{JSON: map[string]any{"proxies": map[string]any{}}}
 	rules := mihomoapi.Response{JSON: map[string]any{"rules": []any{}}}
 	if err := customsitesapply.VerifyRuntimeReadBack(pair, rules, proxies); err != nil {
@@ -211,7 +214,7 @@ func TestVerifyCustomSitesRuntimeReadBackAcceptsUninitializedAbsence(t *testing.
 }
 
 func TestWaitForCustomSitesRuntimeReadBackRetriesStaleControllerState(t *testing.T) {
-	pair := customsites.EmptyPair()
+	pair := customsites.EmptyState()
 	pair.Direct.Entries = []customsites.Entry{{ID: "direct", Match: customsites.MatchFull, Pattern: "priority.test.invalid", Sequence: 1, AddedAt: "2026-08-29T00:00:00Z"}}
 	rules := mihomoapi.Response{JSON: map[string]any{"rules": []any{
 		map[string]any{"type": "DomainSuffix", "payload": "priority.test.invalid", "proxy": customsites.DirectPolicyGroup},
@@ -220,6 +223,7 @@ func TestWaitForCustomSitesRuntimeReadBackRetriesStaleControllerState(t *testing
 	loadedProxies := mihomoapi.Response{JSON: map[string]any{"proxies": map[string]any{
 		customsites.ProxyPolicyGroup:  map[string]any{},
 		customsites.DirectPolicyGroup: map[string]any{},
+		customsites.RejectPolicyGroup: map[string]any{"all": []any{"REJECT"}, "now": "REJECT"},
 	}}}
 	proxyReads := 0
 	request := func(_ context.Context, opts mihomoapi.RequestOptions) (mihomoapi.Response, error) {
@@ -245,7 +249,7 @@ func TestWaitForCustomSitesRuntimeReadBackRetriesStaleControllerState(t *testing
 }
 
 func TestWaitForCustomSitesRuntimeReadBackFailsWhenStateNeverConverges(t *testing.T) {
-	pair := customsites.EmptyPair()
+	pair := customsites.EmptyState()
 	pair.Direct.Entries = []customsites.Entry{{ID: "direct", Match: customsites.MatchFull, Pattern: "priority.test.invalid", Sequence: 1, AddedAt: "2026-08-29T00:00:00Z"}}
 	request := func(_ context.Context, opts mihomoapi.RequestOptions) (mihomoapi.Response, error) {
 		if opts.Path == "/rules" {

@@ -595,7 +595,7 @@ func runProductCustomSites(args []string, state appinit.RuntimeState) error {
 	if len(args) == 0 {
 		return fmt.Errorf("custom-sites subcommand is required: list or transact")
 	}
-	paths := customsites.Paths{Proxy: state.Paths.CustomSitesProxy, Direct: state.Paths.CustomSitesDirect}
+	paths := customsites.Paths{Proxy: state.Paths.CustomSitesProxy, Direct: state.Paths.CustomSitesDirect, Reject: state.Paths.CustomSitesReject}
 	switch args[0] {
 	case "list":
 		if err := parseJSONOnly("custom-sites list", args[1:]); err != nil {
@@ -1606,6 +1606,7 @@ func configRenderOptions(state appinit.RuntimeState) configrender.Options {
 		RuntimeProfilePath: state.Paths.RuntimeProfilePath,
 		CustomSitesProxy:   state.Paths.CustomSitesProxy,
 		CustomSitesDirect:  state.Paths.CustomSitesDirect,
+		CustomSitesReject:  state.Paths.CustomSitesReject,
 		Force:              true,
 	}
 }

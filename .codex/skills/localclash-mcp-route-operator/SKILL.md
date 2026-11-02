@@ -1,6 +1,6 @@
 ---
 name: localclash-mcp-route-operator
-description: Inspect localClash routing intent and live traffic, or apply authorized MCP routing changes, including durable 自訂代理網站 / 自訂直連網站 overrides. Use when localClash is relevant to website, service, or exit routing.
+description: Inspect localClash routing intent and live traffic, or apply authorized MCP routing changes, including durable 自訂代理網站 / 自訂直連網站 / 自訂禁止訪問網站 overrides. Use when localClash is relevant to website, service, or exit routing.
 ---
 
 # localClash MCP Route Operator
@@ -13,8 +13,8 @@ files, or SSH. Server state owns config/runtime paths and secrets.
 
 - For observation, choose the evidence surface below. A domain query does not
   authorize a custom rule or any persistent change.
-- For an explicit simple persistent website proxy/direct override through the
-  existing exits, use `custom_sites_list` / `custom_sites_transact`. Read
+- For an explicit simple persistent website proxy/direct/reject decision, use
+  `custom_sites_list` / `custom_sites_transact`. Read
   [Custom sites](#custom-sites) for matching, priority, and transaction results. This path needs neither pack lookup nor a user patch.
 - For app/company-wide pack coverage, a named node/country, or a selection
   strategy such as Smart or fallback, use packs and a service-owned exit. Read
@@ -60,8 +60,9 @@ mutation. A `confirm_required` tool needs user authorization, not invented
 confirmation JSON fields.
 
 Simple custom-site overrides use the reserved 自訂代理網站 group's current
-selected exit or 自訂直連網站 → `DIRECT`. They do not authorize changing
-those groups' selection/membership or recreating them with patch builders.
+selected exit, 自訂直連網站 → `DIRECT`, or 自訂禁止訪問網站 → `REJECT`. They do
+not authorize changing those groups' selection/membership or recreating them
+with patch builders. The reject group contains only `REJECT`.
 Other service-specific routes reuse a service-owned group or create a
 dedicated one.
 
@@ -95,7 +96,7 @@ it; state remaining uncertainty.
 ## Custom Sites
 
 If either tool is absent, report a capability/version mismatch; do not replace
-it with a patch or direct JSON/YAML edits. Read both lists first to understand
+it with a patch or direct JSON/YAML edits. Read all three lists first to understand
 overlaps and obtain actual stable IDs. Counts/hashes describe durable state.
 
 `custom_sites_transact` accepts one version-1 operation:
@@ -104,7 +105,10 @@ overlaps and obtain actual stable IDs. Counts/hashes describe durable state.
 {"version":1,"operation":"add","pattern":"example.com","route":"proxy","wait":true}
 ```
 
-Use `route:"direct"` for 自訂直連網站. Delete only an actual listed ID:
+Use `route:"direct"` for 自訂直連網站, or `route:"reject"` for 自訂禁止訪問網站.
+If the list response lacks `reject`, the Core does not support this capability;
+report the version mismatch rather than treating it as an empty list.
+Delete only an actual listed ID:
 
 ```json
 {"version":1,"operation":"delete","id":"<actual list entry id>","wait":true}
@@ -117,11 +121,15 @@ Do not include `id` on add or `pattern`/`route` on delete.
   wildcards may cross dots. No URLs, ports, paths, IPs, CIDRs, or regex.
 - Lists under `custom-sites/` are independent of patches. Default-policy sync
   and `reset_patches` preserve them; general reset deletes them.
+- Legacy proxy/direct documents load with an empty reject list; reads do not
+  write files. The next successful transaction also saves `reject.json`.
+  Invalid existing reject documents fail explicitly.
 - The safety baseline stays first. Custom sites follow newest-first across
-  both lists before optional/default policy and fallback. Highest matching
+  all three lists before optional/default policy and fallback. Highest matching
   `sequence` wins; adding retains older overlaps, so deletion may reveal an
   older route. Same-pattern yellow UI warnings do not block saving.
-- Proxy uses the reserved group's current exit; direct uses `DIRECT`. Do not
+- Proxy uses the reserved group's current exit; direct uses `DIRECT`; reject
+  uses only `REJECT`. Reject does not outrank a newer proxy/direct decision. Do not
   recreate/mutate reserved groups with builders. Specific nodes or selection
   strategies belong to a service-owned patch.
 

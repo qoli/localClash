@@ -38,6 +38,7 @@ type Options struct {
 	RuntimeProfilePath string
 	CustomSitesProxy   string
 	CustomSitesDirect  string
+	CustomSitesReject  string
 	Force              bool
 	OnStage            func(StageEvent) `json:"-"`
 }
@@ -150,13 +151,13 @@ func Render(opts Options) (Result, error) {
 			}
 			selection = &loadedSelection
 		}
-		if strings.TrimSpace(opts.CustomSitesProxy) != "" || strings.TrimSpace(opts.CustomSitesDirect) != "" {
-			if strings.TrimSpace(opts.CustomSitesProxy) == "" || strings.TrimSpace(opts.CustomSitesDirect) == "" {
-				err := errors.New("custom site proxy and direct paths must be configured together")
+		if strings.TrimSpace(opts.CustomSitesProxy) != "" || strings.TrimSpace(opts.CustomSitesDirect) != "" || strings.TrimSpace(opts.CustomSitesReject) != "" {
+			if strings.TrimSpace(opts.CustomSitesProxy) == "" || strings.TrimSpace(opts.CustomSitesDirect) == "" || strings.TrimSpace(opts.CustomSitesReject) == "" {
+				err := errors.New("custom site proxy, direct and reject paths must be configured together")
 				finish(err, nil)
 				return Result{}, err
 			}
-			pair, err := customsites.Load(customsites.Paths{Proxy: opts.CustomSitesProxy, Direct: opts.CustomSitesDirect})
+			pair, err := customsites.Load(customsites.Paths{Proxy: opts.CustomSitesProxy, Direct: opts.CustomSitesDirect, Reject: opts.CustomSitesReject})
 			if err != nil {
 				finish(err, nil)
 				return Result{}, err

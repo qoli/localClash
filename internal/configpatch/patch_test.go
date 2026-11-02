@@ -493,50 +493,58 @@ func TestDraftAndApplyCurrentDraftWritesRegistryAndArtifacts(t *testing.T) {
 }
 
 func TestDraftRejectsReservedCustomSitePolicyGroupName(t *testing.T) {
-	_, err := Draft(context.Background(), DraftOptions{
-		RegistryDir: t.TempDir(),
-		Operations: []Operation{{
-			Op:      "upsert_patch",
-			PatchID: "user.reserved",
-			OrderID: "1000.000000",
-			Overlay: configplan.OverlayIntent{
-				PolicyGroups: []configplan.OverlayPolicyGroupIntent{{
-					ID:    localconfig.CustomProxySitesPolicyGroupName,
-					Mode:  "manual",
-					Exits: []string{"DIRECT"},
+	for _, name := range []string{localconfig.CustomProxySitesPolicyGroupName, localconfig.CustomDirectSitesPolicyGroupName, localconfig.CustomRejectSitesPolicyGroupName} {
+		t.Run(name, func(t *testing.T) {
+			_, err := Draft(context.Background(), DraftOptions{
+				RegistryDir: t.TempDir(),
+				Operations: []Operation{{
+					Op:      "upsert_patch",
+					PatchID: "user.reserved",
+					OrderID: "1000.000000",
+					Overlay: configplan.OverlayIntent{
+						PolicyGroups: []configplan.OverlayPolicyGroupIntent{{
+							ID:    name,
+							Mode:  "manual",
+							Exits: []string{"DIRECT"},
+						}},
+					},
 				}},
-			},
-		}},
-	})
-	if err == nil || !strings.Contains(err.Error(), "reserved_policy_group_name: "+localconfig.CustomProxySitesPolicyGroupName) {
-		t.Fatalf("error = %v, want explicit reserved_policy_group_name", err)
+			})
+			if err == nil || !strings.Contains(err.Error(), "reserved_policy_group_name: "+name) {
+				t.Fatalf("error = %v, want explicit reserved_policy_group_name", err)
+			}
+		})
 	}
 }
 
 func TestApplyRejectsReservedCustomSitePolicyGroupName(t *testing.T) {
-	dir := t.TempDir()
-	registry, err := Load(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = Apply(context.Background(), ApplyOptions{
-		RegistryDir:      dir,
-		BaseRegistryHash: registry.Hash(""),
-		BaseHashes:       map[string]string{"user.reserved": ""},
-		Operations: []Operation{{
-			Op:      "upsert_patch",
-			PatchID: "user.reserved",
-			OrderID: "1000.000000",
-			Overlay: configplan.OverlayIntent{
-				ProxyGroups: []configplan.OverlayProxyGroupIntent{{
-					ID:   localconfig.CustomDirectSitesPolicyGroupName,
-					Mode: "direct",
+	for _, name := range []string{localconfig.CustomProxySitesPolicyGroupName, localconfig.CustomDirectSitesPolicyGroupName, localconfig.CustomRejectSitesPolicyGroupName} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			registry, err := Load(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = Apply(context.Background(), ApplyOptions{
+				RegistryDir:      dir,
+				BaseRegistryHash: registry.Hash(""),
+				BaseHashes:       map[string]string{"user.reserved": ""},
+				Operations: []Operation{{
+					Op:      "upsert_patch",
+					PatchID: "user.reserved",
+					OrderID: "1000.000000",
+					Overlay: configplan.OverlayIntent{
+						ProxyGroups: []configplan.OverlayProxyGroupIntent{{
+							ID:   name,
+							Mode: "direct",
+						}},
+					},
 				}},
-			},
-		}},
-	})
-	if err == nil || !strings.Contains(err.Error(), "reserved_policy_group_name: "+localconfig.CustomDirectSitesPolicyGroupName) {
-		t.Fatalf("error = %v, want explicit reserved_policy_group_name", err)
+			})
+			if err == nil || !strings.Contains(err.Error(), "reserved_policy_group_name: "+name) {
+				t.Fatalf("error = %v, want explicit reserved_policy_group_name", err)
+			}
+		})
 	}
 }
 
