@@ -58,7 +58,7 @@
 
 | 功能 ID | 功能／驗證內容 | 責任／核心範圍 | 最後實測版本；結果；證據 |
 | --- | --- | --- | --- |
-| SITE-ROUTING | **自訂網站分流**：新增、刪除普通域名與萬用字元，設定直連／代理／禁止訪問並重新開頁；三組最後新增優先，刪除後揭露較早決定；禁止訪問群組僅 REJECT。舊兩檔工作區相容讀取，首次成功保存補齊第三檔；模板同步保留三組。保存、生成規則、熱載入及 controller 讀回一致；合法 DomainSuffix 不被誤判回滾；獨立 LAN 請求驗證封鎖與恢復。非法輸入不破壞既有設定。[實作入口](../internal/customsitesapply/transaction.go) | Core；LuCI 提供頁面／共用 | 候選 Core `v0.106-dev-4e35019`／LuCI `0.88-1`；PARTIAL；同一 QEMU 從公開 v0.105／v87 升級，原兩檔 SHA、ID／順序保留；真實網站頁面及獨立 IPv4 LAN 完成代理允許→禁止→更新直連允許→刪直連再禁止→刪禁止恢復代理→刪代理恢復原萬用字元直連，六步 nonce／endpoint hit 均符合預期 [E49](#e49)；模板保留、CLI／rpcd 及回滾限制沿用 E47 原實測版本 [E47](#e47)，完整生命週期／IPv6／雙核心與出口不變矩陣未重跑，其他歷史範圍 [E39](#e39) [E27](#e27) [E05](#e05) |
+| SITE-ROUTING | **自訂網站分流**：新增、刪除普通域名與萬用字元，設定直連／代理／禁止訪問並重新開頁；三組最後新增優先，刪除後揭露較早決定；禁止訪問群組僅 REJECT。舊兩檔工作區相容讀取，首次成功保存補齊第三檔；模板同步保留三組。保存、生成規則、熱載入及 controller 讀回一致；合法 DomainSuffix 不被誤判回滾；獨立 LAN 請求驗證封鎖與恢復。非法輸入不破壞既有設定。[實作入口](../internal/customsitesapply/transaction.go) | Core；LuCI 提供頁面／共用 | 候選 Core `v0.106-dev-4e35019`／LuCI `0.88-1`；PARTIAL；同一 QEMU 從公開 v0.105／v87 升級，原兩檔 SHA、ID／順序保留；真實網站頁面及獨立 IPv4 HTTPS client 完成代理允許→禁止→更新直連允許→刪直連再禁止→刪禁止恢復代理→刪代理恢復原萬用字元直連，六步 nonce／endpoint hit 均符合預期 [E49](#e49)；模板保留、CLI／rpcd 及回滾限制沿用 E47 原實測版本 [E47](#e47)，完整生命週期／UDP／IPv6／雙核心與出口不變矩陣未重跑，其他歷史範圍 [E39](#e39) [E27](#e27) [E05](#e05) |
 | RULE-PACKS | **規則包查詢與材料取得**：搜尋目錄、查看指定規則包、預取及查詢其規則；來源／類型／快取缺口如實顯示，目錄建議出口不當成已啟用設定。[實作入口](../internal/mcp/registry.go) | Core／共用 | v0.1.83／不適用；PASS；目錄搜尋／查看／預取／讀取／查詢、來源型別、快取缺口及建議出口界線 [E05](#e05) |
 | RULE-CUSTOM | **自訂規則與外部規則來源**：建立域名、CIDR、GEOIP 規則及外部 rule-provider 設定，經配置補丁保存並生成；拒絕非法值或無效引用，順序與目標正確。[實作入口](../internal/mcp/registry.go) | Core／共用 | v0.1.83／不適用；PASS；Domain／CIDR／GEOIP／provider 生成、順序與目標、非法值／引用拒絕 [E05](#e05) |
 | PROXY-GROUPS | **代理群組設定**：由精確節點或 selector 建立群組，經補丁保存／修改／移除；查詢解析結果及生成成員正確，builder 預覽不冒充已保存或已載入。[實作入口](../internal/mcp/registry.go) | Core／共用 | v0.1.83／不適用；PASS；精確節點／selector builder、保存／修改／移除、解析成員及預覽界線 [E05](#e05) |
@@ -1637,7 +1637,7 @@ LuCI Takeover 變更提交 `2f26d31`、版本／CI 提交 `21414c3`；受測 0.8
   取得正確 nonce，形成有實際資料面的舊版基線。停舊 runtime 保留 workspace，opkg 正式
   v87→0.88-1，再換候選 Core；兩檔 SHA、ID／sequence 不變，讀取／render 不建立 reject.json。
   候選 render、隔離 config-test、啟動及 LAN nonce 通過；最終仍保留原兩檔 SHA。
-- **真實 ARC 網站頁面＋獨立 LAN 六步通過**：新增代理允許→新增相同域名禁止→更新加入直連允許
+- **真實 ARC 網站頁面＋獨立 IPv4 HTTPS 六步通過**：新增代理允許→新增相同域名禁止→更新加入直連允許
   →刪最新直連再禁止→刪禁止恢復代理→刪代理恢復官方原萬用字元直連。
   四次允許均取得唯一 nonce 且 endpoint 恰有 1 hit；兩次禁止均 TLS 連線被關閉且該 nonce 為 0 hit。
   使用正式表單與熱載入，沒有以 CLI／rpcd 替代頁面變更；controller 只作群組／規則輔助證據。
@@ -1649,18 +1649,26 @@ LuCI Takeover 變更提交 `2f26d31`、版本／CI 提交 `21414c3`；受測 0.8
   0.88 IPK／APK 建置與 23 份安裝檔案逐一對應源碼通過；原生 APK 比較 0.88-r1 高於 0.1.0-r87。
   LuCI [主分支 CI](https://github.com/qoli/localclash-luci/actions/runs/41705593617) 通過，這些不替代功能 oracle。
 - **G99 發布判定：PARTIAL**。選定 Core v0.106 與 LuCI v0.88 配套交付；LuCI 離線 Core pin
-  待正式 v0.106 manifest／SHA 核對後更新。網站真 UI／IPv4 六步與保留工作區升級已有證據；
-  完整生命週期／失敗回滾、IPv6、Smart、精確 DIRECT／代理出口不變、完整核心選擇初始化 UI、
+  已核對正式 v0.106 manifest，固定 SHA `c5b0b9b9…456727`。網站真 UI／IPv4 HTTPS 六步與保留工作區升級已有證據；
+  完整生命週期／失敗回滾、UDP／IPv6、Smart、精確 DIRECT／代理出口不變、完整核心選擇初始化 UI、
   正式 ARM64 runtime，以及實際 GitHub 附件上傳／提交為 NOT_RUN。不宣稱整列能力或其他網路事故已解決。
   E44 的舊 LAN FAIL 保留在原輪次，本輪可用的新環境不改寫該歷史。
-- 測試 router／client 先保留供正式資產版本讀回，發布收尾另記清理；未更動正式路由器程式或配置。
+- **正式產物與收尾**：Core v0.106 指向 `6825c38`、LuCI v0.88 指向 `4fb20ed`，兩個遠端 annotated tag、
+  Release CI 與非 draft／prerelease 狀態均已核對。七項 Core／八項 LuCI 資產與 SHA 全符，普通套件
+  23 份安裝檔案與受測源碼一致；離線包雙架構通過資訊／清單／校驗／僅解包檢查，payload 與正式資產相同。
+  Docker 雙架構正式 Core status 讀回 v0.106，僅作版本核對，不提升 ARM runtime 結果。
+  最終候選 doctor 退出 0、10 checks 均正常；正式 stop 撤回接管後關閉測試 router／client、server、tunnel 和本輪 ARC tab。
+  主代理另核對四個 PID 不存在，兩份保留 overlay 的 qemu-img check 均無錯；未更動正式路由器程式或配置。
 
 證據：[六步原生 UI／LAN 結果](../.runtime/istoreos-acceptance/20261104-release-v0106-v088/functional/raw/native-ui-lan-results.json)、
 [舊版 LAN 基線](../.runtime/istoreos-acceptance/20261104-release-v0106-v088/functional/raw/official-client-oracle.json)、
 [主代理即時讀回](../.runtime/istoreos-acceptance/20261104-release-v0106-v088/primary-live-verification.json)、
 [原始初始化錯誤](../.runtime/istoreos-acceptance/20261104-release-v0106-v088/functional/raw/official-render.json)、
 [源碼與候選包對應](../.runtime/istoreos-acceptance/20261104-release-v0106-v088/candidate-owned-file-correspondence.json)、
-[Go 主機檢查](../.runtime/istoreos-acceptance/20261104-release-v0106-v088/core-host-verification.json)。
+[Go 主機檢查](../.runtime/istoreos-acceptance/20261104-release-v0106-v088/core-host-verification.json)、
+[Core 正式資產](../.runtime/istoreos-acceptance/20261104-release-v0106-v088/core-official-verification.json)、
+[LuCI 正式資產](../.runtime/istoreos-acceptance/20261104-release-v0106-v088/luci-official-verification.json)、
+[主代理清理核對](../.runtime/istoreos-acceptance/20261104-release-v0106-v088/primary-cleanup-verification.json)。
 
 <a id="pending-incidents"></a>
 ## 待核對事故與證據缺口

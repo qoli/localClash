@@ -17,10 +17,11 @@ for each new delivery; `0.99 -> 0.100` is valid. Change size does not introduce
 a third component or automatically increment the major number. Repeating,
 recovering, or announcing the same delivery keeps its chosen version.
 
-- Core migrates `v0.1.104 -> v0.105`; subsequent releases are `v0.106`,
+- Core migrated `v0.1.104 -> v0.105`; subsequent releases are `v0.106`,
   `v0.107`, and so on. `version.go` remains `dev` in source; release builds
   inject the exact tag into the binary and manifest.
-- LuCI's next release migrates `v0.1.0-87 -> v0.88`, then `v0.89`. Set
+- LuCI migrated `v0.1.0-87 -> v0.88`; subsequent releases are `v0.89`,
+  `v0.90`, and so on. Set
   `PKG_VERSION` to the two-part public version and `PKG_RELEASE` to `1` for
   a new delivery. Public tags are `v<PKG_VERSION>`; IPK/APK keep their normal
   package revision suffixes. Do not publish another public release just by

@@ -18,8 +18,59 @@ Core 發佈不一定需要 LuCI package 發佈。已安裝最新 LuCI package �
 
 | 渠道 | 最新版本 | 發佈時間 |
 | --- | --- | --- |
-| localClash Core | [v0.105](https://github.com/qoli/localClash/releases/tag/v0.105) | 2026-10-31 UTC+8 |
-| localclash-luci | [v0.1.0-87](https://github.com/qoli/localclash-luci/releases/tag/v0.1.0-87) | 2026-10-26 UTC+8 |
+| localClash Core | [v0.106](https://github.com/qoli/localClash/releases/tag/v0.106) | 2026-11-04 UTC+8 |
+| localclash-luci | [v0.88](https://github.com/qoli/localclash-luci/releases/tag/v0.88) | 2026-11-04 UTC+8 |
+
+## 2026-11-04
+
+### localClash Core v0.106
+
+Changes:
+
+- 自訂網站新增「禁止訪問」，與代理、直連共用最後新增優先順序；禁止訪問群組只有 REJECT。
+- 既有代理／直連兩檔相容讀取，首次成功保存補齊第三檔；模板同步保留三組使用者決定。
+- CLI／MCP、生成、運行中套用、讀回與回滾同步三組語義。LuCI 網站入口配合 v0.88。
+
+Release:
+
+[localClash v0.106](https://github.com/qoli/localClash/releases/tag/v0.106)
+
+Verification:
+
+- 完整 Go 測試、go vet 與 [Release CI](https://github.com/qoli/localClash/actions/runs/41711730236) 通過。
+  七項公開資產、SHA-256、manifest 與 19 份來源資產核對完成；雙架構版本為 v0.106，
+  `vcs.revision=6825c38`、`vcs.modified=false`。Docker 隔離 status 只驗版本，不代替 ARM runtime 驗收。
+- 同一 iStoreOS x86_64 workspace 從公開 Core v0.105／LuCI v87 升級來源候選，舊清單 SHA 保留；
+  真實頁面與獨立 IPv4 HTTPS client 的六步允許／封鎖／較新規則覆蓋／刪除恢復通過，見 [E49](istoreos-test-features.md#e49)。
+  正式 tag 與候選 Go 源碼相同；整體維持 PARTIAL，完整生命週期／回滾、UDP／IPv6、Smart 及精確出口不變未重跑。
+
+### localclash-luci v0.88
+
+Changes:
+
+- 公開版本由 v0.1.0-87 接續為兩段整數 v0.88；普通套件保留 0.88-1／0.88-r1 修訂後綴。
+- 重設 Takeover 問題報告，保留原始失敗階段、退出碼、錯誤、失敗當時的程式日誌及網路快照；
+  明列採集失敗與近期日誌窗口，保留排障所需地址、端口和接口，只遮蔽憑據及訂閱連結。
+- 概覽頁先「生成问题报告」並完整預覽，再「下载并打开 GitHub」，以完整 .txt 附件提交；
+  移除 GitHub URL 的逐級裁切，RPC 空回覆或失敗改為明確報錯。
+- 網站頁面加入禁止訪問；預設初始化由 Core 取得實際選用的 Mihomo，避免首次 Smart 引導預先取得 Meta。
+- 兩個 iStoreOS 離線包固定 Core v0.106。普通 IPK／APK 不包含 Core，請先更新 Core 再使用三組網站入口。
+
+Release:
+
+[localclash-luci v0.88](https://github.com/qoli/localclash-luci/releases/tag/v0.88)
+
+Verification:
+
+- [主分支 CI](https://github.com/qoli/localclash-luci/actions/runs/41712870321) 與
+  [Release CI](https://github.com/qoli/localclash-luci/actions/runs/41713498514) 通過；八項公開資產／SHA-256 核對完成。
+  IPK／APK 的 23 份安裝檔案與受測源碼一致，公開標籤指向 `4fb20ed`。
+- 雙架構離線包通過 --info／--list／--check／--noexec；內含 Core v0.106、基礎資源及 IPK 與正式資產完全相同。
+  歸檔檢查不代替離線安裝或 ARM runtime 驗收。
+- 保留工作區的 v87→0.88-1 升級、原生網站六步操作及 IPv4 HTTPS 封鎖／恢復通過 [E49](istoreos-test-features.md#e49)。
+  Takeover 三份源碼 SHA 與 [E48](istoreos-test-features.md#e48) 相同，沿用原實測的 90,032-byte
+  預覽／剪貼簿／下載一致性與 RPC 錯誤證據；不提升為新版重新實測。
+- 整體 PARTIAL；完整核心選擇初始化 UI、生命週期／故障矩陣、UDP／IPv6、Smart、ARM64 及真正 GitHub 附件上傳／提交未重跑。
 
 ## 2026-10-31
 
