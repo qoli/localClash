@@ -99,7 +99,7 @@
 | --- | --- | --- | --- |
 | STATUS-INSPECT | **產品狀態查詢**：查配置、元件、訂閱及 runtime facts，未初始化／停止／運行／錯誤狀態與實際資料一致；唯讀不改狀態，版本化 facts 不把宿主接管當 Core 所有。[實作入口](../internal/mcp/registry.go) | Core／共用 | v0.1.83／不適用；PASS；未初始化／停止／運行／錯誤、元件／訂閱／runtime facts、唯讀 hash 與接管責任界線 [E05](#e05) |
 | DIAG-ROUTING | **路由設定解釋**：按域名、服務或出口查詢編譯 intent 的規則、群組及來源；能對照自訂網站及補丁變更，不把 intent 解釋當活躍流量證據。[實作入口](../internal/mcp/registry.go) | Core／共用 | v0.1.83／不適用；PASS；domain／service／exit 查詢、自訂規則／patch provenance 及 intent／流量證據界線 [E05](#e05) |
-| DIAG-HEALTH | **診斷與日誌取得**：執行 doctor／環境檢查、收集產品日誌及讀取受限 controller 日誌／連線；診斷可定位問題、讀取有界且不洩漏秘密，不由缺少連線推論未來路由。[實作入口](../internal/mcp/registry.go) | Core／共用 | v0.1.83／不適用；PASS；doctor、受限日誌／controller／connections、redaction 與空連線推論界線 [E05](#e05) |
+| DIAG-HEALTH | **診斷與日誌取得**：執行 doctor／環境檢查、收集產品日誌及讀取受限 controller 日誌／連線，LuCI 問題報告保留失敗原文、來源與收集缺口；讀取有界且不洩漏憑據，不由缺少連線推論未來路由。[Core 入口](../internal/mcp/registry.go)、[LuCI 入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | Core／LuCI／共用 | Core v0.105／未發布 LuCI `9401caf`＋工作區；PARTIAL（報告子範圍）；真實 rpcd 收集、未初始化／啟動失敗原始結果與缺證據、原生完整預覽／複製／下載、GitHub 附件草稿交接及 RPC 不可用明確報錯通過；約 90 KB 匯出逐位元一致；真正附件上傳／提交、運行中 Mihomo fatal 現場及其他診斷入口 NOT_RUN [E48](#e48)；既有 Core v0.1.83 的 doctor／controller／connections 等驗證保留原版本 [E05](#e05) |
 | MCP-SERVICE | **MCP 服務與工具存取**：連接正確服務並完成協定初始化、工具發現與呼叫；工具結果／錯誤／權限符合入口契約。檔案讀改與 controller 存取受限定，不把 MCP 當任意路徑或任意 URL 代理。[實作入口](../internal/mcp/registry.go) | Core；LuCI 管理 procd／共用 | 未發布 Core `bbbbe8e`（v0.105 同源）／不適用；PARTIAL（HTTP 工具／程序身分）；fresh MCP 的固定 Meta 查詢、render／config-test／doctor 通過；舊程序回報磁碟新 SHA、核心路徑過時及錯誤標記差異已重現；通用檔案介面繞過產品流程由 host fixture 確認；初始化工具重建尚未實作 [E46](#e46)；v0.1.97／LuCI76 協定／網站／停止恢復原測保留 [E27](#e27)，完整歷史矩陣 [E05](#e05) |
 
 <a id="workspace"></a>
@@ -121,7 +121,7 @@
 | LUCI-INSTALL | **OpenWrt 安裝與版本管理**：離線包安裝、重裝、LuCI／Core 安裝更新及支援的舊版交接正常；架構／完整性錯誤拒絕，應保留資料不丟失。Core 自我更新未實作，實際由 helper 管理。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI／共用 | Core v0.1.104／LuCI v0.1.0-87；PARTIAL（IPK 安裝／版本顯示）；同一可拋棄 QEMU 保留工作區安裝候選 v87，guest 版本／檔案 SHA 與原生概覽 LuCI87／Core104 一致 [E42](#e42)；v86 重裝範圍保留原版本 [E39](#e39)，完整離線／APK／ARM runtime 與更新契約未重跑；歷史交接／active task 重裝保留 [E17](#e17) |
 | LUCI-INIT | **初始化引導**：由頁面提供訂閱、模板及核心，完成 Core 呼叫、配置、啟動及接管；重新開頁顯示真實狀態，失敗可定位。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI 編排＋Core／按影響 | v0.1.83／0.1.0-76；PASS；空工作區 Meta／Smart 初始化、訂閱／模板／Core、UI 啟動並接管、重開讀回及可定位失敗後恢復 [E05](#e05) |
 | LUCI-UPDATE | **一鍵更新與資料保留**：從頁面更新，兩個檢查點、來源版本及結果可讀回；重跑／舊版升級保持訂閱、網站順序、偏好及核心選擇；Mihomo 下載失敗時保留運行中程序並停止後續切換，原本停止或未初始化的狀態不擅自啟動。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI 編排＋Core／按影響 | Core v0.1.102 → v0.1.103／LuCI v0.1.0-85；PARTIAL；正式 ARM64 同一一鍵更新 RPC 成功，預設同步／資料保留、官方 Core與Smart活躍SHA、runtime／接管及外部Safari實播通過；初次GUI session過期未啟任務，不記GUI成功，02 HTTP403沿用快取並警告 [E37](#e37)；下載失敗／停止狀態未重跑，歷史 FAIL／缺口 [E19](#e19)；前次GUI及其他範圍 [E34](#e34) [E18](#e18) [E17](#e17) |
-| LUCI-TASKS | **介面與長任務交互**：訂閱、網站、初始化及更新頁面操作與後端一致；日誌、取消、互斥、重新連接與終態可用，無重複交易／無限 busy；依各操作是否支援取消驗證。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI／共用 | Core v0.1.104／LuCI v0.1.0-87；PARTIAL；最終包概覽版本及 light 桌面／dark390 訂閱五行回驗通過 [E42](#e42)；CSS `d9697bd6`／訂閱 JS `aafb5e18` 與原候選相同，灰度及原生四頁沿用原實測 [E40](#e40)，六組五行／縮小下限沿用 [E41](#e41)；主題／日誌及其他操作保留原版本 [E39](#e39)，完整取消／互斥／續接等保留 [E17](#e17) [E05](#e05) |
+| LUCI-TASKS | **介面與長任務交互**：訂閱、網站、初始化及更新頁面操作與後端一致；日誌、取消、互斥、重新連接與終態可用，無重複交易／無限 busy；依各操作是否支援取消驗證。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI／共用 | Core v0.105／未發布 LuCI `9401caf`＋工作區；PARTIAL（問題報告交互）；真實 ARC 桌面／390 寬的報告預覽、複製、下載並開啟 GitHub，以及 rpcd 失敗顯示原始錯誤通過；附件上傳／提交 NOT_RUN [E48](#e48)；其餘子範圍維持 Core v0.1.104／LuCI v0.1.0-87；PARTIAL；最終包概覽版本及 light 桌面／dark390 訂閱五行回驗通過 [E42](#e42)；CSS `d9697bd6`／訂閱 JS `aafb5e18` 與原候選相同，灰度及原生四頁沿用原實測 [E40](#e40)，六組五行／縮小下限沿用 [E41](#e41)；主題／日誌及其他操作保留原版本 [E39](#e39)，完整取消／互斥／續接等保留 [E17](#e17) [E05](#e05) |
 | LUCI-TAKEOVER | **OpenWrt 網路接管**：從正式入口套用及停止防火牆、策略路由與 DNS 接管；獨立 LAN client 的實際 TCP／UDP／DNS 請求按配置到達受控 WAN endpoint，停止後恢復原資料面，且非本產品規則保留。內部 effective、規則或 lease 只能解釋結果。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI／共用 | 未發布 Core `1adf4c2`／LuCI `3536b8b`；PARTIAL；本輪 iStoreOS x86_64 獨立 LAN client 的 UDP／TCP DNS fake-IP 一致，HTTP nonce／UDP echo oracle FAIL，舊版亦重現；停止／恢復資料面未完整覆蓋 [E44](#e44)；正式 ARM64 原版本 Core v0.1.96 `d5506d9`／LuCI v0.1.0-85 `d24de8e`，Smart 的 IPv4 UDP／TCP DNS 接管、Mac 混合大小寫／PTR 與公開 A／AAAA 通過，TCP socket 歸屬證明 53→7874；IPv6 GUA／link-local 通過；正式 LAN 開啟 SLAAC 後原生 Mac ULA UDP／TCP 14/14 與本地 PTR 通過，53→7874 接管及 LAN 回程已確認 [E26](#e26)，取代 [E22](#e22) 的自動來源 ULA FAIL；診斷與 VM 原生 RA 對照見 [E23](#e23)／[E24](#e24)／[E25](#e25)；歷史狀態轉移保留 [E21](#e21) |
 | LUCI-RESTORE | **接管及服務恢復**：開機、WAN 事件、受管程序退出及依賴故障後，按使用者意圖恢復或撤回接管；每次轉移後由獨立 client 重跑相同資料面 oracle，明確停止後不自行重開。內部狀態與 lease 不代表服務可用。[實作入口](../../localclash-luci/openwrt/luci-app-localclash/root/usr/libexec/rpcd/localclash) | LuCI＋Core 生命週期／共用 | Core `9881182`／LuCI `18c3b7c` + 發布前候選（binary `596c797d…4d17`、IPK `e5218681…ac7e`）；PARTIAL；停止 Mihomo 後不清理 firewall，租約到期轉 dnsmasq，正式重新授租後完整 IPv4 UDP／TCP 查詢集成功；到期階段僅四項查詢、受控故障敏感度及 IPv6 尚未完整覆蓋 [E21](#e21)；開機／WAN 歷史範圍保留 [E05](#e05) [E11](#e11) |
 
@@ -1578,6 +1578,44 @@ Core 基線 `bcfec32e`＋本輪工作區，binary 版本 `v0.105-reject-dev`，S
 [active 交易](../.runtime/istoreos-acceptance/custom-sites-reject-20261101/raw/candidate-active-reveal-and-add.txt)、
 [模板保留](../.runtime/istoreos-acceptance/custom-sites-reject-20261101/raw/candidate-template-sync.txt)、
 [主代理清理核對](../.runtime/istoreos-acceptance/custom-sites-reject-20261101/primary-cleanup-review.json)。
+
+<a id="e48"></a>
+### E48
+
+2026-11-03，重設 Takeover 診斷與 GitHub 上報，選測 DIAG-HEALTH、LUCI-TASKS 的報告子範圍。
+Core 使用公開 v0.105；LuCI 為未發布的 `9401caf`＋本輪工作區，report schema 2 不改動 Core facts schema 1。
+
+- GitHub #6／#8 的診斷逐欄等同空 RPC 回覆經舊版產生器補出的預設值；#11 則走 URL 壓縮分支，
+  只留下最後一條事件、四行快照與一條系統日誌。舊 snapshot 關鍵字過濾也會刪除原始 stderr，
+  checks 物件被當成陣列而漏報失敗。這些缺失不能用來認定舊 issue 的網路根因。
+- 新流程保留原始命令／錯誤與狀態、完整接管事件、任務／helper 日誌、版本／環境，以及
+  明列缺失／省略行數的近期程式日誌。失敗結果和當時的 runtime／Mihomo 日誌另存，不受後續
+  hotplug 或清理覆蓋。公開報告保留地址、端口和接口，只遮蔽訂閱連結與認證憑據。
+- 本輪建立獨立 iStoreOS 24.10.8 2026073111 x86_64 clone，安裝公開 Core v0.105／資產及
+  LuCI v87 包，再同步版本擁有候選檔；未配置訂閱、未啟動成功的 Mihomo 或網路接管。
+  真實正式啟動入口失敗於缺少 lc-mihomo-meta；報告保留 runtime_start、退出碼 1、
+  command_failed、完整缺檔路徑，以及失敗當時的 runtime status／Mihomo 缺檔證據。
+- ARC 現有 CDP 的正式 LuCI 頁面完成預覽、複製及「下載並開啟 GitHub」。
+  同一份預覽、剪貼簿與下載檔均為 90,032 UTF-8 bytes，逐位元一致，
+  SHA256 `cb8daba5…4744aaf`。穩定桌面及 390×844 modal 可用，無水平溢出。
+  真實移除本輪 helper 的負向測試保留 JSON-RPC -32000 Object not found，未生成假空報告；已恢復。
+- 真實 GitHub 草稿貼入 85,096 字後明確拒絕超過 65,536 字的正文；因此主流程採完整 .txt 附件，
+  短草稿只放描述欄位與上傳指引。**真正附件上傳／Submit 未執行**，沒有發布或修改既有 issue。
+- 最終 source／guest helper `0550e7cf…9055f4`、report.js `76e9a012…c7dad3`、
+  overview.js `3fdc95e9…b7afa` 相符。UI 匯出使用相同最終 JS 與 helper `b917393d` 的共用路徑；
+  增補 restart 失敗留證後另驗最終 helper 真 ubus／穩定預覽。主代理獨立核對源碼 SHA、
+  真實失敗結果、375 行快照及匯出 SHA；配置、策略路由、stateless nft 與 takeover markers 前後相同。
+- 主機 8 套 UI／報告、26 套 rpcd、2 套 hotplug 共 36 套回歸及 IPK／APK 建置通過。
+  超長事件、完整 stderr、物件 checks、憑據遮罩、複製失敗與 popup blocked、失敗時日誌快照、
+  restart 原始錯誤留存屬主機回歸；不當成真實 Mihomo fatal／restart 功能驗收。
+  Core doctor／controller、ARM64、成功運行中的日誌、接管資料面與其他交互未重跑，整列保持 PARTIAL。
+- 本輪 VM 已停止，保留 overlay 的 qemu-img check 無錯；本輪測試頁籤已關閉，未修改正式路由器。
+
+證據：[本輪功能驗收](../.runtime/istoreos-acceptance/20261103-takeover-report/functional-summary.md)、
+[完整匯出與 SHA](../.runtime/istoreos-acceptance/20261103-takeover-report/raw/final-export-summary.json)、
+[GitHub 正文限制](../.runtime/istoreos-acceptance/20261103-takeover-report/raw/github-draft-paste-r2.json)、
+[主代理真實讀回](../.runtime/istoreos-acceptance/20261103-takeover-report/primary-live-readback.json)、
+[主機回歸](../.runtime/istoreos-acceptance/20261103-takeover-report/host-regressions-final.json)。
 
 <a id="pending-incidents"></a>
 ## 待核對事故與證據缺口
