@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generate and optionally post a localClash Telegram channel update.
 
-The script reads docs/changelog.md, extracts release blocks newer than
+The script reads the supplied release notes, extracts release blocks newer than
 telegram/broadcast-state.json, writes the generated update body to
 telegram/changelog.md, then combines telegram/top.md + telegram/changelog.md
 for previewing or posting to Telegram.
@@ -372,7 +372,12 @@ def post_to_telegram(token: str, chat_id: str, message: str, image: Path | None,
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Generate or post a localClash Telegram channel update.")
     repo_root = Path(__file__).resolve().parents[1]
-    parser.add_argument("--changelog", type=Path, default=repo_root / "docs/changelog.md")
+    parser.add_argument(
+        "--changelog",
+        type=Path,
+        required=True,
+        help="Release notes with dated Core/LuCI release blocks.",
+    )
     parser.add_argument("--top", type=Path, default=repo_root / "telegram/top.md")
     parser.add_argument("--output", type=Path, default=repo_root / "telegram/changelog.md")
     parser.add_argument("--state", type=Path, default=repo_root / DEFAULT_STATE_RELATIVE_PATH)

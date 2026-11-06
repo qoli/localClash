@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate the X.com changelog card from docs/changelog.md."""
+"""Generate the X.com changelog card from supplied release notes."""
 
 from __future__ import annotations
 
@@ -128,7 +128,7 @@ def parse_latest_versions(markdown: str) -> tuple[str, str]:
         elif line.startswith("| localclash-luci |"):
             luci = extract_version_from_table_line(line)
     if not core or not luci:
-        raise ScriptError("Cannot parse latest Core/LuCI versions from docs/changelog.md.")
+        raise ScriptError("Release notes must contain latest Core and LuCI version rows.")
     return core, luci
 
 
@@ -662,7 +662,12 @@ def render_png(html_path: Path, output: Path, cdp_url: str) -> None:
 def parse_args() -> argparse.Namespace:
     repo_root = Path(__file__).resolve().parents[1]
     parser = argparse.ArgumentParser(description="Generate a localClash X.com release changelog card.")
-    parser.add_argument("--changelog", type=Path, default=repo_root / "docs/changelog.md")
+    parser.add_argument(
+        "--changelog",
+        type=Path,
+        required=True,
+        help="Release notes with current Core/LuCI version rows and dated release blocks.",
+    )
     parser.add_argument("--html", type=Path, default=repo_root / "telegram/out" / DEFAULT_HTML_NAME)
     parser.add_argument("--png", type=Path, default=repo_root / "telegram/out" / DEFAULT_PNG_NAME)
     parser.add_argument("--cdp-url", default=DEFAULT_CDP_URL)

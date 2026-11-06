@@ -1,4 +1,4 @@
 interface:
   display_name: "localClash Release Broadcast"
   short_description: "Write changelogs and Telegram update posts"
-  default_prompt: "Use $localclash-release-broadcast to update the localClash changelog and prepare a Telegram channel announcement."
+  default_prompt: "Use $localclash-release-broadcast to verify the localClash release and prepare a Telegram channel announcement."

@@ -1,8 +1,8 @@
 # Repository Guidelines
 
-## Project Structure & Module Organization
+## Local Artifacts
 
-`localClash` is a Go module for managing a local Mihomo runtime through CLI and MCP surfaces. The root `main.go` owns command routing. Feature code lives under `internal/`, grouped by responsibility: `mcp/` for MCP registry/server behavior, `appinit/` for shared bootstrap state, `configrender/` and `configplan/` for generated configs, `rules/` for rule-source adapters and packs, `doctor/` for diagnostics, and download/runtime helpers in `coredownload/`, `subdownload/`, `dashboard/`, and `corerun/`. Repository docs live in `docs/`; static policy-template inputs are in `policy-templates/` and static rule-source inputs are in `rule-sources/`. Treat `.runtime/`, `generated/`, `bin/`, `subscription*.gob`, and `localclash-subscriptions.json` as local artifacts or secrets, not source.
+Treat `.runtime/`, `generated/`, `bin/`, `subscription*.gob`, and `localclash-subscriptions.json` as local artifacts or secrets, not source.
 
 ## LuCI Project Relationship
 
@@ -40,10 +40,9 @@ Recent commits use short imperative subjects such as `Add MCP config plan render
 Use commands available directly in the current shell. For debugging, inspect relevant logs, config state, diagnostics, or MCP responses before changing code unless the root cause is already directly evident. For browser automation, prefer the existing ARC CDP endpoint at `http://localhost:9222` after a quick availability check.
 
 For iStoreOS test planning or release acceptance, start with
-[the feature table](docs/istoreos-test-features.md) and
 [the test Skill](.codex/skills/localclash-istoreos-test/SKILL.md).
-Track each feature's last tested version and select tests by change impact;
-do not treat a release as an instruction to rerun the full feature table.
+Select tests by change impact. Keep results with the evidence for the versions
+actually tested.
 
 ## Durable Policy Constraints
 
@@ -56,7 +55,7 @@ independent of template patches. Template reset must preserve that layer.
 Validate configs through the isolated product config-test path; do not run
 Mihomo validation against the live runtime directory or copy its cache.db.
 
-Use code, schemas, templates, and workflows for implementation facts. Keep user
-entry points in README, test method in the test Skill, actual test history in
-the feature table, and release operations in the release Skill. Documentation
-cleanup alone must not promote historical tests to a newer PASS.
+Use code, schemas, templates, and workflows for implementation facts, published
+releases for release facts, and run evidence for test results. Keep README
+limited to user entry points and use the Skills for test and release procedures.
+Do not recreate a parallel changelog or feature table.
