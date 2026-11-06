@@ -18,13 +18,9 @@
       {
         "id": "viutv-playback-hosts",
         "target": "📺 ViuTV",
-        "reason": "Confirmed ViuTV site, live API, observed CDN and DRM wrapper. Existing Viu packs also include Viu.com and omit the CDN/license hosts.",
+        "reason": "Keep the site, live API, observed CDN and DRM wrapper in one matching rule so Smart shares its selection key. Preserve the scoped hosts; exclude Viu.com and unrelated now.com/nowe.com hosts.",
         "rules": [
-          {"type": "domain_suffix", "value": "viu.tv"},
-          {"type": "domain", "value": "api.viu.now.com"},
-          {"type": "domain", "value": "cdn01r.now.com"},
-          {"type": "domain", "value": "cdn01.now.com"},
-          {"type": "domain", "value": "fwp.nowe.com"}
+          {"type": "domain_regex", "value": "^(([^.]+\\.)*viu\\.tv|api\\.viu\\.now\\.com|cdn01r\\.now\\.com|cdn01\\.now\\.com|fwp\\.nowe\\.com)$"}
         ]
       }
     ]

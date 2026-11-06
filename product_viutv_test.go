@@ -19,7 +19,7 @@ func TestRunProductDefaultTemplateAddsViuTVWithoutOrderCollision(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, mode := range []string{"fresh", "reapply_pre_viutv", "sync_pre_viutv", "sync_shared_smart_viutv", "sync_dedicated_viutv"} {
+	for _, mode := range []string{"fresh", "reapply_pre_viutv", "sync_pre_viutv", "sync_shared_smart_viutv", "sync_dedicated_viutv", "sync_split_rules_viutv"} {
 		t.Run(mode, func(t *testing.T) {
 			dir := t.TempDir()
 			t.Setenv("LOCALCLASH_WORKDIR", dir)
@@ -75,9 +75,9 @@ func TestRunProductDefaultTemplateAddsViuTVWithoutOrderCollision(t *testing.T) {
 				if err := json.Unmarshal(currentManifest, &manifest); err != nil {
 					t.Fatal(err)
 				}
-				hasViu := mode == "sync_shared_smart_viutv" || mode == "sync_dedicated_viutv"
+				hasViu := mode == "sync_shared_smart_viutv" || mode == "sync_dedicated_viutv" || mode == "sync_split_rules_viutv"
 				if hasViu {
-					// Reproduce the v0.1.102/v0.1.103 service definitions through
+					// Reproduce the v0.1.102/v0.1.103/v0.1.104 service definitions through
 					// the formal import path, then synchronize their replacement.
 					var oldViu policytemplate.PatchFile
 					if err := json.Unmarshal(currentViu, &oldViu); err != nil {
@@ -86,6 +86,9 @@ func TestRunProductDefaultTemplateAddsViuTVWithoutOrderCollision(t *testing.T) {
 					delete(oldViu.Config.ProxyGroups, "🇭🇰 ViuTV 香港节点")
 					group := oldViu.Config.PolicyGroups["📺 ViuTV"]
 					group.Exits = []string{"🇭🇰 香港节点", "REJECT"}
+					if mode == "sync_split_rules_viutv" {
+						group.Exits = []string{"🇭🇰 香港节点", "DIRECT"}
+					}
 					if mode == "sync_dedicated_viutv" {
 						oldViu.Config.ProxyGroups = map[string]localconfig.ProxyGroup{
 							"🇭🇰 ViuTV 香港节点": {
@@ -98,8 +101,14 @@ func TestRunProductDefaultTemplateAddsViuTVWithoutOrderCollision(t *testing.T) {
 					oldViu.Config.PolicyGroups["📺 ViuTV"] = group
 					for i := range oldViu.Config.CustomRules {
 						var oldRules []localconfig.CustomRuleLine
-						for _, rule := range oldViu.Config.CustomRules[i].Rules {
-							if mode == "sync_dedicated_viutv" || rule.Value != "cdn01.now.com" {
+						for _, rule := range []localconfig.CustomRuleLine{
+							{Type: "domain_suffix", Value: "viu.tv"},
+							{Type: "domain", Value: "api.viu.now.com"},
+							{Type: "domain", Value: "cdn01r.now.com"},
+							{Type: "domain", Value: "cdn01.now.com"},
+							{Type: "domain", Value: "fwp.nowe.com"},
+						} {
+							if mode != "sync_shared_smart_viutv" || rule.Value != "cdn01.now.com" {
 								oldRules = append(oldRules, rule)
 							}
 						}
@@ -174,7 +183,7 @@ func TestRunProductDefaultTemplateAddsViuTVWithoutOrderCollision(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			apply(mode == "sync_pre_viutv" || mode == "sync_shared_smart_viutv" || mode == "sync_dedicated_viutv")
+			apply(mode == "sync_pre_viutv" || mode == "sync_shared_smart_viutv" || mode == "sync_dedicated_viutv" || mode == "sync_split_rules_viutv")
 			registry, err := configpatch.Load(registryDir)
 			if err != nil {
 				t.Fatal(err)
@@ -221,14 +230,7 @@ func TestRunProductDefaultTemplateAddsViuTVWithoutOrderCollision(t *testing.T) {
 			for index, rule := range intent.CustomRules {
 				if rule.ID == "viutv-playback-hosts" {
 					viuIndex = index
-					want := []localconfig.CustomRuleLine{
-						{Type: "domain_suffix", Value: "viu.tv"},
-						{Type: "domain", Value: "api.viu.now.com"},
-						{Type: "domain", Value: "cdn01r.now.com"},
-						{Type: "domain", Value: "cdn01.now.com"},
-						{Type: "domain", Value: "fwp.nowe.com"},
-					}
-					if rule.Target != "📺 ViuTV" || !reflect.DeepEqual(rule.Rules, want) {
+					if rule.Target != "📺 ViuTV" || len(rule.Rules) != 1 || rule.Rules[0].Type != "domain_regex" {
 						t.Fatalf("compiled ViuTV coverage = %+v", rule)
 					}
 				}

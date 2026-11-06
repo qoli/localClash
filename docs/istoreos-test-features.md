@@ -1670,6 +1670,47 @@ LuCI Takeover 變更提交 `2f26d31`、版本／CI 提交 `21414c3`；受測 0.8
 [LuCI 正式資產](../.runtime/istoreos-acceptance/20261104-release-v0106-v088/luci-official-verification.json)、
 [主代理清理核對](../.runtime/istoreos-acceptance/20261104-release-v0106-v088/primary-cleanup-verification.json)。
 
+<a id="e50"></a>
+### E50
+
+2026-11-05，未發布的 ViuTV 單一規則候選（checkout `7127e3b` 加本輪模板與測試修正），
+在正式 ARM64 路由器與 Safari 27.2／OrbStack 網頁完成服務範圍回驗。Smart 仍為
+`alpha-smart-ab65458`；沒有替換核心或修改共享香港 GEO 的成員、模式、選擇。
+本輪為 CONFIG-RENDER／CONFIG-VALIDATION／CONFIG-APPLY 的 ViuTV 補充，維持 **PARTIAL**；
+不把服務播放回歸升格為整列能力或新版公開資產驗收。
+
+- 起始 fresh API 成功、CDN403；精確連線顯示原共享 Smart 對 API 選 HK02、CDN 選 HK01。
+  `📺 ViuTV` 預設分組原本存在。v0.1.104 的獨立香港子組移除符合當時使用者的 GEO／DIRECT
+  要求；不能把子組移除說成業務分組遺失，也不能把 v0.1.103 的實播成功沿用到共享配置。
+- 排查初期錯誤建立的 `user.viutv-stable-exit.v1` 已經正常移除，原預設先恢復。
+  最終只原地更新 enabled `default.viutv.v1`：五個 Domain／DomainSuffix 規則改為同範圍的
+  一條錨定 DomainRegex，讓現有 Smart 的 ruleType＋payload 選路 key 相同。
+  `📺 ViuTV → 🇭🇰 香港节点／DIRECT`、排序 `0650.000000`、其他補丁與群組均保留；沒有包裝 GEO。
+- guarded MCP `sed_file` 同步同一份已安裝來源模板，與本機 SHA／bytes 相同：
+  `0ce5124f74db35d544cde0f46867fe43ca783395ebbf750b8f6ef883c41bbfb1`。
+  isolated validation／最終路徑 attestation 通過，配置 SHA
+  `d4f6cd0ac55f78211da9b953ca58e68d766312b0a74b8360ba019d48622fb511`；hot reload204，PID17954不變。
+  loaded 一條 DomainRegex、全部群組 type／members／current choice 相同，其餘72條規則語意相同。
+- 僅重啟 OrbStack `viutv-live` 清除舊 IP 綁定 URL。fresh container99／96 probe 的 API、主清單、
+  variant 均200／exit0；兩台 API 和所有 cdn01r／cdn01 fresh sockets 命中同一規則，
+  經原共享香港 GEO 選同一 HK02 leaf。節點名稱本身不作香港地理證明。
+- 指定 HTTPS 頁的新 Safari 視窗中，兩台各取得1250-byte憑證、`skd`、真實 SPC／CKC1／1，
+  無播放器錯誤。96 時間183.10→215.45秒／影格6493→8101；99時間55.69→67.98秒／影格299→999。
+  96 的 API／憑證／兩 CDN／授權鏈完整捕捉；99窗口晚於初始API／授權，只宣稱CDN連線取證，
+  其授權與解碼由原生播放器計數證明。02:19:02停止播放後關閉本輪視窗；原視窗及服務保留。
+- fresh 完整 `go test ./...`、Meta／Smart有無香港節點的渲染、正反主機匹配，以及
+  從 v0.1.104 五規則預設經正式 CLI 同步的回歸通過；靜態／單元檢查不替代上述原生實播。
+  沒有重新驗收完整模板／minimal／Meta真實播放、整個配置生命週期或失敗回滾契約。
+- Smart既有600秒快取與健康重選保留，不是永久固定出口；長閒置、節點故障、URL到期重開
+  及長時間續期尚未驗。來源與現場補丁已同步，但 checkout 修正未提交／發布；下次發布
+  應包含此修正，舊官方資產重新安裝仍可能還原五規則來源。
+
+安全證據位於 sibling macOSAgentBot 的 `.runtime/viutv-live/cdn403-20261105/`：
+`source-verification.json`、`unified-live-repair.json`、`unified-container-routing.json`、
+`safari-shared-geo-acceptance.json`、`final-shared-geo-routing-acceptance.json`。
+歷史要求與本輪誤操作／撤回分別保存在 `default-change-session-provenance.json`、
+`routing-rollback-executed.json`；維護入口為該專案 `viutv_live/README.md`。
+
 <a id="pending-incidents"></a>
 ## 待核對事故與證據缺口
 

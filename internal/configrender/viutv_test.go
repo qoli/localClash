@@ -3,6 +3,8 @@ package configrender
 import (
 	"path/filepath"
 	"reflect"
+	"regexp"
+	"strings"
 	"testing"
 
 	"localclash/internal/localconfig"
@@ -51,15 +53,24 @@ func TestRenderDefaultViuTVHongKongRouting(t *testing.T) {
 			}
 			// The suffix covers the site, api.viu.tv and static.viu.tv certificate;
 			// shared now.com/nowe.com and the separate Viu.com service stay outside.
-			wantRules := []localconfig.CustomRuleLine{
-				{Type: "domain_suffix", Value: "viu.tv"},
-				{Type: "domain", Value: "api.viu.now.com"},
-				{Type: "domain", Value: "cdn01r.now.com"},
-				{Type: "domain", Value: "cdn01.now.com"},
-				{Type: "domain", Value: "fwp.nowe.com"},
+			// Smart uses the matching rule's type and payload as its selection
+			// key. All playback hosts must match one rule, including after sync.
+			if len(viuRules) != 1 || viuRules[0].Type != "domain_regex" {
+				t.Fatalf("ViuTV must share one Smart selection key, got rules %+v", viuRules)
 			}
-			if !reflect.DeepEqual(viuRules, wantRules) {
-				t.Fatalf("ViuTV endpoint coverage = %+v, want %+v", viuRules, wantRules)
+			matcher, err := regexp.Compile("(?i)" + viuRules[0].Value)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, host := range []string{"viu.tv", "api.viu.tv", "static.viu.tv", "a.b.viu.tv", "api.viu.now.com", "cdn01r.now.com", "cdn01.now.com", "fwp.nowe.com", "API.VIU.NOW.COM"} {
+				if !matcher.MatchString(host) {
+					t.Errorf("ViuTV playback host %q does not share the service rule", host)
+				}
+			}
+			for _, host := range []string{"viu.com", "www.viu.com", "now.com", "nowe.com", "cdn02.now.com", "api.viu.now.com.example", "evilviu.tv", "viu.tv.example", "other.nowe.com", "notfwp.nowe.com"} {
+				if matcher.MatchString(host) {
+					t.Errorf("ViuTV rule captures unrelated host %q", host)
+				}
 			}
 
 			// Keep the real template's groups, custom rules and tail targets;
@@ -121,10 +132,16 @@ func TestRenderDefaultViuTVHongKongRouting(t *testing.T) {
 				t.Fatal("empty optional Hong Kong exit must remain omitted")
 			}
 			renderedRules := testStringSlice(rendered["rules"])
-			for _, want := range []string{
-				"DOMAIN-SUFFIX,viu.tv,📺 ViuTV", "DOMAIN,api.viu.now.com,📺 ViuTV",
-				"DOMAIN,cdn01r.now.com,📺 ViuTV", "DOMAIN,cdn01.now.com,📺 ViuTV", "DOMAIN,fwp.nowe.com,📺 ViuTV",
-			} {
+			serviceRuleCount := 0
+			for _, rule := range renderedRules {
+				if strings.HasSuffix(rule, ",📺 ViuTV") {
+					serviceRuleCount++
+				}
+			}
+			if serviceRuleCount != 1 {
+				t.Fatalf("rendered ViuTV has %d selection keys, want one", serviceRuleCount)
+			}
+			for _, want := range []string{"DOMAIN-REGEX," + viuRules[0].Value + ",📺 ViuTV"} {
 				index := indexOf(renderedRules, want)
 				for _, later := range []string{"GEOIP,cloudflare,☁️ Cloudflare,no-resolve", "GEOSITE,category-entertainment,🎞 媒体", "GEOSITE,geolocation-!cn,🌍 非中國網站", "GEOSITE,cn,DIRECT"} {
 					if other := indexOf(renderedRules, later); index < len(LocalBaselineRuleLines()) || other <= index {

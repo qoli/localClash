@@ -204,14 +204,20 @@ The full default template includes `📺 ViuTV` for ViuTV 99/96, with
 `🇭🇰 香港节点` and `DIRECT` as its two exit options. It defaults to the existing
 Hong Kong GEO group and follows that group's selection behavior (Meta
 `url-test`, Smart `smart`). Without matching Hong Kong nodes, this service
-exposes only `DIRECT`. The dedicated rules cover `viu.tv` and its
+exposes only `DIRECT`. The service rule covers `viu.tv` and its
 subdomains, `api.viu.now.com`, `cdn01r.now.com`, `cdn01.now.com`, and `fwp.nowe.com`
-before broad media routing. They do not capture Viu.com or all of now.com.
+before broad media routing. One anchored `DOMAIN-REGEX` covers these hosts so
+Smart uses the same rule-based selection key for API, CDN and license traffic;
+separate domain rules would create separate keys even with the same policy group.
+The rule does not capture Viu.com or unrelated now.com/nowe.com hosts.
 The reusable Viu packs include Viu.com and omit the observed CDN/license
 hosts, so this policy uses scoped endpoint rules. Region selectors match node
-names; node names alone do not establish exit geography. Historical router and
-Safari 99/96 FairPlay playback results from 2026-10-25 used the previous
-dedicated selector; see [the measured scope and limits](docs/istoreos-test-features.md#e37).
+names; node names alone do not establish exit geography. The single-rule candidate
+passed shared-GEO Safari 99/96 FairPlay playback on 2026-11-05; see the
+[measured scope and limits](docs/istoreos-test-features.md#e50). Smart's existing
+cache expiry and health-driven reselection remain active; this does not pin a
+leaf permanently. The 2026-10-25 results used the previous dedicated selector
+and remain separate [historical evidence](docs/istoreos-test-features.md#e37).
 The builtin router profile skips destination override for exactly
 `api.viu.now.com`: its DNS-mapped IP must reach the selected proxy unchanged
 because the API issues an IP-bound playback URL. It does not pin a CDN/API IP
