@@ -223,7 +223,7 @@ func TestRunProductDefaultTemplateAddsViuTVWithoutOrderCollision(t *testing.T) {
 			if _, exists := intent.ProxyGroups["🇭🇰 ViuTV 香港节点"]; exists {
 				t.Fatal("compiled intent retained the dedicated ViuTV Hong Kong selector")
 			}
-			if got := intent.PolicyGroups["📺 ViuTV"].Exits; !reflect.DeepEqual(got, []string{"🇭🇰 香港节点", "DIRECT"}) {
+			if got := intent.PolicyGroups["📺 ViuTV"].Exits; !reflect.DeepEqual(got, []string{"🇭🇰 香港节点", "🎯 手动选择", "DIRECT"}) {
 				t.Fatalf("compiled ViuTV exits = %+v", got)
 			}
 			viuIndex, cloudflareIndex := -1, -1

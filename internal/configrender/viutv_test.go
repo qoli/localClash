@@ -21,10 +21,10 @@ func TestRenderDefaultViuTVHongKongRouting(t *testing.T) {
 		wantExits []string
 		wantType  string
 	}{
-		{"meta_hong_kong_available", runtimeprofile.CoreMeta, []string{"HK fixture 01", "HK fixture 02", "JP fixture"}, []string{"🇭🇰 香港节点", "DIRECT"}, "url-test"},
-		{"meta_hong_kong_absent", runtimeprofile.CoreMeta, []string{"JP fixture"}, []string{"DIRECT"}, ""},
-		{"smart_hong_kong_available", runtimeprofile.CoreSmart, []string{"HK fixture 01", "HK fixture 02", "JP fixture"}, []string{"🇭🇰 香港节点", "DIRECT"}, "smart"},
-		{"smart_hong_kong_absent", runtimeprofile.CoreSmart, []string{"JP fixture"}, []string{"DIRECT"}, ""},
+		{"meta_hong_kong_available", runtimeprofile.CoreMeta, []string{"HK fixture 01", "HK fixture 02", "JP fixture"}, []string{"🇭🇰 香港节点", "🎯 手动选择", "DIRECT"}, "url-test"},
+		{"meta_hong_kong_absent", runtimeprofile.CoreMeta, []string{"JP fixture"}, []string{"🎯 手动选择", "DIRECT"}, ""},
+		{"smart_hong_kong_available", runtimeprofile.CoreSmart, []string{"HK fixture 01", "HK fixture 02", "JP fixture"}, []string{"🇭🇰 香港节点", "🎯 手动选择", "DIRECT"}, "smart"},
+		{"smart_hong_kong_absent", runtimeprofile.CoreSmart, []string{"JP fixture"}, []string{"🎯 手动选择", "DIRECT"}, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			config, _, err := policytemplate.Build(filepath.Join("..", "..", policytemplate.DefaultDir), policytemplate.TemplateLocalClashDefault)
@@ -32,8 +32,8 @@ func TestRenderDefaultViuTVHongKongRouting(t *testing.T) {
 				t.Fatal(err)
 			}
 			group := config.PolicyGroups["📺 ViuTV"]
-			if group.Mode != "manual" || !reflect.DeepEqual(group.Exits, []string{"🇭🇰 香港节点", "DIRECT"}) {
-				t.Fatalf("ViuTV policy = %+v, want shared Hong Kong and direct exits", group)
+			if group.Mode != "manual" || !reflect.DeepEqual(group.Exits, []string{"🇭🇰 香港节点", "🎯 手动选择", "DIRECT"}) {
+				t.Fatalf("ViuTV policy = %+v, want shared Hong Kong, manual selection, and DIRECT in order", group)
 			}
 			sharedHK := config.ProxyGroups["🇭🇰 香港节点"]
 			if sharedHK.Mode != "auto" || !sharedHK.Optional {

@@ -1,6 +1,6 @@
 {
   "id": "default.viutv.v1",
-  "description": "Route ViuTV 99/96 through the shared Hong Kong exit or DIRECT before broad media routing; keep Viu.com outside this service policy.",
+  "description": "Route ViuTV 99/96 through the shared Hong Kong exit, manual selection, or DIRECT before broad media routing. Keep Viu.com outside this service policy.",
   "config": {
     "version": 3,
     "policy_groups": {
@@ -8,9 +8,10 @@
         "mode": "manual",
         "exits": [
           "🇭🇰 香港节点",
+          "🎯 手动选择",
           "DIRECT"
         ],
-        "reason": "ViuTV 99/96 預設沿用既有香港 GEO 出口的選擇行為，並提供直連選項。",
+        "reason": "ViuTV 99/96 預設使用香港 GEO 出口，並提供手動選擇和直連選項。",
         "boundary": "business_to_exit_layer"
       }
     },
