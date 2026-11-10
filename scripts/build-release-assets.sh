@@ -78,6 +78,12 @@ cleanup() {
 }
 trap cleanup EXIT
 mkdir -p "$geox_tmp/.runtime/mihomo"
+for goarch in amd64 arm64; do
+	worker_dir="$geox_tmp/bin/linux-$goarch"
+	mkdir -p "$worker_dir"
+	GOOS=linux GOARCH="$goarch" CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" \
+		-o "$worker_dir/localclash-pools" ./cmd/localclash-pools
+done
 fetch_asset "$geox_tmp/.runtime/mihomo/Country.mmdb" \
 	$(raw_github_mirrors "https://raw.githubusercontent.com/alecthw/mmdb_china_ip_list/release/Country.mmdb") \
 	"https://testingcf.jsdelivr.net/gh/alecthw/mmdb_china_ip_list@release/Country.mmdb"
@@ -90,7 +96,7 @@ fetch_asset "$geox_tmp/.runtime/mihomo/geosite.dat" \
 fetch_asset "$geox_tmp/.runtime/mihomo/ASN.mmdb" \
 	$(github_release_mirrors "https://github.com/xishang0128/geoip/releases/latest/download/GeoLite2-ASN.mmdb") \
 	"https://testingcf.jsdelivr.net/gh/xishang0128/geoip@release/GeoLite2-ASN.mmdb"
-COPYFILE_DISABLE=1 tar -czf "$dist/$base_assets" policy-templates rule-sources -C "$geox_tmp" .runtime
+COPYFILE_DISABLE=1 tar -czf "$dist/$base_assets" policy-templates rule-sources -C "$geox_tmp" .runtime bin
 (cd "$dist" && sha256sum "$base_assets" > "$base_assets.sha256")
 
 created_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -137,6 +143,8 @@ cat > "$dist/localclash-release-manifest.json" <<EOF
     "contents": [
       "policy-templates/",
       "rule-sources/",
+      "bin/linux-amd64/localclash-pools",
+      "bin/linux-arm64/localclash-pools",
       ".runtime/mihomo/Country.mmdb",
       ".runtime/mihomo/geoip.dat",
       ".runtime/mihomo/geosite.dat",

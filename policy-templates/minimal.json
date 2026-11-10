@@ -19,11 +19,7 @@
       },
       "⚡ 自动选择": {
         "mode": "auto",
-        "match": {
-          "type": "name_regex",
-          "pattern": ".*",
-          "min": 1
-        },
+        "capability": "network.doh.qualified.v1",
         "smart_priority": [
           {"label": "HK", "pattern": "(🇭🇰|香港|(^|[^A-Za-z])HK([^A-Za-z]|$)|Hong.?Kong)", "factor": 1.25},
           {"label": "JP", "pattern": "(🇯🇵|日本|(^|[^A-Za-z])JP([^A-Za-z]|$)|Japan)", "factor": 1.2},
@@ -32,8 +28,8 @@
           {"label": "US", "pattern": "(🇺🇸|美国|美國|(^|[^A-Za-z])US([^A-Za-z]|$)|United.?States|America)", "factor": 1.05},
           {"label": "Other", "pattern": ".*", "factor": 1}
         ],
-        "reason": "面向 Dashboard 的免维护自动出口，使用完整可选订阅节点。",
-        "boundary": "all_selectable_subscription_nodes"
+        "reason": "由独立探测进程验证海外 DoH，使用最多 50 个合格订阅节点。",
+        "boundary": "qualified_doh_pool"
       }
     },
     "policy_groups": {

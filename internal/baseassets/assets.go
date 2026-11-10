@@ -13,7 +13,10 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
+
+	"localclash/internal/poolcontract"
 )
 
 const (
@@ -137,6 +140,14 @@ func Status(outputDir string) StatusResult {
 			result.Missing = append(result.Missing, rel(outputDir, path))
 		}
 	}
+	if runtime.GOOS == "linux" && (runtime.GOARCH == "amd64" || runtime.GOARCH == "arm64") {
+		worker := poolcontract.WorkerPath(outputDir)
+		info, err := os.Stat(worker)
+		if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0o111 == 0 {
+			result.Missing = append(result.Missing, rel(outputDir, worker))
+		}
+	}
+
 	if !hasJSONFile(result.RuleSourceDir) {
 		result.Missing = append(result.Missing, "rule-sources/*.json")
 	}

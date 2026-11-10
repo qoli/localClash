@@ -2,8 +2,6 @@ package chatgptavailable
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,6 +12,8 @@ import (
 	"time"
 
 	"localclash/internal/capability"
+
+	"localclash/internal/proxyprobe"
 )
 
 const (
@@ -307,7 +307,7 @@ func buildCandidates(proxies []map[string]any) ([]Candidate, map[string][]string
 		if name == "" {
 			return nil, nil, fmt.Errorf("ChatGPT capability candidate %d has no name", i)
 		}
-		fingerprint, err := proxyFingerprint(proxy)
+		fingerprint, err := proxyprobe.Fingerprint(proxy)
 		if err != nil {
 			return nil, nil, fmt.Errorf("fingerprint ChatGPT capability candidate %q: %w", name, err)
 		}
@@ -331,17 +331,6 @@ func buildCandidates(proxies []map[string]any) ([]Candidate, map[string][]string
 		candidates = append(candidates, representatives[fingerprint])
 	}
 	return candidates, byFingerprint, nil
-}
-
-func proxyFingerprint(proxy map[string]any) (string, error) {
-	copy := cloneMap(proxy)
-	delete(copy, "name")
-	data, err := json.Marshal(copy)
-	if err != nil {
-		return "", err
-	}
-	sum := sha256.Sum256(data)
-	return hex.EncodeToString(sum[:]), nil
 }
 
 func readSnapshot(path string) (Snapshot, bool, error) {

@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -18,6 +19,10 @@ import (
 
 	"gopkg.in/yaml.v3"
 )
+
+// One mixed listener uses TCP and UDP sockets. Batch probes below the router's
+// 1024-descriptor limit while leaving room for their outbound connections.
+const BatchSize = 256
 
 type Options struct {
 	CorePath       string
@@ -81,13 +86,36 @@ func Start(ctx context.Context, proxies []map[string]any, candidateNames []strin
 	if err := writeConfig(configPath, proxies, candidateNames, ports, options.ListenerPrefix); err != nil {
 		return nil, err
 	}
-	process, err := startCore(ctx, options.CorePath, runtimeDir, configPath, ports)
+	probeCore := filepath.Join(runtimeDir, "mihomo-probe")
+	if err := copyCore(options.CorePath, probeCore); err != nil {
+		return nil, fmt.Errorf("stage isolated Mihomo proxy probe: %w", err)
+	}
+	process, err := startCore(ctx, probeCore, runtimeDir, configPath, ports)
 	if err != nil {
 		return nil, err
 	}
 	process.runtimeDir = runtimeDir
 	cleanup = false
 	return &Session{ports: ports, process: process}, nil
+}
+
+func copyCore(source, target string) error {
+	if resolved, err := filepath.EvalSymlinks(source); err == nil {
+		if err := os.Link(resolved, target); err == nil {
+			return nil
+		}
+	}
+	in, err := os.Open(source)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.OpenFile(target, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o700)
+	if err != nil {
+		return err
+	}
+	_, err = io.Copy(out, in)
+	return errors.Join(err, out.Close())
 }
 
 func (s *Session) Len() int {
@@ -112,6 +140,7 @@ func (s *Session) HTTPClient(index int, timeout time.Duration) (*http.Client, er
 	}
 	return &http.Client{
 		Transport: transport,
+		Timeout:   timeout,
 		CheckRedirect: func(*http.Request, []*http.Request) error {
 			return http.ErrUseLastResponse
 		},

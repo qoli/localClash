@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"localclash/internal/localconfig"
+	"localclash/internal/poolcontract"
 	"localclash/internal/rules"
 	"localclash/internal/smartpolicy"
 
@@ -52,20 +53,20 @@ func TestBuildLocalClashDefaultTemplate(t *testing.T) {
 	}
 }
 
-func TestRealMinimalTemplateUsesAllSelectableNodesWithNarrowSmartPriority(t *testing.T) {
+func TestRealMinimalTemplateUsesDoHQualifiedPoolWithNarrowSmartPriority(t *testing.T) {
 	config, _, err := Build(filepath.Join("..", "..", DefaultDir), TemplateMinimal)
 	if err != nil {
 		t.Fatal(err)
 	}
 	auto := config.ProxyGroups["⚡ 自动选择"]
-	if auto.Reason != "面向 Dashboard 的免维护自动出口，使用完整可选订阅节点。" {
+	if auto.Reason != "由独立探测进程验证海外 DoH，使用最多 50 个合格订阅节点。" {
 		t.Fatalf("minimal automatic reason = %q", auto.Reason)
 	}
-	if auto.Boundary != "all_selectable_subscription_nodes" {
+	if auto.Boundary != "qualified_doh_pool" {
 		t.Fatalf("minimal automatic boundary = %q", auto.Boundary)
 	}
-	if auto.Match == nil || auto.Match.Pattern != ".*" || auto.Match.Min != 1 || auto.Capability != "" {
-		t.Fatalf("minimal automatic selector = %+v, want required all-node match", auto)
+	if auto.Match != nil || auto.Capability != poolcontract.AutoCapability {
+		t.Fatalf("minimal automatic selector = %+v, want required qualified pool", auto)
 	}
 	wantPriority := []smartpolicy.Rule{
 		{Label: "HK", Pattern: `(🇭🇰|香港|(^|[^A-Za-z])HK([^A-Za-z]|$)|Hong.?Kong)`, Factor: 1.25},
@@ -250,13 +251,13 @@ func TestRealLocalClashDefaultTemplateIsLayered(t *testing.T) {
 		{Label: "US", Pattern: `(🇺🇸|美国|美國|(^|[^A-Za-z])US([^A-Za-z]|$)|United.?States|America)`, Factor: 1.05},
 		{Label: "Other", Pattern: `.*`, Factor: 1},
 	}
-	if auto.Mode != "auto" || auto.Capability != "" || auto.Match == nil || auto.Match.Pattern != ".*" || auto.Match.Min != 1 || !reflect.DeepEqual(auto.SmartPriority, wantAutoPriority) {
-		t.Fatalf("default template auto selector = %+v, want all-node Smart selector", auto)
+	if auto.Mode != "auto" || auto.Capability != poolcontract.AutoCapability || auto.Match != nil || !reflect.DeepEqual(auto.SmartPriority, wantAutoPriority) {
+		t.Fatalf("default template auto selector = %+v, want qualified pool with Smart priority", auto)
 	}
-	if auto.Reason != "面向 Dashboard 的免维护自动出口，使用完整可选订阅节点。" {
+	if auto.Reason != "由独立探测进程验证海外 DoH，使用最多 50 个合格订阅节点。" {
 		t.Fatalf("default template automatic reason = %q", auto.Reason)
 	}
-	if auto.Boundary != "all_selectable_subscription_nodes" {
+	if auto.Boundary != "qualified_doh_pool" {
 		t.Fatalf("default template automatic boundary = %q", auto.Boundary)
 	}
 	if !config.ProxyGroups["🇭🇰 香港节点"].Optional {

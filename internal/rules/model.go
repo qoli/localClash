@@ -12,8 +12,10 @@ import (
 	"sort"
 	"strings"
 
-	"localclash/internal/smartpolicy"
 	"unicode"
+
+	"localclash/internal/poolcontract"
+	"localclash/internal/smartpolicy"
 
 	"gopkg.in/yaml.v3"
 )
@@ -100,13 +102,14 @@ type Selection struct {
 }
 
 type ProxyGroup struct {
-	Nodes         []string           `json:"nodes"`
-	SmartPriority []smartpolicy.Rule `json:"smart_priority,omitempty"`
-	Auto          bool               `json:"auto"`
-	Manual        bool               `json:"manual"`
-	Smart         bool               `json:"smart"`
-	Direct        bool               `json:"direct"`
-	Optional      bool               `json:"optional,omitempty"`
+	Nodes          []string           `json:"nodes"`
+	PoolCapability string             `json:"pool_capability,omitempty"`
+	SmartPriority  []smartpolicy.Rule `json:"smart_priority,omitempty"`
+	Auto           bool               `json:"auto"`
+	Manual         bool               `json:"manual"`
+	Smart          bool               `json:"smart"`
+	Direct         bool               `json:"direct"`
+	Optional       bool               `json:"optional,omitempty"`
 }
 
 type PolicyGroup struct {
@@ -703,7 +706,11 @@ func prepareTargets(selection Selection, proxyNames []string) (preparedTargets, 
 		available[name] = true
 	}
 	for groupName, group := range selection.ProxyGroups {
-		if len(group.Nodes) == 0 && !group.Direct && !group.Optional {
+		if group.PoolCapability != "" {
+			if _, ok := poolcontract.Lookup(group.PoolCapability); !ok || group.Direct || len(group.Nodes) != 0 {
+				return preparedTargets{}, fmt.Errorf("proxy group %q has an invalid managed pool", groupName)
+			}
+		} else if len(group.Nodes) == 0 && !group.Direct && !group.Optional {
 			return preparedTargets{}, fmt.Errorf("proxy group %q has no nodes", groupName)
 		}
 		enabledModes := 0
@@ -893,6 +900,25 @@ func materializeProxyGroups(used map[string]bool, targets preparedTargets) ([]ma
 	var baseManualChoices []string
 	for _, name := range names {
 		group := targets.proxyGroups[name]
+		if pool, ok := poolcontract.Lookup(group.PoolCapability); ok {
+			groupType := "select"
+			if group.Auto {
+				groupType = "url-test"
+			}
+			if group.Smart {
+				groupType = "smart"
+			}
+			rendered := map[string]any{"name": name, "type": groupType, "use": []string{pool.Provider}, "empty-fallback": "REJECT"}
+			if group.Auto {
+				rendered["url"] = defaultAutoHealthCheckURL
+				rendered["interval"] = defaultAutoHealthCheckIntervalSeconds
+			}
+			groups = append(groups, rendered)
+			if group.Optional {
+				baseManualChoices = append(baseManualChoices, name)
+			}
+			continue
+		}
 		candidates := candidateProxies(group)
 		if len(candidates) == 0 && group.Optional && !group.Direct {
 			continue
@@ -1054,7 +1080,7 @@ func candidatePolicyExits(group PolicyGroup, targets preparedTargets) ([]string,
 		}
 		if kind == targetKindProxyGroup {
 			proxyGroup := targets.proxyGroups[exit]
-			if proxyGroup.Optional && !proxyGroup.Direct && len(candidateProxies(proxyGroup)) == 0 {
+			if proxyGroup.Optional && !proxyGroup.Direct && proxyGroup.PoolCapability == "" && len(candidateProxies(proxyGroup)) == 0 {
 				continue
 			}
 		}

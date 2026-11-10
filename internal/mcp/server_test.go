@@ -19,9 +19,11 @@ import (
 	"time"
 
 	"localclash/internal/appinit"
-	"localclash/internal/chatgptavailable"
+	"localclash/internal/capability"
 	"localclash/internal/localconfig"
 	"localclash/internal/mihomotest"
+	"localclash/internal/poolcontract"
+	"localclash/internal/poollaunch"
 	"localclash/internal/rules"
 	"localclash/internal/runtimeprofile"
 
@@ -1193,7 +1195,7 @@ func stubMihomoCandidateTest(t *testing.T, server *Server) {
 	}
 }
 
-func TestToolsCallSubscriptionsRefreshRebuildsChatGPTAvailable(t *testing.T) {
+func TestToolsCallSubscriptionsRefreshPreparesQualifiedProviders(t *testing.T) {
 	dir := t.TempDir()
 	subscriptionServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`proxies:
@@ -1216,7 +1218,6 @@ func TestToolsCallSubscriptionsRefreshRebuildsChatGPTAvailable(t *testing.T) {
 	intent := filepath.Join(dir, "localclash-intent.json")
 	selection := filepath.Join(dir, "localclash-packs.gob")
 	generated := filepath.Join(dir, ".runtime", "mihomo", "config.yaml")
-	capabilityRoot := filepath.Join(dir, ".runtime", "capabilities")
 	rulesCache := filepath.Join(dir, ".runtime", "rules", "packs")
 	writeMCPPackIndex(t, rulesCache, rules.PackCache{
 		Version:    1,
@@ -1236,7 +1237,7 @@ sources:
   "proxy_groups": {
     "⚡ 自动选择": {
       "mode": "smart",
-      "match": {"type": "name_regex", "pattern": ".*", "min": 1}
+      "capability": "network.doh.qualified.v1"
     },
     "ChatGPT-available": {
       "mode": "smart",
@@ -1268,25 +1269,21 @@ sources:
 		GeneratedConfig:     generated,
 		CorePath:            filepath.Join(dir, "unused-fake-core"),
 	}})
-	server.rebuildChatGPT = func(_ context.Context, proxies []map[string]any, eligible []string, _, runtimeParent, snapshotPath, previousSnapshotPath string) (chatgptavailable.Result, error) {
-		if len(proxies) != 2 || proxies[0]["name"] != "US 01" || proxies[1]["name"] != "JP 01" {
-			t.Fatalf("probe proxies = %+v", proxies)
+	server.preparePools = func(_ context.Context, opts poollaunch.Options, config localconfig.Config, doc map[string]any) ([]capability.Result, error) {
+		input, err := poolcontract.FromSubscription(doc)
+		if err != nil || len(input.Proxies) != 2 || input.Proxies[0]["name"] != "US 01" || input.Proxies[1]["name"] != "JP 01" {
+			t.Fatalf("pool worker input = %+v, error = %v", input, err)
 		}
-		if !reflect.DeepEqual(eligible, []string{"US 01", "JP 01"}) {
-			t.Fatalf("ChatGPT eligible nodes = %+v, want all selectable nodes", eligible)
+		if opts.Workspace != dir || opts.Runtime != filepath.Dir(generated) {
+			t.Fatalf("pool worker paths = %+v", opts)
 		}
-		if runtimeParent != capabilityRoot || filepath.Dir(snapshotPath) == capabilityRoot || previousSnapshotPath != filepath.Join(capabilityRoot, "chatgpt-available.json") {
-			t.Fatalf("capability paths = runtime %q candidate %q previous %q", runtimeParent, snapshotPath, previousSnapshotPath)
+		if config.ProxyGroups["ChatGPT-available"].Capability != poolcontract.ChatGPTCapability ||
+			config.ProxyGroups["⚡ 自动选择"].Capability != poolcontract.AutoCapability {
+			t.Fatalf("worker pool configuration = %+v", config.ProxyGroups)
 		}
-		writeMCPFile(t, snapshotPath, fmt.Sprintf(`{"version":8,"profile":%q,"updated_at":"2026-08-15T00:00:00Z","qualified":["JP 01"],"nodes":{}}`, chatgptavailable.ProfileID))
-		return chatgptavailable.Result{
-			Profile:          chatgptavailable.ProfileID,
-			SnapshotPath:     snapshotPath,
-			Candidates:       2,
-			Probed:           2,
-			Qualified:        []string{"JP 01"},
-			QualifiedCount:   1,
-			UnavailableCount: 1,
+		return []capability.Result{
+			{Profile: poolcontract.ChatGPTCapability, Qualified: []string{"JP 01"}, QualifiedCount: 1},
+			{Profile: poolcontract.AutoCapability, Qualified: []string{"US 01"}, QualifiedCount: 1},
 		}, nil
 	}
 	server.testMihomoConfig = func(_ context.Context, opts mihomotest.TestOptions) (mihomotest.TestResult, error) {
@@ -1320,82 +1317,25 @@ sources:
 		t.Fatalf("localClash impact = %+v", impact)
 	}
 	capabilities := impact["capabilities"].([]any)
-	if len(capabilities) != 1 || capabilities[0].(map[string]any)["qualified_count"] != float64(1) {
+	if len(capabilities) != 2 || capabilities[0].(map[string]any)["qualified_count"] != float64(1) {
 		t.Fatalf("capabilities = %+v", capabilities)
 	}
 	resolvedIntent := readMCPFile(t, intent)
-	if !strings.Contains(resolvedIntent, `"capability": "openai.chatgpt.oauth_statsig.v1"`) || !strings.Contains(resolvedIntent, `"JP 01"`) {
+	if !strings.Contains(resolvedIntent, `"capability": "openai.chatgpt.oauth_statsig.v1"`) {
 		t.Fatalf("resolved intent missing capability selection: %s", resolvedIntent)
 	}
 	config := readMCPYAML(t, generated)
 	group := findMCPProxyGroup(t, config, "ChatGPT-available")
-	if got := group["proxies"]; !reflect.DeepEqual(got, []any{"JP 01"}) {
-		t.Fatalf("ChatGPT-available proxies = %+v", got)
+	if got := group["use"]; !reflect.DeepEqual(got, []any{"localclash-qualified-chatgpt"}) {
+		t.Fatalf("ChatGPT-available provider = %+v", got)
 	}
 	chatGPT := findMCPProxyGroup(t, config, "ChatGPT")
 	if got := chatGPT["proxies"]; !reflect.DeepEqual(got, []any{"ChatGPT-available", "⚡ 自动选择", "DIRECT"}) {
 		t.Fatalf("ChatGPT policy proxies = %+v", got)
 	}
 	auto := findMCPProxyGroup(t, config, "⚡ 自动选择")
-	if got := auto["proxies"]; !reflect.DeepEqual(got, []any{"US 01", "JP 01"}) {
-		t.Fatalf("automatic proxies = %+v", got)
-	}
-}
-
-func TestSubscriptionsRefreshBuildsChatGPTFromAllSelectableNodes(t *testing.T) {
-	dir := t.TempDir()
-	intent := filepath.Join(dir, "localclash-intent.json")
-	generated := filepath.Join(dir, ".runtime", "mihomo", "config.yaml")
-	capabilityRoot := filepath.Join(dir, ".runtime", "capabilities")
-	rulesCache := filepath.Join(dir, ".runtime", "rules", "packs")
-	writeMCPPackIndex(t, rulesCache, rules.PackCache{Version: 1, Source: "blackmatrix7", Adapter: "blackmatrix7", Renderable: true, Packs: []rules.Pack{mcpBlackmatrixPack("Unused", "⚡ 自动选择")}})
-	writeMCPFile(t, intent, `{
-  "version": 6,
-  "proxy_groups": {
-    "⚡ 自动选择": {"mode": "smart", "match": {"type": "name_regex", "pattern": ".*", "min": 1}},
-    "ChatGPT-available": {"mode": "smart", "capability": "openai.chatgpt.oauth_statsig.v1", "optional": true}
-  }
-}`)
-	proxies := []any{
-		map[string]any{"name": "dialer helper", "type": "ss", "server": "entry.example", "port": 443, "cipher": "aes-128-gcm", "password": "secret"},
-		map[string]any{"name": "HK exit", "type": "ss", "server": "hk.example", "port": 443, "cipher": "aes-128-gcm", "password": "secret", "dialer-proxy": "dialer helper"},
-		map[string]any{"name": "US 01", "type": "trojan", "server": "us.example", "port": 443, "password": "secret"},
-	}
-	subscriptionDoc := map[string]any{"proxies": proxies}
-
-	server := NewServer()
-	stubMihomoCandidateTest(t, server)
-	server.rebuildChatGPT = func(_ context.Context, _ []map[string]any, eligible []string, _, _, candidate, _ string) (chatgptavailable.Result, error) {
-		if !reflect.DeepEqual(eligible, []string{"HK exit", "US 01"}) {
-			t.Fatalf("ChatGPT eligible nodes = %v, want every selectable subscription proxy", eligible)
-		}
-		writeMCPFile(t, candidate, fmt.Sprintf(`{"version":8,"profile":%q,"updated_at":"new","qualified":["US 01"],"nodes":{}}`, chatgptavailable.ProfileID))
-		return chatgptavailable.Result{Profile: chatgptavailable.ProfileID, SnapshotPath: candidate, Qualified: []string{"US 01"}, QualifiedCount: 1}, nil
-	}
-	impact := server.evaluateLocalClashAfterRefresh(
-		context.Background(), intent, filepath.Join(dir, "selection.gob"), filepath.Join(dir, "subscription.gob"),
-		filepath.Join(dir, "subscriptions.json"), filepath.Join(dir, "subscriptions"), rulesCache,
-		filepath.Join(dir, "runtime.json"), generated, filepath.Join(dir, "mihomo"), capabilityRoot,
-		[]localconfig.SubscriptionNode{{Name: "dialer helper"}, {Name: "HK exit"}, {Name: "US 01"}},
-		subscriptionDoc,
-	)
-	if impact.State != "auto_applied" || !impact.CapabilityPromoted || len(impact.Capabilities) != 1 || impact.Capabilities[0].Profile != chatgptavailable.ProfileID {
-		t.Fatalf("impact = %+v, want independently promoted ChatGPT capability", impact)
-	}
-	if got, err := chatgptavailable.LoadQualified(filepath.Join(capabilityRoot, "chatgpt-available.json")); err != nil || !reflect.DeepEqual(got, []string{"US 01"}) {
-		t.Fatalf("ChatGPT snapshot = %v error=%v", got, err)
-	}
-	if _, err := os.Stat(filepath.Join(capabilityRoot, "auto-available.json")); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("removed g204 snapshot should not be created: %v", err)
-	}
-}
-
-func TestValidateCapabilityProfilesAcceptsChatGPTAndRejectsRemovedG204(t *testing.T) {
-	if err := validateCapabilityProfiles([]string{chatgptavailable.ProfileID}); err != nil {
-		t.Fatalf("ChatGPT capability should remain supported: %v", err)
-	}
-	if err := validateCapabilityProfiles([]string{"network.connectivity.g204.v1"}); err == nil || !strings.Contains(err.Error(), "unsupported proxy-group capability") {
-		t.Fatalf("removed g204 capability error = %v, want explicit unsupported capability failure", err)
+	if got := auto["use"]; !reflect.DeepEqual(got, []any{"localclash-qualified-auto"}) {
+		t.Fatalf("automatic provider = %+v", got)
 	}
 }
 
@@ -1419,7 +1359,7 @@ func TestSubscriptionsRefreshCandidateConfigFailurePreservesPromotedConfig(t *te
 	impact := server.evaluateLocalClashAfterRefresh(
 		context.Background(), intent, filepath.Join(dir, "selection.gob"), filepath.Join(dir, "subscription.gob"),
 		filepath.Join(dir, "subscriptions.json"), filepath.Join(dir, "subscriptions"), rulesCache,
-		filepath.Join(dir, "runtime.json"), generated, filepath.Join(dir, "mihomo"), filepath.Join(dir, "capabilities"),
+		filepath.Join(dir, "runtime.json"), generated, filepath.Join(dir, "mihomo"),
 		[]localconfig.SubscriptionNode{{Name: "US 01"}},
 		map[string]any{"proxies": []any{map[string]any{"name": "US 01", "type": "ss", "server": "us.example.com", "port": 443, "cipher": "aes-128-gcm", "password": "secret"}}},
 	)

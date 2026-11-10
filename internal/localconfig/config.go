@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"localclash/internal/poolcontract"
 	"localclash/internal/rules"
 	"localclash/internal/smartpolicy"
 )
@@ -423,6 +424,9 @@ func Resolve(opts ResolveOptions) (Resolved, error) {
 			}
 		}
 		var selected []string
+		var poolCapability string
+		capabilityID := strings.TrimSpace(group.Capability)
+		_, explicitlyResolved := opts.CapabilityNodes[capabilityID]
 		var err error
 		finishGroup := stage("resolve_proxy_group", map[string]any{
 			"group_id":     id,
@@ -441,6 +445,15 @@ func Resolve(opts ResolveOptions) (Resolved, error) {
 				finish(err, nil)
 				return Resolved{}, err
 			}
+		} else if pool, ok := poolcontract.Lookup(capabilityID); ok && !explicitlyResolved {
+			if group.Match != nil || len(group.Nodes) > 0 {
+				err := fmt.Errorf("proxy group %q capability cannot be combined with match or nodes", id)
+				finishGroup(err, nil)
+				finish(err, nil)
+				return Resolved{}, err
+			}
+			poolCapability = pool.Capability
+			finishGroup(nil, map[string]any{"provider": pool.Provider})
 		} else {
 			var currentStats proxyGroupResolveStats
 			selected, err = resolveProxyGroupMeasured(id, group, nodes, opts.CapabilityNodes, &currentStats)
@@ -458,7 +471,7 @@ func Resolve(opts ResolveOptions) (Resolved, error) {
 		group.Mode = mode
 		group.SelectedNodes = selected
 		resolvedConfig.ProxyGroups[id] = group
-		ruleGroup := rules.ProxyGroup{Nodes: selected, SmartPriority: smartpolicy.Clone(group.SmartPriority), Optional: group.Optional}
+		ruleGroup := rules.ProxyGroup{Nodes: selected, PoolCapability: poolCapability, SmartPriority: smartpolicy.Clone(group.SmartPriority), Optional: group.Optional}
 		switch mode {
 		case "manual":
 			ruleGroup.Manual = true

@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"localclash/internal/poolcontract"
 	"localclash/internal/smartpolicy"
 )
 
@@ -92,7 +93,7 @@ func TestResolveRequiredCapabilityRejectsEmptyQualification(t *testing.T) {
 	}
 }
 
-func TestResolveCapabilityUsesPersistedSelectionOutsideRefresh(t *testing.T) {
+func TestResolveManagedPoolUsesProviderWithLegacySelectedNodes(t *testing.T) {
 	config := Config{
 		ProxyGroups: map[string]ProxyGroup{
 			"ChatGPT-available": {
@@ -107,15 +108,16 @@ func TestResolveCapabilityUsesPersistedSelectionOutsideRefresh(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := resolved.Selection.ProxyGroups["ChatGPT-available"].Nodes; !reflect.DeepEqual(got, []string{"US 01"}) {
-		t.Fatalf("selection nodes = %+v", got)
+	group := resolved.Selection.ProxyGroups["ChatGPT-available"]
+	if group.PoolCapability != poolcontract.ChatGPTCapability || len(group.Nodes) != 0 {
+		t.Fatalf("selection group = %+v, want provider-backed qualification", group)
 	}
 }
 
-func TestResolveCapabilityRequiresFreshOrPersistedSelection(t *testing.T) {
+func TestResolveUnknownCapabilityRequiresFreshOrPersistedSelection(t *testing.T) {
 	_, err := Resolve(ResolveOptions{
 		Config: Config{ProxyGroups: map[string]ProxyGroup{
-			"ChatGPT-available": {Mode: "smart", Capability: "openai.chatgpt.oauth_statsig.v1", Optional: true},
+			"Legacy": {Mode: "smart", Capability: "network.connectivity.g204.v1", Optional: true},
 		}},
 		SubscriptionNodes: []SubscriptionNode{{Name: "US 01"}},
 	})

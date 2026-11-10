@@ -16,6 +16,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"localclash/internal/poolcontract"
 )
 
 func TestExtractIncompleteAssetPreservesExistingFile(t *testing.T) {
@@ -196,8 +198,14 @@ func testArchive(t *testing.T) []byte {
 		".runtime/mihomo/geosite.dat":                   "geosite",
 		".runtime/mihomo/ASN.mmdb":                      "asn",
 	}
+	worker := poolcontract.WorkerPath(".")
+	files[worker] = "pool worker"
 	for name, body := range files {
-		if err := tw.WriteHeader(&tar.Header{Name: name, Mode: 0o644, Size: int64(len(body))}); err != nil {
+		mode := int64(0o644)
+		if name == worker {
+			mode = 0o755
+		}
+		if err := tw.WriteHeader(&tar.Header{Name: name, Mode: mode, Size: int64(len(body))}); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := tw.Write([]byte(body)); err != nil {

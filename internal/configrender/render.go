@@ -13,6 +13,7 @@ import (
 
 	"localclash/internal/configmeta"
 	"localclash/internal/customsites"
+	"localclash/internal/poolcontract"
 	rulespkg "localclash/internal/rules"
 	"localclash/internal/runtimeprofile"
 	"localclash/internal/smartpolicy"
@@ -190,6 +191,10 @@ func Render(opts Options) (Result, error) {
 	}
 	dynamic, err := buildDynamicConfig(proxies, fragment, fallbackTarget)
 	if err != nil {
+		finish(err, nil)
+		return Result{}, err
+	}
+	if err := addPoolProviders(dynamic, source, selection); err != nil {
 		finish(err, nil)
 		return Result{}, err
 	}
@@ -704,6 +709,36 @@ func buildDynamicConfig(proxies []any, fragment *rulespkg.Fragment, fallbackTarg
 
 	config["rules"] = rules
 	return config, nil
+}
+
+func addPoolProviders(dynamic, source map[string]any, selection *rulespkg.Selection) error {
+	if selection == nil {
+		return nil
+	}
+	var pools []poolcontract.Pool
+	for _, group := range dynamic["proxy-groups"].([]map[string]any) {
+		if pool, ok := poolcontract.Lookup(selection.ProxyGroups[stringValue(group["name"])].PoolCapability); ok {
+			pools = append(pools, pool)
+		}
+	}
+	if len(pools) == 0 {
+		return nil
+	}
+	input, err := poolcontract.FromSubscription(source)
+	if err != nil {
+		return err
+	}
+	providers := make(map[string]any, len(pools))
+	for _, pool := range pools {
+		providers[pool.Provider] = map[string]any{
+			"type":    "file",
+			"path":    "./" + filepath.ToSlash(pool.Path(input.Revision)),
+			"payload": []map[string]any{poolcontract.Reject()},
+		}
+	}
+	dynamic["proxy-providers"] = providers
+	dynamic[poolcontract.RevisionKey] = input.Revision
+	return nil
 }
 
 func baseManualChoiceSet(fragment *rulespkg.Fragment) map[string]bool {

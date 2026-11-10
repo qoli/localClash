@@ -16,8 +16,6 @@ import (
 	"localclash/internal/appinit"
 	"localclash/internal/baseassets"
 	"localclash/internal/capability"
-	"localclash/internal/capabilitystore"
-	"localclash/internal/chatgptavailable"
 	"localclash/internal/configinspect"
 	"localclash/internal/configpatch"
 	"localclash/internal/configrender"
@@ -31,6 +29,7 @@ import (
 	"localclash/internal/materialtxn"
 	"localclash/internal/mihomotest"
 	"localclash/internal/policytemplate"
+	"localclash/internal/poollaunch"
 	"localclash/internal/reset"
 	"localclash/internal/runtimefacts"
 	"localclash/internal/runtimeprofile"
@@ -100,7 +99,7 @@ type codedProductError struct {
 
 var downloadCore = coredownload.Download
 var downloadDashboard = dashboard.Download
-var rebuildProductChatGPT = chatgptavailable.RebuildSelectedCandidateWithMihomo
+var preparePoolWorker = poollaunch.Prepare
 
 func (err codedProductError) Error() string {
 	return err.message
@@ -286,77 +285,15 @@ func refreshProductCapabilities(ctx context.Context, state appinit.RuntimeState,
 		}
 		return nil, err
 	}
-	profiles := configuredProductCapabilityProfiles(config)
-	if len(profiles) == 0 {
-		return []capability.Result{}, nil
-	}
-	if err := validateSupportedCapabilityProfiles(profiles); err != nil {
-		return nil, err
-	}
-	proxies, err := productSubscriptionProxyMaps(subscriptionDoc)
-	if err != nil {
-		return nil, err
-	}
-	capabilityRoot := productCapabilityRoot(state)
-	if err := os.MkdirAll(capabilityRoot, 0o755); err != nil {
-		return nil, fmt.Errorf("create capability transaction root: %w", err)
-	}
-	transactionDir, err := os.MkdirTemp(capabilityRoot, ".capability-refresh-*")
-	if err != nil {
-		return nil, fmt.Errorf("create capability transaction: %w", err)
-	}
-	defer os.RemoveAll(transactionDir)
-	results := make([]capability.Result, 0, len(profiles))
-	promotions := make([]capabilitystore.Item, 0, len(profiles))
-	chatGPTEligible, err := chatgptavailable.SelectableProxyNames(proxies)
-	if err != nil {
-		return nil, err
-	}
-	for _, profile := range profiles {
-		started := time.Now()
-		startedFields := map[string]any{"profile": profile, "proxy_count": len(proxies)}
-		if profile == chatgptavailable.ProfileID {
-			startedFields["input_profile"] = "subscription.selectable"
-			startedFields["input_candidates"] = len(chatGPTEligible)
-		}
-		writeProductCapabilityStage(logOutput, "started", started, nil, startedFields)
-		var result capability.Result
-		filename := productCapabilitySnapshotFilename(profile)
-		promotedPath := filepath.Join(capabilityRoot, filename)
-		candidatePath := filepath.Join(transactionDir, filename)
-		switch profile {
-		case chatgptavailable.ProfileID:
-			result, err = rebuildProductChatGPT(ctx, proxies, chatGPTEligible, normalizeCorePathForState(state, state.Paths.CorePath), capabilityRoot, candidatePath, promotedPath)
-		}
-		fields := map[string]any{"profile": profile, "proxy_count": len(proxies)}
-		if err == nil {
-			fields["candidates"] = result.Candidates
-			fields["probed"] = result.Probed
-			fields["deduplicated"] = result.DeduplicatedCount
-			fields["helper_excluded"] = result.HelperExcludedCount
-			fields["qualified"] = result.QualifiedCount
-			fields["observed_qualified"] = result.ObservedQualifiedCount
-			fields["retained"] = result.RetainedCount
-			fields["unavailable"] = result.UnavailableCount
-		}
-		writeProductCapabilityStage(logOutput, "done", started, err, fields)
-		if err != nil {
-			return nil, fmt.Errorf("refresh capability %q: %w", profile, err)
-		}
-		validationProfile := profile
-		promotions = append(promotions, capabilitystore.Item{
-			ID: profile, Candidate: candidatePath, Promoted: promotedPath,
-			Validate: func(path string) error { return validateProductCapabilitySnapshot(validationProfile, path) },
-		})
-		result.SnapshotPath = promotedPath
-		results = append(results, result)
-	}
-	if len(promotions) > 0 {
-		if _, err := capabilitystore.Promote(promotions, transactionDir); err != nil {
-			return nil, err
-		}
-	}
-	return results, nil
+	started := time.Now()
+	writeProductCapabilityStage(logOutput, "started", started, nil, nil)
+	results, err := preparePoolWorker(ctx, poollaunch.Options{
+		Workspace: productWorkspaceRoot(state),
+		Core:      normalizeCorePathForState(state, state.Paths.CorePath),
+		Runtime:   state.Paths.MihomoRuntimeDir,
+	}, config, subscriptionDoc)
+	writeProductCapabilityStage(logOutput, "done", started, err, map[string]any{"prepared_pools": len(results)})
+	return results, err
 }
 
 func writeProductCapabilityStage(w io.Writer, event string, started time.Time, stageErr error, fields map[string]any) {
@@ -381,70 +318,6 @@ func writeProductCapabilityStage(w io.Writer, event string, started time.Time, s
 	if err == nil {
 		_, _ = fmt.Fprintln(w, string(data))
 	}
-}
-
-func configuredProductCapabilityProfiles(config localconfig.Config) []string {
-	profiles := make([]string, 0, len(config.ProxyGroups))
-	for _, group := range config.ProxyGroups {
-		profiles = append(profiles, group.Capability)
-	}
-	return capability.Profiles(profiles)
-}
-
-func validateSupportedCapabilityProfiles(profiles []string) error {
-	for _, profile := range profiles {
-		switch profile {
-		case chatgptavailable.ProfileID:
-		default:
-			return fmt.Errorf("unsupported proxy-group capability: %s", profile)
-		}
-	}
-	return nil
-}
-
-func productCapabilitySnapshotFilename(profile string) string {
-	switch profile {
-	case chatgptavailable.ProfileID:
-		return "chatgpt-available.json"
-	default:
-		return ""
-	}
-}
-
-func validateProductCapabilitySnapshot(profile, path string) error {
-	switch profile {
-	case chatgptavailable.ProfileID:
-		_, err := chatgptavailable.LoadQualified(path)
-		return err
-	default:
-		return fmt.Errorf("unsupported proxy-group capability: %s", profile)
-	}
-}
-
-func productSubscriptionProxyMaps(doc map[string]any) ([]map[string]any, error) {
-	if doc == nil {
-		return nil, errors.New("merged subscription document is required for capability qualification")
-	}
-	rawProxies, ok := doc["proxies"].([]any)
-	if !ok || len(rawProxies) == 0 {
-		return nil, errors.New("merged subscription document has no proxies for capability qualification")
-	}
-	proxies := make([]map[string]any, 0, len(rawProxies))
-	for index, raw := range rawProxies {
-		proxy, ok := raw.(map[string]any)
-		if !ok {
-			return nil, fmt.Errorf("merged subscription proxy %d is invalid for capability qualification", index)
-		}
-		proxies = append(proxies, proxy)
-	}
-	return proxies, nil
-}
-
-func productCapabilityRoot(state appinit.RuntimeState) string {
-	if root := strings.TrimSpace(state.Paths.RuntimeRoot); root != "" {
-		return filepath.Join(root, "capabilities")
-	}
-	return productWorkspacePath(state, filepath.Join(".runtime", "capabilities"))
 }
 
 func productSubscriptionStageLogger(w io.Writer) func(subscriptions.StageEvent) {
@@ -1503,7 +1376,6 @@ func applyTemplateMutation(ctx context.Context, input configInput, state appinit
 func applyTemplateTransaction(ctx context.Context, input configInput, state appinit.RuntimeState) (map[string]any, []string, error) {
 	configPath := productWorkspacePath(state, "localclash-intent.json")
 	registryDir := productWorkspacePath(state, configpatch.RegistryDirName)
-	capabilityRoot := productCapabilityRoot(state)
 	attestationPath := mihomotest.DefaultAttestationPath(state.Paths.MihomoRuntimeDir)
 	cachePath := mihomotest.DefaultCachePath(state.Paths.MihomoRuntimeDir)
 	paths := []string{
@@ -1514,7 +1386,6 @@ func applyTemplateTransaction(ctx context.Context, input configInput, state appi
 		state.Paths.GeneratedConfig,
 		state.Paths.SubscriptionPath,
 		state.Paths.SubscriptionRuntime,
-		capabilityRoot,
 		attestationPath,
 		cachePath,
 		appinit.CoreVersionCachePath(state.Paths.RuntimeRoot),
@@ -1542,7 +1413,13 @@ func applyTemplateTransaction(ctx context.Context, input configInput, state appi
 		if err != nil {
 			return fmt.Errorf("refresh subscriptions for policy template: %w", err)
 		}
-		capabilities, err = refreshProductCapabilities(ctx, state, refreshResult.MergedDoc, os.Stderr)
+		profile, err := runtimeprofile.StatusFor(state.Paths.RuntimeProfilePath)
+		if err != nil {
+			return fmt.Errorf("read policy runtime profile: %w", err)
+		}
+		poolState := state
+		poolState.Paths.CorePath = profile.CorePath
+		capabilities, err = refreshProductCapabilities(ctx, poolState, refreshResult.MergedDoc, os.Stderr)
 		if err != nil {
 			return fmt.Errorf("refresh policy capabilities: %w", err)
 		}
@@ -1552,10 +1429,6 @@ func applyTemplateTransaction(ctx context.Context, input configInput, state appi
 		warnings = append(warnings, renderWarnings...)
 		if err != nil {
 			return fmt.Errorf("render policy candidate: %w", err)
-		}
-		profile, err := runtimeprofile.StatusFor(state.Paths.RuntimeProfilePath)
-		if err != nil {
-			return fmt.Errorf("read policy runtime profile: %w", err)
 		}
 		validation, err = mihomotest.Test(ctx, mihomotest.TestOptions{
 			ValidationOptions: mihomotest.ValidationOptions{
@@ -1638,16 +1511,11 @@ func renderProductConfig(state appinit.RuntimeState) (map[string]any, []string, 
 		if err != nil {
 			return nil, nil, err
 		}
-		capabilityNodes, err := loadProductCapabilityNodes(config, state)
-		if err != nil {
-			return nil, nil, err
-		}
 		resolved, err := localconfig.Resolve(localconfig.ResolveOptions{
 			Config:              config,
 			SubscriptionPath:    state.Paths.SubscriptionPath,
 			SubscriptionConfig:  state.Paths.SubscriptionConfig,
 			SubscriptionRuntime: state.Paths.SubscriptionRuntime,
-			CapabilityNodes:     capabilityNodes,
 			RulesCache:          state.Paths.RulesCacheDir,
 		})
 		if err != nil {
@@ -1679,31 +1547,6 @@ func renderProductConfig(state appinit.RuntimeState) (map[string]any, []string, 
 		"selection":       selectionPath,
 		"output":          state.Paths.GeneratedConfig,
 	}, warnings, nil
-}
-
-func loadProductCapabilityNodes(config localconfig.Config, state appinit.RuntimeState) (map[string][]string, error) {
-	profiles := configuredProductCapabilityProfiles(config)
-	if len(profiles) == 0 {
-		return map[string][]string{}, nil
-	}
-	if err := validateSupportedCapabilityProfiles(profiles); err != nil {
-		return nil, err
-	}
-	root := productCapabilityRoot(state)
-	nodes := make(map[string][]string, len(profiles))
-	for _, profile := range profiles {
-		var qualified []string
-		var err error
-		switch profile {
-		case chatgptavailable.ProfileID:
-			qualified, err = chatgptavailable.LoadQualified(filepath.Join(root, "chatgpt-available.json"))
-		}
-		if err != nil {
-			return nil, err
-		}
-		nodes[profile] = qualified
-	}
-	return nodes, nil
 }
 
 func runtimeStatusOptions(state appinit.RuntimeState) corerun.StatusOptions {

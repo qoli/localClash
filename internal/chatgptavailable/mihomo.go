@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -135,6 +136,18 @@ func (p *MihomoProber) Probe(ctx context.Context, candidates []Candidate) ([]Obs
 	if len(candidates) == 0 {
 		return nil, errors.New("ChatGPT capability probe candidates are required")
 	}
+	var observations []Observation
+	for batch := range slices.Chunk(candidates, proxyprobe.BatchSize) {
+		result, err := p.probeBatch(ctx, batch)
+		if err != nil {
+			return nil, err
+		}
+		observations = append(observations, result...)
+	}
+	return observations, nil
+}
+
+func (p *MihomoProber) probeBatch(ctx context.Context, candidates []Candidate) ([]Observation, error) {
 	names := make([]string, len(candidates))
 	definitions := p.options.Definitions
 	if len(definitions) == 0 {
@@ -204,29 +217,7 @@ func (p *MihomoProber) Probe(ctx context.Context, candidates []Candidate) ([]Obs
 }
 
 func SelectableProxyNames(proxies []map[string]any) ([]string, error) {
-	byName := make(map[string]bool, len(proxies))
-	referencedDialers := make(map[string]bool)
-	for index, proxy := range proxies {
-		name := strings.TrimSpace(stringValue(proxy["name"]))
-		if name == "" {
-			return nil, fmt.Errorf("ChatGPT capability candidate %d has no name", index)
-		}
-		if byName[name] {
-			return nil, fmt.Errorf("ChatGPT capability contains duplicate proxy name %q", name)
-		}
-		byName[name] = true
-		if dialer := strings.TrimSpace(stringValue(proxy["dialer-proxy"])); dialer != "" {
-			referencedDialers[dialer] = true
-		}
-	}
-	eligible := make([]string, 0, len(proxies)-len(referencedDialers))
-	for _, proxy := range proxies {
-		name := strings.TrimSpace(stringValue(proxy["name"]))
-		if !referencedDialers[name] {
-			eligible = append(eligible, name)
-		}
-	}
-	return eligible, nil
+	return proxyprobe.SelectableNames(proxies)
 }
 
 func (p *MihomoProber) probeCandidate(ctx context.Context, candidate Candidate, client *http.Client) Observation {

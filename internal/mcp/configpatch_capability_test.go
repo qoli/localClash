@@ -2,32 +2,27 @@ package mcp
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"reflect"
-	"strings"
 	"testing"
-	"time"
 
 	"localclash/internal/appinit"
-	"localclash/internal/chatgptavailable"
 	"localclash/internal/configpatch"
 	"localclash/internal/localconfig"
+	"localclash/internal/poolcontract"
 )
 
-func TestConfigPatchUsesCapabilitySnapshotForUnrelatedChanges(t *testing.T) {
+func TestConfigPatchPreservesPoolProvidersForUnrelatedChanges(t *testing.T) {
 	for _, tc := range []struct {
-		name            string
-		apply           bool
-		test            bool
-		statePaths      bool
-		missingSnapshot bool
+		name       string
+		apply      bool
+		test       bool
+		statePaths bool
 	}{
 		{name: "draft_default_paths"},
 		{name: "tested_draft_state_paths", test: true, statePaths: true},
 		{name: "apply_default_paths", apply: true},
 		{name: "tested_apply_state_paths", apply: true, test: true, statePaths: true},
-		{name: "missing_snapshot_preserves_files", apply: true, missingSnapshot: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			paths := setupMCPPlanFixture(t)
@@ -37,9 +32,6 @@ func TestConfigPatchUsesCapabilitySnapshotForUnrelatedChanges(t *testing.T) {
 				runtimeRoot = filepath.Join(dir, "state-runtime")
 			}
 			generated := filepath.Join(runtimeRoot, "mihomo", "config.yaml")
-			snapshot := filepath.Join(runtimeRoot, "capabilities", "chatgpt-available.json")
-			writeMCPFile(t, snapshot, fmt.Sprintf(`{"version":%d,"profile":%q,"updated_at":%q,"qualified":["SG 01"],"nodes":{}}`,
-				chatgptavailable.SnapshotVersion, chatgptavailable.ProfileID, time.Now().UTC().Format(time.RFC3339)))
 			writeMCPFile(t, filepath.Join(dir, "patches", "template.capability_chatgpt.json"), fmt.Sprintf(`{
   "version": 1,
   "patch_id": "template.capability",
@@ -51,7 +43,7 @@ func TestConfigPatchUsesCapabilitySnapshotForUnrelatedChanges(t *testing.T) {
     "proxy_groups": [{"id":"ChatGPT-available","mode":"auto","capability":%q,"optional":true}],
     "packs": [{"source":"blackmatrix7","pack":"OpenAI","target":"ChatGPT-available"}]
   }
-}`, chatgptavailable.ProfileID))
+}`, poolcontract.ChatGPTCapability))
 
 			server := NewServer()
 			if tc.statePaths {
@@ -70,8 +62,7 @@ func TestConfigPatchUsesCapabilitySnapshotForUnrelatedChanges(t *testing.T) {
 				}})
 			}
 
-			// Rendering the existing registry proves that the snapshot is usable
-			// before the unrelated patch goes through the separate build path.
+			// Both product paths must preserve the same provider reference.
 			render := callHandleWithServer(t, server, map[string]any{
 				"jsonrpc": "2.0", "id": 1, "method": "tools/call",
 				"params": map[string]any{"name": "config_render", "arguments": map[string]any{"background": false}},
@@ -79,10 +70,9 @@ func TestConfigPatchUsesCapabilitySnapshotForUnrelatedChanges(t *testing.T) {
 			if render.Error != nil {
 				t.Fatalf("render existing capability group: %+v", render.Error)
 			}
-			before := readMCPFile(t, generated)
 			group := findMCPProxyGroup(t, readMCPYAML(t, generated), "ChatGPT-available")
-			if !reflect.DeepEqual(group["proxies"], []any{"SG 01"}) {
-				t.Fatalf("rendered capability nodes = %v, want SG 01", group["proxies"])
+			if !reflect.DeepEqual(group["use"], []any{"localclash-qualified-chatgpt"}) {
+				t.Fatalf("rendered capability provider = %v", group["use"])
 			}
 
 			draft := callConfigPatchDraftForOverlay(t, server, paths, "user.unrelated", map[string]any{
@@ -94,11 +84,6 @@ func TestConfigPatchUsesCapabilitySnapshotForUnrelatedChanges(t *testing.T) {
 			if !tc.apply {
 				return
 			}
-			if tc.missingSnapshot {
-				if err := os.Remove(snapshot); err != nil {
-					t.Fatal(err)
-				}
-			}
 			args := draft["apply_args"].(map[string]any)
 			args["test"] = tc.test
 			args["background"] = false
@@ -106,33 +91,20 @@ func TestConfigPatchUsesCapabilitySnapshotForUnrelatedChanges(t *testing.T) {
 				"jsonrpc": "2.0", "id": 2, "method": "tools/call",
 				"params": map[string]any{"name": "config_patch_apply", "arguments": args},
 			})
-			if tc.missingSnapshot {
-				if apply.Error == nil || !strings.Contains(apply.Error.Message, "is unavailable") {
-					t.Fatalf("missing snapshot error = %+v, want unavailable", apply.Error)
-				}
-			} else {
-				if apply.Error != nil {
-					t.Fatalf("apply unrelated change with capability snapshot: %+v", apply.Error)
-				}
-				content := marshalToolResult(t, apply.Result).StructuredContent.(map[string]any)
-				if content["applied"] != true || content["valid"] != true {
-					t.Fatalf("apply = %+v, want applied and valid", content)
-				}
+			if apply.Error != nil {
+				t.Fatalf("apply unrelated change: %+v", apply.Error)
+			}
+			content := marshalToolResult(t, apply.Result).StructuredContent.(map[string]any)
+			if content["applied"] != true || content["valid"] != true {
+				t.Fatalf("apply = %+v, want applied and valid", content)
 			}
 
 			registry, err := configpatch.Load(filepath.Join(dir, "patches"))
 			if err != nil {
 				t.Fatal(err)
 			}
-			_, persisted := registry.ByID["user.unrelated"]
-			if persisted == tc.missingSnapshot {
-				t.Fatalf("unrelated patch persisted = %t, missing snapshot = %t", persisted, tc.missingSnapshot)
-			}
-			if tc.missingSnapshot {
-				if got := readMCPFile(t, generated); got != before {
-					t.Fatal("failed apply changed the previously generated config")
-				}
-				return
+			if _, persisted := registry.ByID["user.unrelated"]; !persisted {
+				t.Fatal("unrelated patch was not persisted")
 			}
 			intent, err := localconfig.Load(filepath.Join(dir, "localclash-intent.json"))
 			if err != nil {
@@ -142,8 +114,8 @@ func TestConfigPatchUsesCapabilitySnapshotForUnrelatedChanges(t *testing.T) {
 				t.Fatal("compiled intent is missing the applied direct group")
 			}
 			group = findMCPProxyGroup(t, readMCPYAML(t, generated), "ChatGPT-available")
-			if !reflect.DeepEqual(group["proxies"], []any{"SG 01"}) {
-				t.Fatalf("applied capability nodes = %v, want SG 01", group["proxies"])
+			if !reflect.DeepEqual(group["use"], []any{"localclash-qualified-chatgpt"}) {
+				t.Fatalf("applied capability provider = %v", group["use"])
 			}
 		})
 	}

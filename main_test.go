@@ -12,7 +12,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"reflect"
 	"runtime"
 	"strconv"
 	"strings"
@@ -21,7 +20,7 @@ import (
 	"time"
 
 	"localclash/internal/appinit"
-	"localclash/internal/chatgptavailable"
+	"localclash/internal/capability"
 	"localclash/internal/configpatch"
 	"localclash/internal/coredownload"
 	"localclash/internal/customsites"
@@ -31,6 +30,8 @@ import (
 	"localclash/internal/mihomoapi"
 	"localclash/internal/mihomotest"
 	"localclash/internal/policytemplate"
+	"localclash/internal/poolcontract"
+	"localclash/internal/poollaunch"
 	"localclash/internal/rules"
 	"localclash/internal/runtimeprofile"
 	"localclash/internal/subscriptions"
@@ -531,7 +532,7 @@ custom_rules:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if text := string(generated); !strings.Contains(text, "name: ChatGPT-available") || !strings.Contains(text, "US 01") {
+	if text := string(generated); !strings.Contains(text, "name: ChatGPT-available") || !strings.Contains(text, "localclash-qualified-chatgpt") {
 		t.Fatalf("generated config did not consume qualified capability snapshot:\n%s", text)
 	}
 }
@@ -581,50 +582,34 @@ custom_rules:
 `)
 	writeMainTestPackIndex(t, filepath.Join(dir, ".runtime", "rules", "packs"))
 
-	previousRebuild := rebuildProductChatGPT
-	t.Cleanup(func() {
-		rebuildProductChatGPT = previousRebuild
-	})
-	rebuildCalled := false
-	rebuildProductChatGPT = func(_ context.Context, proxies []map[string]any, eligible []string, _, runtimeParent, snapshotPath, previousSnapshotPath string) (chatgptavailable.Result, error) {
-		rebuildCalled = true
-		if len(proxies) != 1 || proxies[0]["name"] != "US 01" {
-			t.Fatalf("capability proxies = %+v, want refreshed merged proxy", proxies)
+	previousPrepare := preparePoolWorker
+	t.Cleanup(func() { preparePoolWorker = previousPrepare })
+	prepareCalled := false
+	preparePoolWorker = func(_ context.Context, opts poollaunch.Options, config localconfig.Config, doc map[string]any) ([]capability.Result, error) {
+		prepareCalled = true
+		input, err := poolcontract.FromSubscription(doc)
+		if err != nil || len(input.Proxies) != 1 || input.Proxies[0]["name"] != "US 01" {
+			t.Fatalf("worker input = %+v, error = %v", input, err)
 		}
-		if !reflect.DeepEqual(eligible, []string{"US 01"}) {
-			t.Fatalf("ChatGPT eligible nodes = %+v, want all selectable nodes", eligible)
+		if opts.Workspace != dir || opts.Runtime != filepath.Join(dir, ".runtime", "mihomo") {
+			t.Fatalf("pool worker paths = %+v", opts)
 		}
-		if runtimeParent != filepath.Join(dir, ".runtime", "capabilities") || filepath.Dir(snapshotPath) == runtimeParent || previousSnapshotPath != filepath.Join(runtimeParent, "chatgpt-available.json") {
-			t.Fatalf("capability paths = runtime %q candidate %q previous %q", runtimeParent, snapshotPath, previousSnapshotPath)
+		if config.ProxyGroups["ChatGPT-available"].Capability != poolcontract.ChatGPTCapability {
+			t.Fatalf("pool worker did not receive ChatGPT configuration: %+v", config.ProxyGroups)
 		}
-		writeMainTestFile(t, snapshotPath, `{
-  "version": 8,
-  "profile": "openai.chatgpt.oauth_statsig.v1",
-  "updated_at": "2026-08-15T00:00:00Z",
-  "qualified": ["US 01"],
-  "nodes": {}
-}`)
-		return chatgptavailable.Result{
-			Profile:          chatgptavailable.ProfileID,
-			SnapshotPath:     snapshotPath,
-			Candidates:       1,
-			Probed:           1,
-			Qualified:        []string{"US 01"},
-			QualifiedCount:   1,
-			UnavailableCount: 0,
-		}, nil
+		return []capability.Result{{Profile: poolcontract.ChatGPTCapability, Qualified: []string{"US 01"}, QualifiedCount: 1}}, nil
 	}
 
 	refreshOutput := captureStdout(t, func() error {
 		return run([]string{"subscription", "refresh", "--json"})
 	})
-	if !rebuildCalled {
+	if !prepareCalled {
 		t.Fatal("subscription refresh did not rebuild the configured capability")
 	}
 	var refreshResult struct {
 		OK     bool `json:"ok"`
 		Status struct {
-			Capabilities []chatgptavailable.Result `json:"capabilities"`
+			Capabilities []capability.Result `json:"capabilities"`
 		} `json:"status"`
 	}
 	if err := json.Unmarshal([]byte(refreshOutput), &refreshResult); err != nil {
@@ -644,7 +629,7 @@ custom_rules:
 		t.Fatalf("config render JSON = %q, error = %v", renderOutput, err)
 	}
 	if !renderResult.OK {
-		t.Fatalf("config render result = %+v, want snapshot-backed render", renderResult)
+		t.Fatalf("config render result = %+v, want provider-backed render", renderResult)
 	}
 	generated, err := os.ReadFile(filepath.Join(dir, ".runtime", "mihomo", "config.yaml"))
 	if err != nil {
@@ -652,54 +637,6 @@ custom_rules:
 	}
 	if text := string(generated); !strings.Contains(text, "name: ChatGPT-available") || !strings.Contains(text, "US 01") {
 		t.Fatalf("one-click render did not consume refreshed capability:\n%s", text)
-	}
-}
-
-func TestRefreshProductCapabilitiesBuildsChatGPTFromAllSelectableNodes(t *testing.T) {
-	dir := t.TempDir()
-	runtimeRoot := filepath.Join(dir, ".runtime")
-	capabilityRoot := filepath.Join(runtimeRoot, "capabilities")
-	writeMainTestFile(t, filepath.Join(dir, "localclash-intent.json"), `version: 4
-proxy_groups:
-  Auto:
-    mode: auto
-    match:
-      type: name_regex
-      pattern: .*
-      min: 1
-  ChatGPT-available:
-    mode: auto
-    capability: openai.chatgpt.oauth_statsig.v1
-    optional: true
-`)
-
-	previousChat := rebuildProductChatGPT
-	t.Cleanup(func() {
-		rebuildProductChatGPT = previousChat
-	})
-	rebuildProductChatGPT = func(_ context.Context, _ []map[string]any, eligible []string, _, _, candidate, _ string) (chatgptavailable.Result, error) {
-		if !reflect.DeepEqual(eligible, []string{"HK exit", "US 01"}) {
-			t.Fatalf("ChatGPT eligible nodes = %+v, want all selectable subscription proxies", eligible)
-		}
-		writeMainTestFile(t, candidate, fmt.Sprintf(`{"version":8,"profile":%q,"updated_at":"new","qualified":["US 01"],"nodes":{}}`, chatgptavailable.ProfileID))
-		return chatgptavailable.Result{Profile: chatgptavailable.ProfileID, SnapshotPath: candidate, Qualified: []string{"US 01"}, QualifiedCount: 1}, nil
-	}
-
-	results, err := refreshProductCapabilities(context.Background(), appinit.RuntimeState{Paths: appinit.RuntimePaths{
-		WorkspaceRoot: dir, RuntimeRoot: runtimeRoot, CorePath: filepath.Join(dir, "mihomo"),
-	}}, map[string]any{"proxies": []any{
-		map[string]any{"name": "dialer helper", "type": "ss", "server": "entry.example", "port": 443},
-		map[string]any{"name": "HK exit", "type": "ss", "server": "hk.example", "port": 443, "dialer-proxy": "dialer helper"},
-		map[string]any{"name": "US 01", "type": "trojan", "server": "us.example", "port": 443},
-	}}, io.Discard)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(results) != 1 || results[0].Profile != chatgptavailable.ProfileID {
-		t.Fatalf("capability results = %+v, want ChatGPT only", results)
-	}
-	if got, loadErr := chatgptavailable.LoadQualified(filepath.Join(capabilityRoot, "chatgpt-available.json")); loadErr != nil || !reflect.DeepEqual(got, []string{"US 01"}) {
-		t.Fatalf("ChatGPT snapshot = %v error=%v", got, loadErr)
 	}
 }
 
@@ -743,14 +680,13 @@ func TestRunProductSubscriptionRefreshRebuildsTemplateOwnedGroupsBeforeCapabilit
   }
 }`)
 
-	previousChatGPT := rebuildProductChatGPT
-	t.Cleanup(func() { rebuildProductChatGPT = previousChatGPT })
-	rebuildProductChatGPT = func(_ context.Context, _ []map[string]any, eligible []string, _, _, candidate, _ string) (chatgptavailable.Result, error) {
-		if !reflect.DeepEqual(eligible, []string{"US 01"}) {
-			t.Fatalf("eligible = %v", eligible)
+	previousPrepare := preparePoolWorker
+	t.Cleanup(func() { preparePoolWorker = previousPrepare })
+	preparePoolWorker = func(_ context.Context, _ poollaunch.Options, config localconfig.Config, _ map[string]any) ([]capability.Result, error) {
+		if got := config.ProxyGroups["ChatGPT-current"].Capability; got != poolcontract.ChatGPTCapability {
+			t.Fatalf("worker received stale template groups: %+v", config.ProxyGroups)
 		}
-		writeMainTestFile(t, candidate, fmt.Sprintf(`{"version":8,"profile":%q,"updated_at":"now","qualified":["US 01"],"nodes":{}}`, chatgptavailable.ProfileID))
-		return chatgptavailable.Result{Profile: chatgptavailable.ProfileID, SnapshotPath: candidate, Qualified: []string{"US 01"}, QualifiedCount: 1}, nil
+		return nil, nil
 	}
 
 	if _, err := captureStdoutAllowError(t, func() error {
@@ -765,7 +701,7 @@ func TestRunProductSubscriptionRefreshRebuildsTemplateOwnedGroupsBeforeCapabilit
 	if _, exists := config.ProxyGroups["ChatGPT-old"]; exists {
 		t.Fatalf("old template-owned group survived refresh: %+v", config.ProxyGroups)
 	}
-	if got := config.ProxyGroups["ChatGPT-current"].Capability; got != chatgptavailable.ProfileID {
+	if got := config.ProxyGroups["ChatGPT-current"].Capability; got != poolcontract.ChatGPTCapability {
 		t.Fatalf("current capability = %q", got)
 	}
 }
@@ -782,15 +718,6 @@ func TestRunProductSubscriptionSetRejectsRemovedG204Option(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "unknown field \"g204_filter_enabled\"") {
 		t.Fatalf("removed option error = %v, want explicit unknown-field failure", err)
-	}
-}
-
-func TestValidateSupportedCapabilityProfilesAcceptsChatGPTAndRejectsRemovedG204(t *testing.T) {
-	if err := validateSupportedCapabilityProfiles([]string{chatgptavailable.ProfileID}); err != nil {
-		t.Fatalf("ChatGPT capability should remain supported: %v", err)
-	}
-	if err := validateSupportedCapabilityProfiles([]string{"network.connectivity.g204.v1"}); err == nil || !strings.Contains(err.Error(), "unsupported proxy-group capability") {
-		t.Fatalf("removed g204 capability error = %v, want explicit unsupported capability failure", err)
 	}
 }
 
@@ -980,11 +907,12 @@ func TestApplyTemplateTransactionRestoresPriorIntentAndRegistryWhenCapabilityRef
 		t.Fatal(err)
 	}
 
-	previousChatGPT := rebuildProductChatGPT
-	t.Cleanup(func() { rebuildProductChatGPT = previousChatGPT })
-	rebuildProductChatGPT = func(context.Context, []map[string]any, []string, string, string, string, string) (chatgptavailable.Result, error) {
-		return chatgptavailable.Result{}, errors.New("ChatGPT probe blocked")
+	previousPrepare := preparePoolWorker
+	t.Cleanup(func() { preparePoolWorker = previousPrepare })
+	preparePoolWorker = func(context.Context, poollaunch.Options, localconfig.Config, map[string]any) ([]capability.Result, error) {
+		return nil, errors.New("ChatGPT probe blocked")
 	}
+
 	_, _, err = applyTemplateInput(context.Background(), configInput{
 		Version:                1,
 		Template:               policytemplate.TemplateLocalClashDefault,
