@@ -21,6 +21,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"gopkg.in/yaml.v3"
 )
@@ -1583,6 +1584,12 @@ type plannedProxyRename struct {
 func renameSourceProxies(source Source, doc subscriptionDoc, prefixSource bool, usedNames map[string]bool) ([]any, int, error) {
 	plans := make([]plannedProxyRename, 0, len(anySlice(doc.Data["proxies"])))
 	renamedTargets := map[string][]string{}
+	groupNames := map[string]bool{}
+	for _, rawGroup := range anySlice(doc.Data["proxy-groups"]) {
+		if group, ok := rawGroup.(map[string]any); ok {
+			groupNames[stringValue(group["name"])] = true
+		}
+	}
 	renamed := 0
 
 	// Plan every final name before rewriting references. A dialer-proxy may
@@ -1623,7 +1630,13 @@ func renameSourceProxies(source Source, doc subscriptionDoc, prefixSource bool, 
 			if !ok || strings.TrimSpace(dialerProxy) == "" {
 				return nil, 0, fmt.Errorf("source %q proxy %q has invalid dialer-proxy; expected a non-empty proxy or policy-group name", source.ID, plan.originalName)
 			}
-			targets := renamedTargets[dialerProxy]
+			targetName := dialerProxy
+			// Some subscriptions insert a space after the country flag in a
+			// node label but keep the unspaced label in its dialer references.
+			if len(renamedTargets[targetName]) == 0 && !groupNames[targetName] {
+				targetName = flagSpacedNodeName(targetName)
+			}
+			targets := renamedTargets[targetName]
 			switch len(targets) {
 			case 0:
 				// The reference may name a localClash-owned policy group, which
@@ -1631,13 +1644,26 @@ func renameSourceProxies(source Source, doc subscriptionDoc, prefixSource bool, 
 			case 1:
 				plan.proxy["dialer-proxy"] = targets[0]
 			default:
-				return nil, 0, fmt.Errorf("source %q proxy %q dialer-proxy %q is ambiguous: %d proxies share that name", source.ID, plan.originalName, dialerProxy, len(targets))
+				return nil, 0, fmt.Errorf("source %q proxy %q dialer-proxy %q is ambiguous: %d proxies share that name", source.ID, plan.originalName, targetName, len(targets))
 			}
 		}
 		proxies = append(proxies, plan.proxy)
 	}
 
 	return proxies, renamed, nil
+}
+
+func flagSpacedNodeName(name string) string {
+	first, firstWidth := utf8.DecodeRuneInString(name)
+	second, secondWidth := utf8.DecodeRuneInString(name[firstWidth:])
+	if first < '🇦' || first > '🇿' || second < '🇦' || second > '🇿' {
+		return ""
+	}
+	end := firstWidth + secondWidth
+	if end == len(name) || name[end] == ' ' {
+		return ""
+	}
+	return name[:end] + " " + name[end:]
 }
 
 func uniqueProxyName(name string, used map[string]bool) string {

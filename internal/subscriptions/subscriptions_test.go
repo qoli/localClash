@@ -419,6 +419,43 @@ func TestMergeSubscriptionsPreservesExternalDialerProxyReference(t *testing.T) {
 	}
 }
 
+func TestMergeSubscriptionsResolvesUnspacedCountryFlagDialerLabel(t *testing.T) {
+	const reference = "🇯🇵日本47"
+	const spaced = "🇯🇵 日本47"
+	const chain = "proxies:\n  - name: chain\n    type: ss\n    dialer-proxy: " + reference + "\n"
+	const helper = "  - name: " + spaced + "\n    type: ss\n"
+	sources := []Source{{ID: "first", DisplayName: "01"}, {ID: "second", DisplayName: "02"}}
+	for _, tc := range []struct {
+		name, source, want, wantError string
+	}{
+		{name: "unique same-source label", source: chain + helper, want: "[01] " + spaced},
+		{name: "exact proxy name", source: chain + helper + "  - name: " + reference + "\n    type: ss\n", want: "[01] " + reference},
+		{name: "declared group name", source: chain + helper + "proxy-groups:\n  - name: " + reference + "\n    type: select\n    proxies: [DIRECT]\n", want: reference},
+		{name: "other source only", source: chain, want: reference},
+		{name: "ambiguous spaced label", source: chain + helper + helper, wantError: `dialer-proxy "🇯🇵 日本47" is ambiguous: 2 proxies share that name`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			docs := map[string]subscriptionDoc{
+				"first":  mustParseSubscription(t, "first", tc.source),
+				"second": mustParseSubscription(t, "second", "proxies:\n"+helper),
+			}
+			merged, _, err := mergeSubscriptions(sources, docs)
+			if tc.wantError != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantError) {
+					t.Fatalf("merge error = %v, want %s", err, tc.wantError)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := stringValue(mergedProxiesByName(t, merged)["[01] chain"]["dialer-proxy"]); got != tc.want {
+				t.Fatalf("dialer-proxy = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestMergeSubscriptionsRejectsAmbiguousDialerProxyReference(t *testing.T) {
 	sources := []Source{{ID: "first", DisplayName: "01"}}
 	docs := map[string]subscriptionDoc{
