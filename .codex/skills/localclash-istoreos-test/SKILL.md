@@ -12,7 +12,7 @@ description: Select and execute affected localClash and LuCI tests, and record r
 
 - 主代理按變更選定功能、共享依賴、等價類、必要狀態轉移及獨立外部 oracle。
   沿用時核對原實測版本至候選的累積差異，保留原實測版本；不要求全量或所有功能雙核心重測。
-- 功能測試交由子代理，指定 `model: gpt-5.6-luna`、`reasoning_effort: high`。
+- 功能測試交由子代理，指定 `model: gpt-6.1-terra`、`reasoning_effort: high`。
   主代理提供候選身分、所選契約、授權、環境及證據位置，核對結果並統一回寫；
   子代理不再派代理，無需第三方選測審查。
 - 按完整產品能力選測，CLI／MCP／LuCI 不因入口不同重複算作功能。核對 Core／LuCI／Mihomo
