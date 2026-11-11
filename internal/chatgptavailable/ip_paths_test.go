@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -241,6 +242,50 @@ func TestVerifyIPPathsTestsEveryResolvedAddressAndPersistsRejection(t *testing.T
 		if path.Attempts != 1 || path.Status == "" {
 			t.Fatalf("missing path evidence: %+v", path)
 		}
+	}
+}
+
+func TestVerifyIPPathsUsesIdleSlotsForAddressesInOneFamily(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		type answer struct {
+			Type int
+			Data string
+		}
+		var answers []answer
+		if r.URL.Query().Get("type") == "A" {
+			if r.URL.Query().Get("name") == "auth.openai.com" {
+				answers = []answer{{1, "192.0.2.1"}, {1, "192.0.2.2"}, {1, "192.0.2.3"}, {1, "192.0.2.4"}}
+			} else {
+				answers = []answer{{1, "192.0.2.5"}}
+			}
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"Status": 0, "Answer": answers})
+	}))
+	defer server.Close()
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+	defer cancel()
+	var started atomic.Int32
+	allStarted := make(chan struct{})
+	prober := &MihomoProber{
+		options: MihomoOptions{DNSOverHTTPSEndpoint: server.URL, OAuthEndpoint: oauthTokenURL, StatsigEndpoint: statsigInitializeURL, Attempts: 1, RequestTimeout: time.Second},
+		probeOAuth: func(ctx context.Context, _ *http.Client, _, _ string, _ time.Duration) oauthProbeResult {
+			if started.Add(1) == 4 {
+				close(allStarted)
+			}
+			select {
+			case <-allStarted:
+				return oauthProbeResult{decision: oauthRegionSupported, httpStatus: 401}
+			case <-ctx.Done():
+				return oauthTransportError(ctx.Err())
+			}
+		},
+		probeStatsig: func(context.Context, *http.Client, string, string, time.Duration) statsigProbeResult {
+			return statsigProbeResult{decision: statsigReachable, httpStatus: 200, country: "US"}
+		},
+	}
+	verification := prober.verifyIPPaths(ctx, server.Client())
+	if ctx.Err() != nil || !verification.Available || len(verification.Paths) != 5 || verification.Paths[3].Address != "192.0.2.4" {
+		t.Fatalf("verification=%+v, parent context=%v", verification, ctx.Err())
 	}
 }
 

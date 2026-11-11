@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/netip"
 	"net/url"
-	"sync"
 	"time"
 )
 
@@ -50,87 +49,138 @@ type IPPathObservation struct {
 	Error             string `json:"error,omitempty"`
 }
 
+type ipProbeSpec struct {
+	endpoint string
+	url      string
+	family   string
+}
+
 func (p *MihomoProber) verifyIPPaths(ctx context.Context, client *http.Client) IPVerification {
-	// Resolve through this candidate over HTTPS: bare-WAN UDP DNS can be poisoned,
-	// and a broken candidate must not determine targets for every other candidate.
-	type measurement struct {
-		endpoint string
-		url      string
-		family   string
-	}
-	measurements := []measurement{
+	specs := []ipProbeSpec{
 		{"oauth", p.options.OAuthEndpoint, "ipv4"},
 		{"statsig", p.options.StatsigEndpoint, "ipv4"},
 		{"oauth", p.options.OAuthEndpoint, "ipv6"},
 		{"statsig", p.options.StatsigEndpoint, "ipv6"},
 	}
-	resolutions := make([]IPResolution, len(measurements))
-	paths := make([][]IPPathObservation, len(measurements))
-	var wg sync.WaitGroup
-	for index, measurement := range measurements {
-		wg.Add(1)
+	type resolutionResult struct {
+		spec        int
+		observation IPResolution
+		endpoint    *url.URL
+		addresses   []netip.Addr
+	}
+	type addressJob struct {
+		spec     int
+		index    int
+		endpoint *url.URL
+		address  netip.Addr
+	}
+	type addressResult struct {
+		job         addressJob
+		observation IPPathObservation
+	}
+	resolved := make(chan resolutionResult)
+	probed := make(chan addressResult)
+	resolutions := make([]IPResolution, len(specs))
+	paths := make([][]IPPathObservation, len(specs))
+	contexts := make([]context.Context, len(specs))
+	for index, spec := range specs {
+		pathCtx := ctx
+		if p.timings != nil {
+			pathCtx = context.WithValue(ctx, timingScope, spec.family)
+		}
+		contexts[index] = pathCtx
 		go func() {
-			defer wg.Done()
-			pathCtx := ctx
-			if p.timings != nil {
-				pathCtx = context.WithValue(ctx, timingScope, measurement.family)
-			}
-			resolution := IPResolution{Endpoint: measurement.endpoint, Family: measurement.family, Addresses: []string{}}
-			endpoint, err := url.Parse(measurement.url)
-			if err != nil || endpoint.Hostname() == "" {
-				resolution.Error = fmt.Sprintf("invalid %s endpoint %q", measurement.endpoint, measurement.url)
-				resolutions[index] = resolution
-				return
-			}
-			resolution.Host = endpoint.Hostname()
-			var addresses []netip.Addr
-			for attempt := 1; attempt <= p.options.Attempts; attempt++ {
-				started := time.Now()
-				attemptCtx, connections := p.traceConnections(pathCtx)
-				resolution.Attempts = attempt
-				addresses, err = p.resolveIPs(attemptCtx, client, resolution.Host, measurement.family)
-				outcome := "ok"
-				if err != nil {
-					outcome = "error"
-				}
-				p.recordTiming(pathCtx, started, probeTiming{Phase: "dns", Service: measurement.endpoint,
-					Attempt: attempt, Outcome: outcome, Addresses: len(addresses)}, connections)
-				if err == nil || !waitToRetry(ctx, attempt, p.options.Attempts, p.options.RetryDelay) {
-					break
-				}
-			}
-			resolution.Error = errorString(err)
-			for _, address := range addresses {
-				resolution.Addresses = append(resolution.Addresses, address.String())
-				path := IPPathObservation{Endpoint: measurement.endpoint, Host: resolution.Host, Family: measurement.family, Address: address.String()}
-				ipClient, err := ipTargetClient(client, endpoint, address)
-				if err != nil {
-					path.Status, path.Error = oauthTransportFailure, err.Error()
-				} else if measurement.endpoint == "oauth" {
-					outcome := p.probeOAuthEndpointAttempts(pathCtx, ipClient, measurement.url)
-					path.Status, path.HTTPStatus, path.ErrorCode = outcome.result.decision, outcome.result.httpStatus, outcome.result.errorCode
-					path.Attempts, path.ResponseBytes, path.Error = outcome.attempts, outcome.responseBytes, errorString(outcome.result.err)
-				} else {
-					outcome := p.probeStatsigEndpointAttempts(pathCtx, ipClient, measurement.url)
-					path.Status, path.HTTPStatus, path.ErrorCode = outcome.result.decision, outcome.result.httpStatus, outcome.result.errorCode
-					path.Attempts, path.Country, path.ContentEncoding = outcome.attempts, outcome.result.country, outcome.result.contentEncoding
-					path.CompressedBytes, path.DecompressedBytes, path.Error = outcome.compressedBytes, outcome.decompressedBytes, errorString(outcome.result.err)
-				}
-				if ipClient != nil {
-					ipClient.CloseIdleConnections()
-				}
-				paths[index] = append(paths[index], path)
-			}
-			resolutions[index] = resolution
+			observation, endpoint, addresses := p.resolveIPTargets(pathCtx, client, spec)
+			resolved <- resolutionResult{spec: index, observation: observation, endpoint: endpoint, addresses: addresses}
 		}()
 	}
-	wg.Wait()
+
+	// The four endpoint/family checks share their existing slots. A resolution
+	// can start probing immediately, and an idle slot can check another address
+	// from a family with more answers.
+	active := len(specs)
+	var pending []addressJob
+	for active > 0 {
+		select {
+		case result := <-resolved:
+			resolutions[result.spec] = result.observation
+			paths[result.spec] = make([]IPPathObservation, len(result.addresses))
+			for index, address := range result.addresses {
+				pending = append(pending, addressJob{spec: result.spec, index: index, endpoint: result.endpoint, address: address})
+			}
+		case result := <-probed:
+			paths[result.job.spec][result.job.index] = result.observation
+		}
+		active--
+		for active < len(specs) && len(pending) > 0 {
+			job := pending[0]
+			pending = pending[1:]
+			active++
+			go func() {
+				observation := p.probeResolvedIP(contexts[job.spec], client, specs[job.spec], job.endpoint, job.address)
+				probed <- addressResult{job: job, observation: observation}
+			}()
+		}
+	}
 	verification := IPVerification{Resolutions: resolutions, Paths: []IPPathObservation{}}
 	for _, observations := range paths {
 		verification.Paths = append(verification.Paths, observations...)
 	}
 	verification.Available, verification.RegionRejected = admitIPPaths(verification.Paths)
 	return verification
+}
+
+func (p *MihomoProber) resolveIPTargets(ctx context.Context, client *http.Client, spec ipProbeSpec) (IPResolution, *url.URL, []netip.Addr) {
+	resolution := IPResolution{Endpoint: spec.endpoint, Family: spec.family, Addresses: []string{}}
+	endpoint, err := url.Parse(spec.url)
+	if err != nil || endpoint.Hostname() == "" {
+		resolution.Error = fmt.Sprintf("invalid %s endpoint %q", spec.endpoint, spec.url)
+		return resolution, nil, nil
+	}
+	resolution.Host = endpoint.Hostname()
+	// Resolve through this candidate so another exit's DNS cannot determine its targets.
+	var addresses []netip.Addr
+	for attempt := 1; attempt <= p.options.Attempts; attempt++ {
+		started := time.Now()
+		attemptCtx, connections := p.traceConnections(ctx)
+		resolution.Attempts = attempt
+		addresses, err = p.resolveIPs(attemptCtx, client, resolution.Host, spec.family)
+		outcome := "ok"
+		if err != nil {
+			outcome = "error"
+		}
+		p.recordTiming(ctx, started, probeTiming{Phase: "dns", Service: spec.endpoint,
+			Attempt: attempt, Outcome: outcome, Addresses: len(addresses)}, connections)
+		if err == nil || !waitToRetry(ctx, attempt, p.options.Attempts, p.options.RetryDelay) {
+			break
+		}
+	}
+	resolution.Error = errorString(err)
+	for _, address := range addresses {
+		resolution.Addresses = append(resolution.Addresses, address.String())
+	}
+	return resolution, endpoint, addresses
+}
+
+func (p *MihomoProber) probeResolvedIP(ctx context.Context, client *http.Client, spec ipProbeSpec, endpoint *url.URL, address netip.Addr) IPPathObservation {
+	path := IPPathObservation{Endpoint: spec.endpoint, Host: endpoint.Hostname(), Family: spec.family, Address: address.String()}
+	ipClient, err := ipTargetClient(client, endpoint, address)
+	if err != nil {
+		path.Status, path.Error = oauthTransportFailure, err.Error()
+		return path
+	}
+	defer ipClient.CloseIdleConnections()
+	if spec.endpoint == "oauth" {
+		outcome := p.probeOAuthEndpointAttempts(ctx, ipClient, spec.url)
+		path.Status, path.HTTPStatus, path.ErrorCode = outcome.result.decision, outcome.result.httpStatus, outcome.result.errorCode
+		path.Attempts, path.ResponseBytes, path.Error = outcome.attempts, outcome.responseBytes, errorString(outcome.result.err)
+	} else {
+		outcome := p.probeStatsigEndpointAttempts(ctx, ipClient, spec.url)
+		path.Status, path.HTTPStatus, path.ErrorCode = outcome.result.decision, outcome.result.httpStatus, outcome.result.errorCode
+		path.Attempts, path.Country, path.ContentEncoding = outcome.attempts, outcome.result.country, outcome.result.contentEncoding
+		path.CompressedBytes, path.DecompressedBytes, path.Error = outcome.compressedBytes, outcome.decompressedBytes, errorString(outcome.result.err)
+	}
+	return path
 }
 
 func admitIPPaths(paths []IPPathObservation) (bool, bool) {
