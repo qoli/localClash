@@ -4,13 +4,13 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"path/filepath"
 	"slices"
 	"sort"
-	"strings"
 	"time"
 
 	"localclash/internal/capability"
@@ -35,7 +35,8 @@ type autoBatchResult struct {
 func qualifyAuto(ctx context.Context, input poolcontract.Input, names []string, opts Options) (capability.Result, error) {
 	start := time.Now()
 	previous := previousAutoPriority(opts.RuntimeDir, input.Revision)
-	representatives, prioritized, err := autoCandidates(input.Proxies, names, previous)
+	history, historyErr := readAutoHistory(opts.RuntimeDir)
+	representatives, prioritized, matches, err := autoCandidates(input.Proxies, names, previous, history)
 	if err != nil {
 		return capability.Result{}, err
 	}
@@ -43,7 +44,7 @@ func qualifyAuto(ctx context.Context, input poolcontract.Input, names []string, 
 		Profile: poolcontract.AutoCapability, Candidates: len(names),
 		PrioritizedCount:  prioritized,
 		DeduplicatedCount: len(names) - len(representatives),
-		AutoQuality:       &capability.AutoQuality{},
+		AutoQuality:       &capability.AutoQuality{HistoryMatches: matches},
 	}
 	var qualified []measurement
 	offset := 0
@@ -62,6 +63,8 @@ func qualifyAuto(ctx context.Context, input poolcontract.Input, names []string, 
 			result.AutoQuality.DrainedCount = measured.drainedCount
 		}
 		for _, attempt := range measured.completed {
+			fingerprint := batch[attempt.index].fingerprint
+			history[fingerprint] = history[fingerprint].afterProbe(attempt.worstDoH)
 			if attempt.worstDoH > 0 {
 				attempt.index += offset
 				qualified = append(qualified, attempt)
@@ -79,9 +82,18 @@ func qualifyAuto(ctx context.Context, input poolcontract.Input, names []string, 
 	selected := qualified[:limit]
 	result.AutoQuality.Selected = summarizeDoH(selected)
 	for _, entry := range selected {
-		result.Qualified = append(result.Qualified, representatives[entry.index])
+		result.Qualified = append(result.Qualified, representatives[entry.index].name)
 	}
 	result.QualifiedCount = len(result.Qualified)
+	if err := ctx.Err(); err != nil {
+		return capability.Result{}, err
+	}
+	if result.Probed > 0 && opts.RuntimeDir != "" {
+		historyErr = errors.Join(historyErr, writeAutoHistory(opts.RuntimeDir, representatives, history))
+	}
+	if historyErr != nil {
+		result.AutoQuality.HistoryWarning = historyErr.Error()
+	}
 	result.DurationMS = time.Since(start).Milliseconds()
 	return result, nil
 }
@@ -112,38 +124,11 @@ func summarizeDoH(measured []measurement) capability.DoHLatencySummary {
 	}
 }
 
-func autoCandidates(proxies []map[string]any, eligible []string, previous map[string]bool) ([]string, int, error) {
-	selectable := make(map[string]bool, len(eligible))
-	for _, name := range eligible {
-		selectable[name] = true
+func probeAutoBatch(ctx context.Context, proxies []map[string]any, candidates []autoCandidate, needed int, opts Options) (autoBatchResult, error) {
+	names := make([]string, len(candidates))
+	for index, candidate := range candidates {
+		names[index] = candidate.name
 	}
-	seen := make(map[string]bool, len(eligible))
-	names := make([]string, 0, len(eligible))
-	preferred := make([]string, 0, len(previous))
-	for _, proxy := range proxies {
-		name, _ := proxy["name"].(string)
-		name = strings.TrimSpace(name)
-		if !selectable[name] {
-			continue
-		}
-		fingerprint, err := proxyprobe.Fingerprint(proxy)
-		if err != nil {
-			return nil, 0, fmt.Errorf("fingerprint automatic pool proxy %q: %w", name, err)
-		}
-		if seen[fingerprint] {
-			continue
-		}
-		seen[fingerprint] = true
-		if previous[fingerprint] {
-			preferred = append(preferred, name)
-		} else {
-			names = append(names, name)
-		}
-	}
-	return append(preferred, names...), len(preferred), nil
-}
-
-func probeAutoBatch(ctx context.Context, proxies []map[string]any, names []string, needed int, opts Options) (autoBatchResult, error) {
 	session, err := proxyprobe.Start(ctx, proxies, names, proxyprobe.Options{
 		CorePath: opts.CorePath, RuntimeParent: opts.ProbeDir, RuntimePrefix: "auto-pool-probe-",
 	})

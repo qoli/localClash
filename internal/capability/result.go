@@ -29,6 +29,8 @@ type AutoQuality struct {
 	Selected       DoHLatencySummary `json:"selected"`
 	FillDurationMS int64             `json:"fill_duration_ms,omitempty"`
 	DrainedCount   int               `json:"drained_count"`
+	HistoryMatches int               `json:"history_matches,omitempty"`
+	HistoryWarning string            `json:"history_warning,omitempty"`
 }
 
 // DoHLatencySummary describes each exit's slowest successful DoH query.
