@@ -6,8 +6,10 @@ import (
 	"encoding/binary"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"localclash/internal/poolcontract"
 )
@@ -16,6 +18,45 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return f(req)
+}
+
+func TestRunAutoProbesStopsAfterEnoughQualified(t *testing.T) {
+	names := []string{"stalled", "first", "second", "remaining"}
+	stalled := make(chan struct{})
+	results := runAutoProbes(t.Context(), names, 2, 2, func(ctx context.Context, index int) time.Duration {
+		switch index {
+		case 0:
+			close(stalled)
+			<-ctx.Done()
+			return 0
+		case 1:
+			<-stalled
+		}
+		return time.Millisecond
+	})
+	want := []measurement{
+		{name: "stalled", canceled: true},
+		{name: "first", worst: time.Millisecond},
+		{name: "second", worst: time.Millisecond},
+		{},
+	}
+	if !slices.Equal(results, want) {
+		t.Fatalf("probe results = %+v, want %+v", results, want)
+	}
+}
+
+func TestRunAutoProbesExhaustsCandidatesWhenPoolIsShort(t *testing.T) {
+	names := []string{"offline", "online", "last"}
+	results := runAutoProbes(t.Context(), names, 1, 2, func(_ context.Context, index int) time.Duration {
+		if index == 1 {
+			return time.Millisecond
+		}
+		return 0
+	})
+	want := []measurement{{name: "offline"}, {name: "online", worst: time.Millisecond}, {name: "last"}}
+	if !slices.Equal(results, want) {
+		t.Fatalf("probe results = %+v, want %+v", results, want)
+	}
 }
 
 func TestMeasureAutoRequiresHTTPSAndBothAddressFamiliesOnBothResolvers(t *testing.T) {
