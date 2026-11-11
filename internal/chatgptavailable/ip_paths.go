@@ -10,6 +10,7 @@ import (
 	"net/netip"
 	"net/url"
 	"sync"
+	"time"
 )
 
 const dnsOverHTTPSEndpoint = "https://cloudflare-dns.com/dns-query"
@@ -70,6 +71,10 @@ func (p *MihomoProber) verifyIPPaths(ctx context.Context, client *http.Client) I
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			pathCtx := ctx
+			if p.timings != nil {
+				pathCtx = context.WithValue(ctx, timingScope, measurement.family)
+			}
 			resolution := IPResolution{Endpoint: measurement.endpoint, Family: measurement.family, Addresses: []string{}}
 			endpoint, err := url.Parse(measurement.url)
 			if err != nil || endpoint.Hostname() == "" {
@@ -80,8 +85,16 @@ func (p *MihomoProber) verifyIPPaths(ctx context.Context, client *http.Client) I
 			resolution.Host = endpoint.Hostname()
 			var addresses []netip.Addr
 			for attempt := 1; attempt <= p.options.Attempts; attempt++ {
+				started := time.Now()
+				attemptCtx, connections := p.traceConnections(pathCtx)
 				resolution.Attempts = attempt
-				addresses, err = p.resolveIPs(ctx, client, resolution.Host, measurement.family)
+				addresses, err = p.resolveIPs(attemptCtx, client, resolution.Host, measurement.family)
+				outcome := "ok"
+				if err != nil {
+					outcome = "error"
+				}
+				p.recordTiming(pathCtx, started, probeTiming{Phase: "dns", Service: measurement.endpoint,
+					Attempt: attempt, Outcome: outcome, Addresses: len(addresses)}, connections)
 				if err == nil || !waitToRetry(ctx, attempt, p.options.Attempts, p.options.RetryDelay) {
 					break
 				}
@@ -94,11 +107,11 @@ func (p *MihomoProber) verifyIPPaths(ctx context.Context, client *http.Client) I
 				if err != nil {
 					path.Status, path.Error = oauthTransportFailure, err.Error()
 				} else if measurement.endpoint == "oauth" {
-					outcome := p.probeOAuthEndpointAttempts(ctx, ipClient, measurement.url)
+					outcome := p.probeOAuthEndpointAttempts(pathCtx, ipClient, measurement.url)
 					path.Status, path.HTTPStatus, path.ErrorCode = outcome.result.decision, outcome.result.httpStatus, outcome.result.errorCode
 					path.Attempts, path.ResponseBytes, path.Error = outcome.attempts, outcome.responseBytes, errorString(outcome.result.err)
 				} else {
-					outcome := p.probeStatsigEndpointAttempts(ctx, ipClient, measurement.url)
+					outcome := p.probeStatsigEndpointAttempts(pathCtx, ipClient, measurement.url)
 					path.Status, path.HTTPStatus, path.ErrorCode = outcome.result.decision, outcome.result.httpStatus, outcome.result.errorCode
 					path.Attempts, path.Country, path.ContentEncoding = outcome.attempts, outcome.result.country, outcome.result.contentEncoding
 					path.CompressedBytes, path.DecompressedBytes, path.Error = outcome.compressedBytes, outcome.decompressedBytes, errorString(outcome.result.err)
