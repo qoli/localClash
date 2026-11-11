@@ -382,11 +382,15 @@ func runProductComponentUpdate(args []string, state appinit.RuntimeState) error 
 		}
 	case "assets", "base-assets":
 		result, err := baseassets.Install(ctx, baseassets.Options{
-			OutputDir: productWorkspaceRoot(state),
-			Force:     true,
+			ManifestPath: os.Getenv("LOCALCLASH_RELEASE_MANIFEST_FILE"),
+			OutputDir:    productWorkspaceRoot(state),
+			Force:        true,
 		})
 		if err != nil {
 			return err
+		}
+		if result.AlreadyReady {
+			return printProductOK(productEnvelope{OK: true, Summary: "Base assets are already current.", Status: result, Changes: []string{}, Warnings: []string{}})
 		}
 		return printProductOK(productEnvelope{OK: true, Changed: true, Summary: "Base assets updated.", Status: result, Changes: []string{"base_assets_updated"}, Warnings: []string{}})
 	case "mihomo":

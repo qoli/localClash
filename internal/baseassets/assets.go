@@ -2,6 +2,7 @@ package baseassets
 
 import (
 	"archive/tar"
+	"bytes"
 	"compress/gzip"
 	"context"
 	"crypto/sha256"
@@ -22,12 +23,14 @@ import (
 const (
 	defaultManifestURL          = "https://github.com/qoli/localClash/releases/latest/download/localclash-release-manifest.json"
 	defaultGitHubReleaseMirrors = "https://gh-proxy.com/https://github.com https://proxy.vvvv.ee/https://github.com https://cors.isteed.cc/https://github.com https://gh.ddlc.top/https://github.com https://gh.xmly.dev/https://github.com https://ghproxy.net/https://github.com https://ghfast.top/https://github.com"
+	installReceiptPath          = ".runtime/base-assets-receipt.json"
 )
 
 type Options struct {
-	ManifestURL string
-	OutputDir   string
-	Force       bool
+	ManifestURL  string
+	ManifestPath string
+	OutputDir    string
+	Force        bool
 }
 
 type Result struct {
@@ -62,6 +65,16 @@ type baseAsset struct {
 	Size     int64  `json:"size"`
 }
 
+type assetReceipt struct {
+	ArchiveSHA256 string                      `json:"archive_sha256"`
+	Files         map[string]assetReceiptFile `json:"files"`
+}
+
+type assetReceiptFile struct {
+	SHA256 string      `json:"sha256"`
+	Mode   os.FileMode `json:"mode"`
+}
+
 func Install(ctx context.Context, opts Options) (Result, error) {
 	opts = normalizeOptions(opts)
 	if err := validateOptions(opts); err != nil {
@@ -72,12 +85,20 @@ func Install(ctx context.Context, opts Options) (Result, error) {
 		return Result{OutputDir: opts.OutputDir, AlreadyReady: true}, nil
 	}
 
-	manifest, err := fetchManifest(ctx, opts.ManifestURL)
+	manifest, err := loadManifest(ctx, opts)
 	if err != nil {
 		return Result{}, err
 	}
 	if strings.TrimSpace(manifest.BaseAsset.URL) == "" || strings.TrimSpace(manifest.BaseAsset.SHA256) == "" {
 		return Result{}, errors.New("release manifest does not include base_assets url and sha256")
+	}
+	result := Result{
+		Version: manifest.Version, Filename: manifest.BaseAsset.Filename, URL: manifest.BaseAsset.URL,
+		SHA256: strings.ToLower(strings.TrimSpace(manifest.BaseAsset.SHA256)), OutputDir: opts.OutputDir,
+	}
+	if status.Installed && matchesReceipt(opts.OutputDir, result.SHA256) {
+		result.AlreadyReady = true
+		return result, nil
 	}
 
 	tmp, err := os.CreateTemp("", "localclash-base-assets-*.tar.gz")
@@ -100,7 +121,7 @@ func Install(ctx context.Context, opts Options) (Result, error) {
 	if err := os.MkdirAll(opts.OutputDir, 0o755); err != nil {
 		return Result{}, err
 	}
-	count, err := extractTarGz(tmpPath, opts.OutputDir)
+	files, err := extractTarGz(tmpPath, opts.OutputDir)
 	if err != nil {
 		return Result{}, err
 	}
@@ -108,14 +129,37 @@ func Install(ctx context.Context, opts Options) (Result, error) {
 	if !status.Installed {
 		return Result{}, fmt.Errorf("base assets incomplete after extraction: missing %s", strings.Join(status.Missing, ", "))
 	}
-	return Result{
-		Version:   manifest.Version,
-		Filename:  manifest.BaseAsset.Filename,
-		URL:       manifest.BaseAsset.URL,
-		SHA256:    strings.ToLower(manifest.BaseAsset.SHA256),
-		OutputDir: opts.OutputDir,
-		Extracted: count,
-	}, nil
+	receipt, err := json.Marshal(assetReceipt{ArchiveSHA256: result.SHA256, Files: files})
+	if err == nil {
+		err = replaceAsset(filepath.Join(opts.OutputDir, installReceiptPath), 0o600, bytes.NewReader(receipt))
+	}
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "base assets installed but receipt could not be saved: %v\n", err)
+	}
+	result.Extracted = len(files)
+	return result, nil
+}
+
+func matchesReceipt(outputDir, archiveSHA string) bool {
+	data, err := os.ReadFile(filepath.Join(outputDir, installReceiptPath))
+	if err != nil {
+		return false
+	}
+	var receipt assetReceipt
+	if json.Unmarshal(data, &receipt) != nil || receipt.ArchiveSHA256 != archiveSHA || len(receipt.Files) == 0 {
+		return false
+	}
+	for name, asset := range receipt.Files {
+		path, err := safeJoin(outputDir, name)
+		if err != nil {
+			return false
+		}
+		info, err := os.Lstat(path)
+		if err != nil || !info.Mode().IsRegular() || info.Mode().Perm() != asset.Mode || verifySHA256(path, asset.SHA256) != nil {
+			return false
+		}
+	}
+	return true
 }
 
 func Status(outputDir string) StatusResult {
@@ -187,6 +231,22 @@ func validateOptions(opts Options) error {
 		return errors.New("output directory is too broad")
 	}
 	return nil
+}
+
+func loadManifest(ctx context.Context, opts Options) (manifest, error) {
+	if opts.ManifestPath == "" {
+		return fetchManifest(ctx, opts.ManifestURL)
+	}
+	file, err := os.Open(opts.ManifestPath)
+	if err != nil {
+		return manifest{}, fmt.Errorf("open release manifest: %w", err)
+	}
+	defer file.Close()
+	var out manifest
+	if err := json.NewDecoder(file).Decode(&out); err != nil {
+		return manifest{}, fmt.Errorf("read release manifest: %w", err)
+	}
+	return out, nil
 }
 
 func fetchManifest(ctx context.Context, url string) (manifest, error) {
@@ -276,48 +336,49 @@ func verifySHA256(path, expected string) error {
 	return nil
 }
 
-func extractTarGz(path, outputDir string) (int, error) {
+func extractTarGz(path, outputDir string) (map[string]assetReceiptFile, error) {
 	file, err := os.Open(path)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	defer file.Close()
 	gz, err := gzip.NewReader(file)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	defer gz.Close()
 	tr := tar.NewReader(gz)
-	count := 0
+	files := map[string]assetReceiptFile{}
 	for {
 		header, err := tr.Next()
 		if errors.Is(err, io.EOF) {
-			return count, nil
+			return files, nil
 		}
 		if err != nil {
-			return count, err
+			return files, err
 		}
 		target, err := safeJoin(outputDir, header.Name)
 		if err != nil {
-			return count, err
+			return files, err
 		}
 		switch header.Typeflag {
 		case tar.TypeDir:
 			if err := os.MkdirAll(target, 0o755); err != nil {
-				return count, err
+				return files, err
 			}
 		case tar.TypeReg, tar.TypeRegA:
 			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-				return count, err
+				return files, err
 			}
 			mode := header.FileInfo().Mode().Perm()
 			if mode == 0 {
 				mode = 0o644
 			}
-			if err := replaceAsset(target, mode, tr); err != nil {
-				return count, err
+			hash := sha256.New()
+			if err := replaceAsset(target, mode, io.TeeReader(tr, hash)); err != nil {
+				return files, err
 			}
-			count++
+			files[filepath.Clean(header.Name)] = assetReceiptFile{SHA256: hex.EncodeToString(hash.Sum(nil)), Mode: mode}
 		}
 	}
 }

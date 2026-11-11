@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"localclash/internal/poolcontract"
@@ -50,9 +51,9 @@ func TestExtractIncompleteAssetPreservesExistingFile(t *testing.T) {
 	if err := os.WriteFile(path, archive.Bytes(), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	count, err := extractTarGz(path, dir)
-	if err == nil || count != 0 {
-		t.Fatalf("extraction = %d, %v, want incomplete entry failure", count, err)
+	files, err := extractTarGz(path, dir)
+	if err == nil || len(files) != 0 {
+		t.Fatalf("extraction = %v, %v, want incomplete entry failure", files, err)
 	}
 	after, err := os.Stat(target)
 	if err != nil {
@@ -103,11 +104,13 @@ func TestReplaceAssetPreservesOpenReader(t *testing.T) {
 func TestInstallDownloadsAndExtractsBaseAssets(t *testing.T) {
 	archive := testArchive(t)
 	sum := sha256.Sum256(archive)
+	var downloads atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/manifest.json":
 			fmt.Fprintf(w, `{"version":"v-test","base_assets":{"filename":"assets.tar.gz","url":"%s/assets.tar.gz","sha256":"%s"}}`, "http://"+r.Host, hex.EncodeToString(sum[:]))
 		case "/assets.tar.gz":
+			downloads.Add(1)
 			_, _ = w.Write(archive)
 		default:
 			http.NotFound(w, r)
@@ -132,6 +135,24 @@ func TestInstallDownloadsAndExtractsBaseAssets(t *testing.T) {
 	}
 	if status.DefaultPatchCount != 1 || !status.DefaultPatchesInstalled {
 		t.Fatalf("default patch status = count %d installed %v, want 1/true", status.DefaultPatchCount, status.DefaultPatchesInstalled)
+	}
+
+	manifestPath := filepath.Join(t.TempDir(), "release.json")
+	manifestData := fmt.Sprintf(`{"version":"v-test","base_assets":{"filename":"assets.tar.gz","url":"%s/assets.tar.gz","sha256":"%x"}}`, server.URL, sum)
+	if err := os.WriteFile(manifestPath, []byte(manifestData), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	opts := Options{ManifestPath: manifestPath, OutputDir: dir, Force: true}
+	current, err := Install(context.Background(), opts)
+	if err != nil || !current.AlreadyReady || downloads.Load() != 1 {
+		t.Fatalf("current install = %+v, downloads=%d, err=%v", current, downloads.Load(), err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".runtime", "mihomo", "ASN.mmdb"), []byte("damaged"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	repaired, err := Install(context.Background(), opts)
+	if err != nil || repaired.AlreadyReady || downloads.Load() != 2 {
+		t.Fatalf("repair install = %+v, downloads=%d, err=%v", repaired, downloads.Load(), err)
 	}
 }
 
