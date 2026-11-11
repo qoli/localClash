@@ -203,6 +203,29 @@ func TestProbeCandidateRetriesEachInconclusiveProbeIndependently(t *testing.T) {
 	}
 }
 
+func TestProbeCandidateStopsSiblingAfterDomainAdmissionFails(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	statsigStarted := make(chan struct{})
+	prober := &MihomoProber{
+		options: MihomoOptions{Attempts: 2, RetryDelay: time.Nanosecond},
+		probeOAuth: func(context.Context, *http.Client, string, string, time.Duration) oauthProbeResult {
+			<-statsigStarted
+			return oauthTransportError(errors.New("unreachable"))
+		},
+		probeStatsig: func(probeCtx context.Context, _ *http.Client, _, _ string, _ time.Duration) statsigProbeResult {
+			close(statsigStarted)
+			<-probeCtx.Done()
+			return statsigTransportError(probeCtx.Err())
+		},
+	}
+	observation := prober.probeCandidate(ctx, Candidate{Fingerprint: "node"}, &http.Client{})
+	if ctx.Err() != nil || observation.Available || observation.IPVerification != nil ||
+		observation.OAuthAttempts != 2 || observation.StatsigAttempts != 1 || observation.StatsigError != context.Canceled.Error() {
+		t.Fatalf("probe = %+v, parent context = %v", observation, ctx.Err())
+	}
+}
+
 func TestProbeCandidateStopsOAuthAfterConclusiveUnsupportedButStillRunsStatsig(t *testing.T) {
 	oauthCalls := 0
 	statsigCalls := 0

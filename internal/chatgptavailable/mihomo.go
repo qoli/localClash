@@ -218,6 +218,9 @@ func (p *MihomoProber) probeBatch(ctx context.Context, candidates []Candidate, o
 	}
 	close(jobs)
 	wg.Wait()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if err := session.Err(); err != nil {
 		return nil, err
 	}
@@ -231,19 +234,35 @@ func SelectableProxyNames(proxies []map[string]any) ([]string, error) {
 
 func (p *MihomoProber) probeCandidate(ctx context.Context, candidate Candidate, client *http.Client) Observation {
 	started := time.Now()
+	domainCtx, stopDomain := context.WithCancel(ctx)
+	defer stopDomain()
+	oauthDone := make(chan oauthAttemptResult, 1)
+	statsigDone := make(chan statsigAttemptResult, 1)
+	go func(done chan<- oauthAttemptResult) { done <- p.probeOAuthAttempts(domainCtx, client) }(oauthDone)
+	go func(done chan<- statsigAttemptResult) { done <- p.probeStatsigAttempts(domainCtx, client) }(statsigDone)
+
 	var oauthResult oauthAttemptResult
 	var statsigResult statsigAttemptResult
-	var wg sync.WaitGroup
-	wg.Add(2)
-	go func() {
-		defer wg.Done()
-		oauthResult = p.probeOAuthAttempts(ctx, client)
-	}()
-	go func() {
-		defer wg.Done()
-		statsigResult = p.probeStatsigAttempts(ctx, client)
-	}()
-	wg.Wait()
+	stopSibling := func(service, decision string) {
+		if domainCtx.Err() == nil {
+			stopDomain()
+			p.recordTiming(ctx, started, probeTiming{Phase: "domain_gate_stop", Service: service, Outcome: decision}, nil)
+		}
+	}
+	for oauthDone != nil || statsigDone != nil {
+		select {
+		case oauthResult = <-oauthDone:
+			oauthDone = nil
+			if oauthResult.result.decision != oauthRegionSupported && statsigDone != nil {
+				stopSibling("oauth", oauthResult.result.decision)
+			}
+		case statsigResult = <-statsigDone:
+			statsigDone = nil
+			if statsigResult.result.decision != statsigReachable && oauthDone != nil {
+				stopSibling("statsig", statsigResult.result.decision)
+			}
+		}
+	}
 	p.recordTiming(ctx, started, probeTiming{Phase: "domain_pair"}, nil)
 
 	observation := Observation{
@@ -361,14 +380,14 @@ func (p *MihomoProber) probeStatsigEndpointAttempts(ctx context.Context, client 
 }
 
 func waitToRetry(ctx context.Context, attempt, attempts int, delay time.Duration) bool {
-	if attempt >= attempts {
+	if attempt >= attempts || ctx.Err() != nil {
 		return false
 	}
 	timer := time.NewTimer(delay)
 	defer timer.Stop()
 	select {
 	case <-timer.C:
-		return true
+		return ctx.Err() == nil
 	case <-ctx.Done():
 		return false
 	}
