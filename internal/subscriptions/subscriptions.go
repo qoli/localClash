@@ -213,7 +213,7 @@ func Status(opts StatusOptions) (StatusResult, error) {
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			result.Message = "subscription sources are not configured; ask the user for one or more subscription URIs, then run subscriptions_configure"
-			result.Merged = summarizeArtifact(opts.MergedPath)
+			result.Merged = summarizeArtifact(opts.MergedPath, nil)
 			return result, nil
 		}
 		return StatusResult{}, err
@@ -221,7 +221,7 @@ func Status(opts StatusOptions) (StatusResult, error) {
 	result.Configured = true
 	for _, source := range config.Sources {
 		artifact := artifactPath(opts.RuntimeDir, source.ID)
-		summary := summarizeArtifact(artifact)
+		summary := summarizeArtifact(artifact, nil)
 		result.Sources = append(result.Sources, SourceStatus{
 			ID:               source.ID,
 			DisplayName:      sourceDisplayName(source),
@@ -237,7 +237,7 @@ func Status(opts StatusOptions) (StatusResult, error) {
 			UpdatedAt:        summary.UpdatedAt,
 		})
 	}
-	result.Merged = summarizeArtifact(opts.MergedPath)
+	result.Merged = summarizeArtifact(opts.MergedPath, nil)
 	return result, nil
 }
 
@@ -490,7 +490,7 @@ func Refresh(ctx context.Context, opts RefreshOptions) (RefreshResult, error) {
 		finish(err, nil)
 		return RefreshResult{}, err
 	}
-	result.Merged = summarizeArtifact(opts.MergedPath)
+	result.Merged = summarizeArtifact(opts.MergedPath, merged)
 	result.Merged.RenamedProxiesCount = renamed
 	result.MergedDoc = merged
 	sort.Strings(result.Warnings)
@@ -1679,7 +1679,7 @@ func uniqueProxyName(name string, used map[string]bool) string {
 	}
 }
 
-func summarizeArtifact(path string) ArtifactSummary {
+func summarizeArtifact(path string, data map[string]any) ArtifactSummary {
 	result := ArtifactSummary{Path: path}
 	info, err := os.Stat(path)
 	if err != nil {
@@ -1690,11 +1690,14 @@ func summarizeArtifact(path string) ArtifactSummary {
 	}
 	result.Exists = true
 	result.UpdatedAt = info.ModTime().Format(time.RFC3339)
-	doc, err := readSubscription(path)
-	if err != nil {
-		return result
+	if data == nil {
+		doc, err := readSubscription(path)
+		if err != nil {
+			return result
+		}
+		data = doc.Data
 	}
-	counts := summarizeMap(doc.Data)
+	counts := summarizeMap(data)
 	result.ProxiesCount = counts.ProxiesCount
 	result.ProxyGroupsCount = counts.ProxyGroupsCount
 	result.RulesCount = counts.RulesCount
