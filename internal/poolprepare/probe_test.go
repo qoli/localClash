@@ -20,42 +20,64 @@ func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return f(req)
 }
 
-func TestRunAutoProbesStopsAfterEnoughQualified(t *testing.T) {
-	names := []string{"stalled", "first", "second", "remaining"}
-	stalled := make(chan struct{})
-	results := runAutoProbes(t.Context(), names, 2, 2, func(ctx context.Context, index int) time.Duration {
+func TestRunAutoProbesDrainsAfterEnoughQualified(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	measured := runAutoProbes(t.Context(), 4, 2, 2, func(ctx context.Context, index int) time.Duration {
 		switch index {
 		case 0:
-			close(stalled)
-			<-ctx.Done()
-			return 0
+			close(started)
+			select {
+			case <-release:
+				return time.Millisecond
+			case <-ctx.Done():
+				t.Error("in-flight probe was canceled")
+				return 0
+			}
 		case 1:
-			<-stalled
+			<-started
+		case 2:
+			close(release)
+		default:
+			t.Errorf("unexpected probe after the pool filled: %d", index)
 		}
-		return time.Millisecond
+		return time.Second
 	})
+	rankByDoH(measured.completed)
 	want := []measurement{
-		{name: "stalled", canceled: true},
-		{name: "first", worst: time.Millisecond},
-		{name: "second", worst: time.Millisecond},
-		{},
+		{index: 0, worstDoH: time.Millisecond},
+		{index: 1, worstDoH: time.Second},
+		{index: 2, worstDoH: time.Second},
 	}
-	if !slices.Equal(results, want) {
-		t.Fatalf("probe results = %+v, want %+v", results, want)
+	if !slices.Equal(measured.completed, want) || measured.filledAt.IsZero() || measured.drainedCount != 1 {
+		t.Fatalf("probe results = %+v, want %+v with one drained probe", measured, want)
 	}
 }
 
 func TestRunAutoProbesExhaustsCandidatesWhenPoolIsShort(t *testing.T) {
-	names := []string{"offline", "online", "last"}
-	results := runAutoProbes(t.Context(), names, 1, 2, func(_ context.Context, index int) time.Duration {
+	measured := runAutoProbes(t.Context(), 3, 1, 2, func(_ context.Context, index int) time.Duration {
 		if index == 1 {
 			return time.Millisecond
 		}
 		return 0
 	})
-	want := []measurement{{name: "offline"}, {name: "online", worst: time.Millisecond}, {name: "last"}}
-	if !slices.Equal(results, want) {
-		t.Fatalf("probe results = %+v, want %+v", results, want)
+	want := []measurement{{index: 0}, {index: 1, worstDoH: time.Millisecond}, {index: 2}}
+	if !slices.Equal(measured.completed, want) || !measured.filledAt.IsZero() || measured.drainedCount != 0 {
+		t.Fatalf("probe results = %+v, want %+v with no drain", measured, want)
+	}
+}
+
+func TestRankByDoHCanReplaceAnEarlyQualifier(t *testing.T) {
+	qualified := []measurement{
+		{index: 1, worstDoH: 4 * time.Second},
+		{index: 2, worstDoH: 2 * time.Second},
+		{index: 0, worstDoH: time.Second},
+	}
+	first := summarizeDoH(qualified[:2])
+	rankByDoH(qualified)
+	selected := summarizeDoH(qualified[:2])
+	if first.MaxMS != 4000 || selected.MaxMS != 2000 || qualified[0].index != 0 {
+		t.Fatalf("first = %+v, selected = %+v, ranked = %+v", first, selected, qualified)
 	}
 }
 

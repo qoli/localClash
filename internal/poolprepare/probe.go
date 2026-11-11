@@ -11,8 +11,6 @@ import (
 	"slices"
 	"sort"
 	"strings"
-	"sync"
-	"sync/atomic"
 	"time"
 
 	"localclash/internal/capability"
@@ -24,9 +22,14 @@ import (
 var overseasDoH = []string{"https://1.1.1.1/dns-query", "https://8.8.8.8/dns-query"}
 
 type measurement struct {
-	name     string
-	worst    time.Duration
-	canceled bool
+	index    int
+	worstDoH time.Duration
+}
+
+type autoBatchResult struct {
+	completed    []measurement
+	filledAt     time.Time
+	drainedCount int
 }
 
 func qualifyAuto(ctx context.Context, input poolcontract.Input, names []string, opts Options) (capability.Result, error) {
@@ -40,42 +43,73 @@ func qualifyAuto(ctx context.Context, input poolcontract.Input, names []string, 
 		Profile: poolcontract.AutoCapability, Candidates: len(names),
 		PrioritizedCount:  prioritized,
 		DeduplicatedCount: len(names) - len(representatives),
+		AutoQuality:       &capability.AutoQuality{},
 	}
 	var qualified []measurement
+	offset := 0
 	for batch := range slices.Chunk(representatives, proxyprobe.BatchSize) {
 		remaining := poolcontract.AutoLimit - len(qualified)
 		if remaining <= 0 {
 			break
 		}
-		results, err := probeAutoBatch(ctx, input.Proxies, batch, remaining, opts)
+		measured, err := probeAutoBatch(ctx, input.Proxies, batch, remaining, opts)
 		if err != nil {
 			return capability.Result{}, err
 		}
-		for _, attempt := range results {
-			if attempt.name == "" {
-				continue
-			}
-			result.Probed++
-			switch {
-			case attempt.worst > 0:
+		result.Probed += len(measured.completed)
+		if !measured.filledAt.IsZero() {
+			result.AutoQuality.FillDurationMS = measured.filledAt.Sub(start).Milliseconds()
+			result.AutoQuality.DrainedCount = measured.drainedCount
+		}
+		for _, attempt := range measured.completed {
+			if attempt.worstDoH > 0 {
+				attempt.index += offset
 				qualified = append(qualified, attempt)
-			case attempt.canceled:
-				result.CanceledCount++
-			default:
+			} else {
 				result.UnavailableCount++
 			}
 		}
+		offset += len(batch)
 	}
-	// Stable ties preserve probe order.
-	sort.SliceStable(qualified, func(i, j int) bool { return qualified[i].worst < qualified[j].worst })
 	result.UnprobedCount = len(representatives) - result.Probed
 	result.ObservedQualifiedCount = len(qualified)
-	result.DurationMS = time.Since(start).Milliseconds()
-	for _, entry := range qualified[:min(len(qualified), poolcontract.AutoLimit)] {
-		result.Qualified = append(result.Qualified, entry.name)
+	limit := min(len(qualified), poolcontract.AutoLimit)
+	result.AutoQuality.FirstQualified = summarizeDoH(qualified[:limit])
+	rankByDoH(qualified)
+	selected := qualified[:limit]
+	result.AutoQuality.Selected = summarizeDoH(selected)
+	for _, entry := range selected {
+		result.Qualified = append(result.Qualified, representatives[entry.index])
 	}
 	result.QualifiedCount = len(result.Qualified)
+	result.DurationMS = time.Since(start).Milliseconds()
 	return result, nil
+}
+
+func rankByDoH(measured []measurement) {
+	sort.Slice(measured, func(i, j int) bool {
+		if measured[i].worstDoH == measured[j].worstDoH {
+			return measured[i].index < measured[j].index
+		}
+		return measured[i].worstDoH < measured[j].worstDoH
+	})
+}
+
+func summarizeDoH(measured []measurement) capability.DoHLatencySummary {
+	if len(measured) == 0 {
+		return capability.DoHLatencySummary{}
+	}
+	latencies := make([]time.Duration, len(measured))
+	for index, entry := range measured {
+		latencies[index] = entry.worstDoH
+	}
+	slices.Sort(latencies)
+	count := len(latencies)
+	return capability.DoHLatencySummary{
+		P50MS: latencies[(count+1)/2-1].Milliseconds(),
+		P90MS: latencies[(count*9+9)/10-1].Milliseconds(),
+		MaxMS: latencies[count-1].Milliseconds(),
+	}
 }
 
 func autoCandidates(proxies []map[string]any, eligible []string, previous map[string]bool) ([]string, int, error) {
@@ -109,15 +143,15 @@ func autoCandidates(proxies []map[string]any, eligible []string, previous map[st
 	return append(preferred, names...), len(preferred), nil
 }
 
-func probeAutoBatch(ctx context.Context, proxies []map[string]any, names []string, needed int, opts Options) ([]measurement, error) {
+func probeAutoBatch(ctx context.Context, proxies []map[string]any, names []string, needed int, opts Options) (autoBatchResult, error) {
 	session, err := proxyprobe.Start(ctx, proxies, names, proxyprobe.Options{
 		CorePath: opts.CorePath, RuntimeParent: opts.ProbeDir, RuntimePrefix: "auto-pool-probe-",
 	})
 	if err != nil {
-		return nil, err
+		return autoBatchResult{}, err
 	}
 	defer session.Close()
-	results := runAutoProbes(ctx, names, opts.Concurrency, needed, func(ctx context.Context, index int) time.Duration {
+	measured := runAutoProbes(ctx, len(names), opts.Concurrency, needed, func(ctx context.Context, index int) time.Duration {
 		client, err := session.HTTPClient(index, 5*time.Second, true)
 		if err != nil {
 			return 0
@@ -126,49 +160,45 @@ func probeAutoBatch(ctx context.Context, proxies []map[string]any, names []strin
 		return measureAuto(ctx, client)
 	})
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return autoBatchResult{}, err
 	}
-	return results, session.Err()
+	return measured, session.Err()
 }
 
-func runAutoProbes(ctx context.Context, names []string, concurrency, needed int, probe func(context.Context, int) time.Duration) []measurement {
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	results := make([]measurement, len(names))
-	jobs := make(chan int)
-	var workers sync.WaitGroup
-	var qualified atomic.Int32
-	for range min(concurrency, len(names)) {
-		workers.Add(1)
+func runAutoProbes(ctx context.Context, count, concurrency, needed int, probe func(context.Context, int) time.Duration) autoBatchResult {
+	completed := make(chan measurement)
+	var measured autoBatchResult
+	next, inFlight, qualified := 0, 0, 0
+	dispatch := func() {
+		index := next
+		next++
+		inFlight++
 		go func() {
-			defer workers.Done()
-			for index := range jobs {
-				if ctx.Err() != nil {
-					return
-				}
-				worst := probe(ctx, index)
-				results[index] = measurement{name: names[index], worst: worst, canceled: worst == 0 && ctx.Err() != nil}
-				if worst > 0 && qualified.Add(1) == int32(needed) {
-					cancel()
-				}
-			}
+			completed <- measurement{index: index, worstDoH: probe(ctx, index)}
 		}()
 	}
-dispatch:
-	for index := range names {
-		select {
-		case jobs <- index:
-		case <-ctx.Done():
-			break dispatch
+	for next < min(concurrency, count) && ctx.Err() == nil {
+		dispatch()
+	}
+	for inFlight > 0 {
+		attempt := <-completed
+		inFlight--
+		measured.completed = append(measured.completed, attempt)
+		if attempt.worstDoH > 0 {
+			qualified++
+			if qualified == needed {
+				measured.filledAt = time.Now()
+				measured.drainedCount = inFlight
+			}
+		}
+		if qualified < needed && next < count && ctx.Err() == nil {
+			dispatch()
 		}
 	}
-	close(jobs)
-	workers.Wait()
-	return results
+	return measured
 }
 
 func measureAuto(ctx context.Context, client *http.Client) time.Duration {
-	start := time.Now()
 	req, err := http.NewRequestWithContext(ctx, http.MethodHead, poolcontract.AutoHTTPSProbeURL, nil)
 	if err != nil {
 		return 0
@@ -181,12 +211,7 @@ func measureAuto(ctx context.Context, client *http.Client) time.Duration {
 	if resp.StatusCode != poolcontract.AutoHTTPSProbeStatus {
 		return 0
 	}
-	httpsLatency := time.Since(start)
-	dohLatency := measureDoH(ctx, client)
-	if dohLatency == 0 {
-		return 0
-	}
-	return max(httpsLatency, dohLatency)
+	return measureDoH(ctx, client)
 }
 
 func measureDoH(ctx context.Context, client *http.Client) time.Duration {

@@ -6,21 +6,36 @@ import (
 )
 
 type Result struct {
-	Profile                string   `json:"profile"`
-	SnapshotPath           string   `json:"snapshot_path"`
-	Candidates             int      `json:"candidates"`
-	Probed                 int      `json:"probed"`
-	PrioritizedCount       int      `json:"prioritized_count,omitempty"`
-	UnprobedCount          int      `json:"unprobed_count,omitempty"`
-	CanceledCount          int      `json:"canceled_count,omitempty"`
-	DeduplicatedCount      int      `json:"deduplicated_count,omitempty"`
-	HelperExcludedCount    int      `json:"helper_excluded_count,omitempty"`
-	Qualified              []string `json:"qualified"`
-	QualifiedCount         int      `json:"qualified_count"`
-	ObservedQualifiedCount int      `json:"observed_qualified_count"`
-	RetainedCount          int      `json:"retained_count"`
-	UnavailableCount       int      `json:"unavailable_count"`
-	DurationMS             int64    `json:"duration_ms"`
+	Profile                string       `json:"profile"`
+	SnapshotPath           string       `json:"snapshot_path"`
+	Candidates             int          `json:"candidates"`
+	Probed                 int          `json:"probed"`
+	PrioritizedCount       int          `json:"prioritized_count,omitempty"`
+	UnprobedCount          int          `json:"unprobed_count,omitempty"`
+	CanceledCount          int          `json:"canceled_count,omitempty"`
+	DeduplicatedCount      int          `json:"deduplicated_count,omitempty"`
+	HelperExcludedCount    int          `json:"helper_excluded_count,omitempty"`
+	Qualified              []string     `json:"qualified"`
+	QualifiedCount         int          `json:"qualified_count"`
+	ObservedQualifiedCount int          `json:"observed_qualified_count"`
+	RetainedCount          int          `json:"retained_count"`
+	UnavailableCount       int          `json:"unavailable_count"`
+	DurationMS             int64        `json:"duration_ms"`
+	AutoQuality            *AutoQuality `json:"auto_quality,omitempty"`
+}
+
+type AutoQuality struct {
+	FirstQualified DoHLatencySummary `json:"first_qualified"`
+	Selected       DoHLatencySummary `json:"selected"`
+	FillDurationMS int64             `json:"fill_duration_ms,omitempty"`
+	DrainedCount   int               `json:"drained_count"`
+}
+
+// DoHLatencySummary describes each exit's slowest successful DoH query.
+type DoHLatencySummary struct {
+	P50MS int64 `json:"p50_ms"`
+	P90MS int64 `json:"p90_ms"`
+	MaxMS int64 `json:"max_ms"`
 }
 
 func QualifiedByProfile(result Result) map[string][]string {

@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"localclash/internal/capability"
 	"localclash/internal/poolcontract"
 	"localclash/internal/poolprepare"
 	"localclash/internal/runtimesupervision"
@@ -203,17 +204,18 @@ type qualification struct {
 }
 
 type poolResult struct {
-	Profile                string `json:"profile"`
-	Provider               string `json:"provider"`
-	Reused                 bool   `json:"reused"`
-	Candidates             int    `json:"candidates,omitempty"`
-	Probed                 int    `json:"probed,omitempty"`
-	PrioritizedCount       int    `json:"prioritized_count,omitempty"`
-	UnprobedCount          int    `json:"unprobed_count,omitempty"`
-	CanceledCount          int    `json:"canceled_count,omitempty"`
-	ObservedQualifiedCount int    `json:"observed_qualified_count,omitempty"`
-	QualifiedCount         int    `json:"qualified_count,omitempty"`
-	DurationMS             int64  `json:"duration_ms,omitempty"`
+	Profile                string                  `json:"profile"`
+	Provider               string                  `json:"provider"`
+	Reused                 bool                    `json:"reused"`
+	Candidates             int                     `json:"candidates,omitempty"`
+	Probed                 int                     `json:"probed,omitempty"`
+	PrioritizedCount       int                     `json:"prioritized_count,omitempty"`
+	UnprobedCount          int                     `json:"unprobed_count,omitempty"`
+	CanceledCount          int                     `json:"canceled_count,omitempty"`
+	ObservedQualifiedCount int                     `json:"observed_qualified_count,omitempty"`
+	QualifiedCount         int                     `json:"qualified_count,omitempty"`
+	DurationMS             int64                   `json:"duration_ms,omitempty"`
+	AutoQuality            *capability.AutoQuality `json:"auto_quality,omitempty"`
 }
 
 func qualify(ctx context.Context, mergedPath, selected string, opts poolprepare.Options) (qualification, error) {
@@ -261,6 +263,7 @@ func qualify(ctx context.Context, mergedPath, selected string, opts poolprepare.
 					UnprobedCount: result.UnprobedCount, CanceledCount: result.CanceledCount,
 					ObservedQualifiedCount: result.ObservedQualifiedCount,
 					QualifiedCount:         result.QualifiedCount, DurationMS: result.DurationMS,
+					AutoQuality: result.AutoQuality,
 				}
 				break
 			}
