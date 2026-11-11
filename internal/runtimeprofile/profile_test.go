@@ -12,6 +12,27 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+func TestPoolSettingKeepsLegacyDefaultAndSurvivesModeChanges(t *testing.T) {
+	path := filepath.Join(t.TempDir(), DefaultPath)
+	if err := os.WriteFile(path, []byte(`{"version":2,"mode":"normal","core":"meta"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	file, _, err := Load(path)
+	if err != nil || file.PoolsDisabled {
+		t.Fatalf("legacy profile = %+v, error = %v", file, err)
+	}
+	if err := SetPoolsEnabled(path, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Configure(path, ModeRouter, CoreSmart); err != nil {
+		t.Fatal(err)
+	}
+	file, _, err = Load(path)
+	if err != nil || !file.PoolsDisabled || file.Mode != ModeRouter || file.Core != CoreSmart {
+		t.Fatalf("updated profile = %+v, error = %v", file, err)
+	}
+}
+
 func TestStatusForMissingFileInitializesV2RuntimeSelectorWithoutWorkingProfiles(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, DefaultPath)

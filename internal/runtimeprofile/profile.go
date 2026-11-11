@@ -46,12 +46,13 @@ var dynamicConfigKeys = map[string]bool{
 }
 
 type File struct {
-	Version  int                `yaml:"version" json:"version"`
-	Mode     string             `yaml:"mode" json:"mode"`
-	Core     string             `yaml:"core" json:"core"`
-	Profiles map[string]Profile `yaml:"-" json:"-"`
-	Cores    map[string]Core    `yaml:"-" json:"-"`
-	Smart    SmartOptions       `yaml:"-" json:"-"`
+	Version       int                `yaml:"version" json:"version"`
+	Mode          string             `yaml:"mode" json:"mode"`
+	Core          string             `yaml:"core" json:"core"`
+	PoolsDisabled bool               `yaml:"-" json:"pools_disabled,omitempty"`
+	Profiles      map[string]Profile `yaml:"-" json:"-"`
+	Cores         map[string]Core    `yaml:"-" json:"-"`
+	Smart         SmartOptions       `yaml:"-" json:"-"`
 }
 
 type Profile struct {
@@ -61,9 +62,10 @@ type Profile struct {
 }
 
 type diskFile struct {
-	Version int    `yaml:"version" json:"version"`
-	Mode    string `yaml:"mode" json:"mode"`
-	Core    string `yaml:"core" json:"core"`
+	Version       int    `yaml:"version" json:"version"`
+	Mode          string `yaml:"mode" json:"mode"`
+	Core          string `yaml:"core" json:"core"`
+	PoolsDisabled bool   `json:"pools_disabled,omitempty"`
 }
 
 type Core struct {
@@ -180,6 +182,16 @@ func Configure(path, mode, core string) (Status, error) {
 		return Status{}, err
 	}
 	return StatusFor(path)
+}
+
+func SetPoolsEnabled(path string, enabled bool) error {
+	path = normalizePath(path)
+	file, _, err := Load(path)
+	if err != nil {
+		return err
+	}
+	file.PoolsDisabled = !enabled
+	return write(path, file)
 }
 
 // PreviewConfigure resolves a requested selection without changing the profile.
@@ -345,6 +357,7 @@ func normalizeDiskFile(file diskFile) File {
 	out.Version = file.Version
 	out.Mode = file.Mode
 	out.Core = file.Core
+	out.PoolsDisabled = file.PoolsDisabled
 	return out
 }
 
@@ -520,9 +533,10 @@ func write(path string, file File) error {
 		}
 	}
 	disk := diskFile{
-		Version: file.Version,
-		Mode:    file.Mode,
-		Core:    file.Core,
+		Version:       file.Version,
+		Mode:          file.Mode,
+		Core:          file.Core,
+		PoolsDisabled: file.PoolsDisabled,
 	}
 	data, err := json.MarshalIndent(disk, "", "  ")
 	if err != nil {

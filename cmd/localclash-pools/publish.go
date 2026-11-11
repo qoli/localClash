@@ -37,7 +37,7 @@ func refresh(ctx context.Context, workDir string) ([]capability.Result, error) {
 	}
 	defer live.client.HTTPClient.CloseIdleConnections()
 	input, pools, err := decodePoolConfig(data)
-	if err != nil {
+	if err != nil || len(pools) == 0 {
 		return nil, err
 	}
 	for _, pool := range pools {
@@ -50,6 +50,7 @@ func refresh(ctx context.Context, workDir string) ([]capability.Result, error) {
 
 func decodePoolConfig(data []byte) (poolcontract.Input, []poolcontract.Pool, error) {
 	var config struct {
+		Disabled  bool             `yaml:"x-localclash-pools-disabled"`
 		Revision  string           `yaml:"x-localclash-pool-revision"`
 		Proxies   []map[string]any `yaml:"proxies"`
 		Providers map[string]struct {
@@ -59,6 +60,9 @@ func decodePoolConfig(data []byte) (poolcontract.Input, []poolcontract.Pool, err
 	}
 	if err := yaml.Unmarshal(data, &config); err != nil {
 		return poolcontract.Input{}, nil, errors.New("decode loaded Mihomo pool configuration")
+	}
+	if config.Disabled {
+		return poolcontract.Input{}, nil, nil
 	}
 	input, err := poolcontract.NewInput(config.Proxies)
 	if err != nil {

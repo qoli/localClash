@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
 	"localclash/internal/configmeta"
 	"localclash/internal/customsites"
+	"localclash/internal/poolcontract"
 	"localclash/internal/rules"
 	"localclash/internal/runtimeprofile"
 	"localclash/internal/smartpolicy"
@@ -922,6 +924,69 @@ enabled_packs:
 	ai := proxyGroupFromConfig(t, meta, "AI")
 	if ai["type"] != "url-test" || ai["policy-priority"] != nil {
 		t.Fatalf("Meta AI group = %+v, want url-test without Smart-only priority", ai)
+	}
+}
+
+func TestRenderDisablesManagedPoolProvidersWithoutChangingPolicyTargets(t *testing.T) {
+	paths := writeRenderFixture(t)
+	dir := paths.dir
+	profile := filepath.Join(dir, runtimeprofile.DefaultPath)
+	if _, err := runtimeprofile.Configure(profile, "", runtimeprofile.CoreSmart); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtimeprofile.SetPoolsEnabled(profile, false); err != nil {
+		t.Fatal(err)
+	}
+	selection := rules.Selection{
+		Version: 1,
+		ProxyGroups: map[string]rules.ProxyGroup{
+			"Auto":      {Auto: true, PoolCapability: poolcontract.AutoCapability},
+			"Qualified": {Auto: true, PoolCapability: poolcontract.ChatGPTCapability, Optional: true},
+		},
+		RequiredTargets: []string{"Auto", "Qualified"},
+		FallbackTarget:  "Auto",
+	}
+	opts := Options{
+		Source: map[string]any{"proxies": []any{
+			map[string]any{"name": "Dialer", "type": "ss"},
+			map[string]any{"name": "Chained", "type": "ss", "dialer-proxy": "Dialer"},
+			map[string]any{"name": "Standalone", "type": "ss"},
+		}},
+		OutputPath:         filepath.Join(dir, "config.yaml"),
+		Selection:          &selection,
+		RulesCacheDir:      paths.cacheDir,
+		RuntimeProfilePath: profile,
+		Force:              true,
+	}
+	if _, err := Render(opts); err != nil {
+		t.Fatal(err)
+	}
+	disabled := readTestYAML(t, opts.OutputPath)
+	if disabled[poolcontract.DisabledKey] != true || disabled["proxy-providers"] != nil || disabled[poolcontract.RevisionKey] != nil {
+		t.Fatal("rendered configuration still uses managed pool providers")
+	}
+	auto := proxyGroupFromConfig(t, disabled, "Auto")
+	if auto["type"] != "smart" || auto["use"] != nil || !reflect.DeepEqual(auto["proxies"], []any{"Chained", "Standalone"}) {
+		t.Fatalf("disabled automatic pool = %+v", auto)
+	}
+	qualified := proxyGroupFromConfig(t, disabled, "Qualified")
+	if qualified["type"] != "select" || qualified["use"] != nil || !reflect.DeepEqual(qualified["proxies"], []any{"REJECT"}) {
+		t.Fatalf("disabled service-qualified pool = %+v", qualified)
+	}
+	rules := disabled["rules"].([]any)
+	if rules[len(rules)-1] != "MATCH,Auto" {
+		t.Fatalf("automatic group lost its routing target: %v", rules)
+	}
+
+	if err := runtimeprofile.SetPoolsEnabled(profile, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Render(opts); err != nil {
+		t.Fatal(err)
+	}
+	enabled := readTestYAML(t, opts.OutputPath)
+	if enabled[poolcontract.DisabledKey] != nil || enabled[poolcontract.RevisionKey] == nil || len(enabled["proxy-providers"].(map[string]any)) != 2 {
+		t.Fatal("re-enabling qualification did not restore the two managed providers")
 	}
 }
 

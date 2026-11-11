@@ -40,6 +40,7 @@ Usage:
   localclash config status --json
   localclash config apply-template --input config-request.json --json
   localclash config render --json
+  localclash config pools [--enabled true|false] --json
   localclash custom-sites list --json
   localclash custom-sites transact --input custom-site-operation.json --json
   localclash mihomo config-test --json

@@ -122,7 +122,7 @@ func runProductCommand(args []string, state appinit.RuntimeState) (bool, error) 
 	case "component":
 		err = runProductComponent(args[1:], state)
 	case "config":
-		if len(args) >= 2 && (args[1] == "status" || args[1] == "apply-template" || (args[1] == "render" && hasFlag(args[2:], "json"))) {
+		if productCommandWasHandled(args) {
 			err = runProductConfig(args[1:], state)
 		}
 	case "custom-sites":
@@ -162,7 +162,7 @@ func productCommandWasHandled(args []string) bool {
 	case "subscription":
 		return len(args) >= 2 && args[1] != "download"
 	case "config":
-		return len(args) >= 2 && (args[1] == "status" || args[1] == "apply-template" || (args[1] == "render" && hasFlag(args[2:], "json")))
+		return len(args) >= 2 && (args[1] == "status" || args[1] == "apply-template" || args[1] == "pools" || (args[1] == "render" && hasFlag(args[2:], "json")))
 	case "reset":
 		return hasFlag(args[1:], "json")
 	case "mcp":
@@ -283,6 +283,10 @@ func refreshProductCapabilities(ctx context.Context, state appinit.RuntimeState,
 		if errors.Is(err, os.ErrNotExist) {
 			return []capability.Result{}, nil
 		}
+		return nil, err
+	}
+	profile, _, err := runtimeprofile.Load(state.Paths.RuntimeProfilePath)
+	if err != nil || profile.PoolsDisabled {
 		return nil, err
 	}
 	started := time.Now()
@@ -441,7 +445,7 @@ func runProductComponentUpdate(args []string, state appinit.RuntimeState) error 
 
 func runProductConfig(args []string, state appinit.RuntimeState) error {
 	if len(args) == 0 {
-		return fmt.Errorf("config subcommand is required: status, apply-template, or render")
+		return fmt.Errorf("config subcommand is required: status, apply-template, render, or pools")
 	}
 	switch args[0] {
 	case "status":
@@ -472,6 +476,8 @@ func runProductConfig(args []string, state appinit.RuntimeState) error {
 			return err
 		}
 		return printProductOK(productEnvelope{OK: true, Changed: true, Summary: "Generated Mihomo config rendered.", Status: result, Changes: []string{"config_rendered"}, Warnings: warnings})
+	case "pools":
+		return runProductPools(args[1:], state)
 	default:
 		return fmt.Errorf("unknown config subcommand %q", args[0])
 	}

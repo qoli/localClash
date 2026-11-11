@@ -1197,6 +1197,7 @@ func stubMihomoCandidateTest(t *testing.T, server *Server) {
 
 func TestToolsCallSubscriptionsRefreshPreparesQualifiedProviders(t *testing.T) {
 	dir := t.TempDir()
+	profile := filepath.Join(dir, runtimeprofile.DefaultPath)
 	subscriptionServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`proxies:
   - name: US 01
@@ -1267,6 +1268,7 @@ sources:
 		PacksSelectionPath:  selection,
 		RulesCacheDir:       rulesCache,
 		GeneratedConfig:     generated,
+		RuntimeProfilePath:  profile,
 		CorePath:            filepath.Join(dir, "unused-fake-core"),
 	}})
 	server.preparePools = func(_ context.Context, opts poollaunch.Options, config localconfig.Config, doc map[string]any) ([]capability.Result, error) {
@@ -1339,6 +1341,30 @@ sources:
 	}
 	if auto["url"] != poolcontract.AutoHTTPSProbeURL || auto["expected-status"] != "204" {
 		t.Fatalf("automatic provider health check = %+v", auto)
+	}
+
+	if err := runtimeprofile.SetPoolsEnabled(profile, false); err != nil {
+		t.Fatal(err)
+	}
+	server.preparePools = func(context.Context, poollaunch.Options, localconfig.Config, map[string]any) ([]capability.Result, error) {
+		t.Fatal("disabled pools invoked qualification through MCP")
+		return nil, nil
+	}
+	resp = callHandleWithServer(t, server, map[string]any{
+		"jsonrpc": "2.0",
+		"id":      2,
+		"method":  "tools/call",
+		"params": map[string]any{
+			"name":      "subscriptions_refresh",
+			"arguments": map[string]any{"background": false},
+		},
+	})
+	if resp.Error != nil {
+		t.Fatalf("subscriptions_refresh with disabled pools: %+v", resp.Error)
+	}
+	config = readMCPYAML(t, generated)
+	if config[poolcontract.DisabledKey] != true || config["proxy-providers"] != nil {
+		t.Fatalf("MCP refresh reintroduced managed providers: %v", config["proxy-providers"])
 	}
 }
 

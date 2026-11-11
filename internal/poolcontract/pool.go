@@ -17,6 +17,7 @@ const (
 	AutoHTTPSProbeURL    = "https://cp.cloudflare.com/generate_204"
 	AutoHTTPSProbeStatus = 204
 	RevisionKey          = "x-localclash-pool-revision"
+	DisabledKey          = "x-localclash-pools-disabled"
 	Directory            = "qualified-pools"
 	RejectName           = "localClash 无合格出口"
 )

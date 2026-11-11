@@ -638,6 +638,26 @@ custom_rules:
 	if text := string(generated); !strings.Contains(text, "name: ChatGPT-available") || !strings.Contains(text, "US 01") {
 		t.Fatalf("one-click render did not consume refreshed capability:\n%s", text)
 	}
+
+	prepareCalled = false
+	core := filepath.Join(dir, runtimeprofile.MetaCorePath)
+	writeMainExecutableCore(t, core, "Mihomo Meta fixture")
+	if _, err := captureStdoutAllowError(t, func() error {
+		return run([]string{"config", "pools", "--enabled", "false", "--json"})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	captureStdout(t, func() error { return run([]string{"subscription", "refresh", "--json"}) })
+	if prepareCalled {
+		t.Fatal("disabled pools still invoked the worker on subscription refresh")
+	}
+	disabled, err := os.ReadFile(filepath.Join(dir, ".runtime", "mihomo", "config.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if text := string(disabled); !strings.Contains(text, poolcontract.DisabledKey+": true") || strings.Contains(text, "localclash-qualified-chatgpt") {
+		t.Fatalf("capability toggle did not apply the disabled configuration:\n%s", text)
+	}
 }
 
 func TestRunProductSubscriptionRefreshRebuildsTemplateOwnedGroupsBeforeCapabilities(t *testing.T) {

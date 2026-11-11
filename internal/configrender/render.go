@@ -14,6 +14,7 @@ import (
 	"localclash/internal/configmeta"
 	"localclash/internal/customsites"
 	"localclash/internal/poolcontract"
+	"localclash/internal/proxyprobe"
 	rulespkg "localclash/internal/rules"
 	"localclash/internal/runtimeprofile"
 	"localclash/internal/smartpolicy"
@@ -37,6 +38,7 @@ type Options struct {
 	Selection          *rulespkg.Selection `json:"-"`
 	RulesCacheDir      string
 	RuntimeProfilePath string
+	PoolsEnabled       *bool
 	CustomSitesProxy   string
 	CustomSitesDirect  string
 	CustomSitesReject  string
@@ -108,7 +110,7 @@ func Render(opts Options) (Result, error) {
 	source := opts.Source
 	var err error
 	if source == nil {
-		source, err = readGobMap(opts.SourcePath)
+		source, err = ReadSubscription(opts.SourcePath)
 		if err != nil {
 			finish(err, nil)
 			return Result{}, err
@@ -194,7 +196,11 @@ func Render(opts Options) (Result, error) {
 		finish(err, nil)
 		return Result{}, err
 	}
-	if err := addPoolProviders(dynamic, source, selection); err != nil {
+	poolsEnabled := !runtimeFile.PoolsDisabled
+	if opts.PoolsEnabled != nil {
+		poolsEnabled = *opts.PoolsEnabled
+	}
+	if err := configurePools(dynamic, source, selection, poolsEnabled); err != nil {
 		finish(err, nil)
 		return Result{}, err
 	}
@@ -628,7 +634,7 @@ func ensureOutput(path string, force bool) error {
 	return nil
 }
 
-func readGobMap(path string) (map[string]any, error) {
+func ReadSubscription(path string) (map[string]any, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, err
@@ -711,14 +717,19 @@ func buildDynamicConfig(proxies []any, fragment *rulespkg.Fragment, fallbackTarg
 	return config, nil
 }
 
-func addPoolProviders(dynamic, source map[string]any, selection *rulespkg.Selection) error {
+func configurePools(dynamic, source map[string]any, selection *rulespkg.Selection, enabled bool) error {
+	if !enabled {
+		dynamic[poolcontract.DisabledKey] = true
+	}
 	if selection == nil {
 		return nil
 	}
 	var pools []poolcontract.Pool
+	var poolGroups []map[string]any
 	for _, group := range dynamic["proxy-groups"].([]map[string]any) {
 		if pool, ok := poolcontract.Lookup(selection.ProxyGroups[stringValue(group["name"])].PoolCapability); ok {
 			pools = append(pools, pool)
+			poolGroups = append(poolGroups, group)
 		}
 	}
 	if len(pools) == 0 {
@@ -727,6 +738,9 @@ func addPoolProviders(dynamic, source map[string]any, selection *rulespkg.Select
 	input, err := poolcontract.FromSubscription(source)
 	if err != nil {
 		return err
+	}
+	if !enabled {
+		return disablePoolGroups(pools, poolGroups, input.Proxies)
 	}
 	providers := make(map[string]any, len(pools))
 	for _, pool := range pools {
@@ -738,6 +752,35 @@ func addPoolProviders(dynamic, source map[string]any, selection *rulespkg.Select
 	}
 	dynamic["proxy-providers"] = providers
 	dynamic[poolcontract.RevisionKey] = input.Revision
+	return nil
+}
+
+func disablePoolGroups(pools []poolcontract.Pool, groups []map[string]any, proxies []map[string]any) error {
+	var selectable []string
+	for index, pool := range pools {
+		group := groups[index]
+		delete(group, "use")
+		delete(group, "empty-fallback")
+		if pool.Capability == poolcontract.AutoCapability {
+			if selectable == nil {
+				var err error
+				selectable, err = proxyprobe.SelectableNames(proxies)
+				if err != nil {
+					return err
+				}
+			}
+			if len(selectable) > 0 {
+				group["proxies"] = selectable
+				continue
+			}
+		}
+		// A service-qualified group has no eligible exits while qualification is disabled.
+		group["type"] = "select"
+		group["proxies"] = []string{rulespkg.TerminalReject}
+		delete(group, "url")
+		delete(group, "interval")
+		delete(group, "expected-status")
+	}
 	return nil
 }
 

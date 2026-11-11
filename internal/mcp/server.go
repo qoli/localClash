@@ -2510,11 +2510,14 @@ func (s *Server) evaluateLocalClashAfterRefresh(ctx context.Context, configPath,
 		"enabled_rule_packs": len(resolved.RulePacks),
 	})
 	finish = startTaskStage(ctx, "evaluate_localclash_impact.qualify_capability", map[string]any{"proxy_count": len(subscriptionNodes)})
-	impact.Capabilities, err = s.preparePools(ctx, poollaunch.Options{
-		Workspace: s.workspaceRoot(),
-		Core:      corePath,
-		Runtime:   filepath.Dir(outputPath),
-	}, config, subscriptionDoc)
+	profile, _, err := runtimeprofile.Load(presetPath)
+	if err == nil && !profile.PoolsDisabled {
+		impact.Capabilities, err = s.preparePools(ctx, poollaunch.Options{
+			Workspace: s.workspaceRoot(),
+			Core:      corePath,
+			Runtime:   filepath.Dir(outputPath),
+		}, config, subscriptionDoc)
+	}
 	if err != nil {
 		finishTaskStage(finish, err, nil)
 		impact.State = "capability_probe_failed"

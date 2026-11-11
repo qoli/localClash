@@ -101,6 +101,13 @@ func TestProviderPublicationRestoresFileAndMembershipOnReadbackFailure(t *testin
 	}
 }
 
+func TestDecodePoolConfigSkipsDisabledCapability(t *testing.T) {
+	_, pools, err := decodePoolConfig([]byte("x-localclash-pools-disabled: true\n"))
+	if err != nil || len(pools) != 0 {
+		t.Fatalf("disabled configuration returned pools %v, error %v", pools, err)
+	}
+}
+
 func TestVerifyPoolInputsAfterRuntimeChange(t *testing.T) {
 	pool, _ := poolcontract.Lookup(poolcontract.AutoCapability)
 	input, err := poolcontract.NewInput([]map[string]any{{"name": "node", "type": "ss", "port": 443}})

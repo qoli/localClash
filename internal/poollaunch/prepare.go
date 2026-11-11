@@ -30,6 +30,10 @@ func Prepare(ctx context.Context, opts Options, cfg localconfig.Config, doc map[
 	for _, group := range cfg.ProxyGroups {
 		profiles = append(profiles, group.Capability)
 	}
+	return PrepareProfiles(ctx, opts, profiles, doc)
+}
+
+func PrepareProfiles(ctx context.Context, opts Options, profiles []string, doc map[string]any) ([]capability.Result, error) {
 	profiles = capability.Profiles(profiles)
 	if len(profiles) == 0 {
 		return nil, nil
