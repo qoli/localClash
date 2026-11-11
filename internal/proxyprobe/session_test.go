@@ -3,15 +3,63 @@ package proxyprobe
 import (
 	"context"
 	"errors"
+	"io"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
+
+func TestHTTPClientReusesConnectionsWhenRequested(t *testing.T) {
+	var opened atomic.Int32
+	proxy := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Host != "doh.example" {
+			t.Errorf("proxy request host = %q, want doh.example", r.URL.Host)
+		}
+		_, _ = io.WriteString(w, "response")
+	}))
+	proxy.Config.ConnState = func(_ net.Conn, state http.ConnState) {
+		if state == http.StateNew {
+			opened.Add(1)
+		}
+	}
+	proxy.Start()
+	defer proxy.Close()
+	session := &Session{ports: []int{proxy.Listener.Addr().(*net.TCPAddr).Port}}
+	for _, test := range []struct {
+		reuse bool
+		want  int32
+	}{
+		{true, 1}, {false, 2},
+	} {
+		opened.Store(0)
+		client, err := session.HTTPClient(0, time.Second, test.reuse)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for range 2 {
+			resp, err := client.Get("http://doh.example/dns-query")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := io.Copy(io.Discard, resp.Body); err != nil {
+				t.Error(err)
+			}
+			_ = resp.Body.Close()
+		}
+		client.CloseIdleConnections()
+		if got := opened.Load(); got != test.want {
+			t.Errorf("reuse=%t opened %d connections for two requests, want %d", test.reuse, got, test.want)
+		}
+	}
+}
 
 func TestWriteConfigUsesAllDefinitionsAndDedicatedCandidateListeners(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yaml")

@@ -100,9 +100,10 @@ func probeDoHBatch(ctx context.Context, proxies []map[string]any, names []string
 		go func() {
 			defer workers.Done()
 			for index := range jobs {
-				client, err := session.HTTPClient(index, 5*time.Second)
+				client, err := session.HTTPClient(index, 5*time.Second, true)
 				if err == nil {
 					results[index] = measurement{names[index], measureDoH(ctx, client)}
+					client.CloseIdleConnections()
 				}
 			}
 		}()

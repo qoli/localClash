@@ -125,7 +125,7 @@ func (s *Session) Len() int {
 	return len(s.ports)
 }
 
-func (s *Session) HTTPClient(index int, timeout time.Duration) (*http.Client, error) {
+func (s *Session) HTTPClient(index int, timeout time.Duration, reuseConnections bool) (*http.Client, error) {
 	if s == nil || index < 0 || index >= len(s.ports) {
 		return nil, fmt.Errorf("isolated proxy probe candidate index %d is out of range", index)
 	}
@@ -135,7 +135,7 @@ func (s *Session) HTTPClient(index int, timeout time.Duration) (*http.Client, er
 	}
 	transport := &http.Transport{
 		Proxy:               http.ProxyURL(proxyURL),
-		DisableKeepAlives:   true,
+		DisableKeepAlives:   !reuseConnections,
 		TLSHandshakeTimeout: timeout,
 	}
 	return &http.Client{

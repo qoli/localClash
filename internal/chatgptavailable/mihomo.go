@@ -184,7 +184,7 @@ func (p *MihomoProber) probeBatch(ctx context.Context, candidates []Candidate) (
 		go func() {
 			defer wg.Done()
 			for index := range jobs {
-				client, clientErr := session.HTTPClient(index, p.options.RequestTimeout)
+				client, clientErr := session.HTTPClient(index, p.options.RequestTimeout, false)
 				if clientErr != nil {
 					observations[index] = Observation{
 						Fingerprint:          candidates[index].Fingerprint,
