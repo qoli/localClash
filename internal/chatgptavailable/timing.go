@@ -33,6 +33,7 @@ type probeTiming struct {
 	Reused       int32  `json:"reused,omitempty"`
 	Addresses    int    `json:"addresses,omitempty"`
 	Candidates   int    `json:"candidates,omitempty"`
+	Definitions  int    `json:"definitions,omitempty"`
 	WireBytes    int64  `json:"wire_bytes,omitempty"`
 	DecodedBytes int64  `json:"decoded_bytes,omitempty"`
 	BodyMS       int64  `json:"body_ms,omitempty"`

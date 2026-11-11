@@ -36,6 +36,37 @@ func SelectableNames(proxies []map[string]any) ([]string, error) {
 	return eligible, nil
 }
 
+// RequiredDefinitions keeps the requested exits and the dialer definitions
+// needed by their chains, in subscription order.
+func RequiredDefinitions(proxies []map[string]any, names []string) []map[string]any {
+	byName := make(map[string]map[string]any, len(proxies))
+	for _, proxy := range proxies {
+		byName[strings.TrimSpace(proxyString(proxy, "name"))] = proxy
+	}
+	needed := make(map[string]bool, len(names))
+	for _, candidate := range names {
+		for name := strings.TrimSpace(candidate); name != "" && !needed[name]; {
+			if name == "GLOBAL" {
+				// Mihomo builds GLOBAL from the entire configuration.
+				return proxies
+			}
+			proxy := byName[name]
+			if proxy == nil {
+				break
+			}
+			needed[name] = true
+			name = strings.TrimSpace(proxyString(proxy, "dialer-proxy"))
+		}
+	}
+	required := make([]map[string]any, 0, len(needed))
+	for _, proxy := range proxies {
+		if needed[strings.TrimSpace(proxyString(proxy, "name"))] {
+			required = append(required, proxy)
+		}
+	}
+	return required
+}
+
 // Fingerprint identifies equivalent proxy definitions with different names.
 func Fingerprint(proxy map[string]any) (string, error) {
 	copy := maps.Clone(proxy)

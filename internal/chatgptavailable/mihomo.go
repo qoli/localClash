@@ -165,15 +165,16 @@ func (p *MihomoProber) probeBatch(ctx context.Context, candidates []Candidate, o
 			definitions = append(definitions, candidateDefinitions...)
 		}
 	}
+	definitions = proxyprobe.RequiredDefinitions(definitions, names)
 	session, err := proxyprobe.Start(ctx, definitions, names, proxyprobe.Options{
 		CorePath: p.options.CorePath, RuntimeParent: p.options.RuntimeParent,
 		RuntimePrefix: "chatgpt-probe-", ListenerPrefix: "chatgpt-probe",
 	})
 	if err != nil {
-		p.recordTiming(ctx, started, probeTiming{Phase: "session_start", Candidates: len(candidates), Outcome: "error"}, nil)
+		p.recordTiming(ctx, started, probeTiming{Phase: "session_start", Candidates: len(candidates), Definitions: len(definitions), Outcome: "error"}, nil)
 		return nil, err
 	}
-	p.recordTiming(ctx, started, probeTiming{Phase: "session_start", Candidates: len(candidates), Outcome: "ready"}, nil)
+	p.recordTiming(ctx, started, probeTiming{Phase: "session_start", Candidates: len(candidates), Definitions: len(definitions), Outcome: "ready"}, nil)
 	defer session.Close()
 
 	observations := make([]Observation, len(candidates))
