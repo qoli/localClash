@@ -10,6 +10,7 @@ type Result struct {
 	SnapshotPath           string   `json:"snapshot_path"`
 	Candidates             int      `json:"candidates"`
 	Probed                 int      `json:"probed"`
+	PrioritizedCount       int      `json:"prioritized_count,omitempty"`
 	UnprobedCount          int      `json:"unprobed_count,omitempty"`
 	CanceledCount          int      `json:"canceled_count,omitempty"`
 	DeduplicatedCount      int      `json:"deduplicated_count,omitempty"`

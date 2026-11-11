@@ -208,6 +208,7 @@ type poolResult struct {
 	Reused                 bool   `json:"reused"`
 	Candidates             int    `json:"candidates,omitempty"`
 	Probed                 int    `json:"probed,omitempty"`
+	PrioritizedCount       int    `json:"prioritized_count,omitempty"`
 	UnprobedCount          int    `json:"unprobed_count,omitempty"`
 	CanceledCount          int    `json:"canceled_count,omitempty"`
 	ObservedQualifiedCount int    `json:"observed_qualified_count,omitempty"`
@@ -256,7 +257,8 @@ func qualify(ctx context.Context, mergedPath, selected string, opts poolprepare.
 			if result.Profile == pool.Capability {
 				entry = poolResult{
 					Profile: result.Profile, Provider: result.SnapshotPath, Candidates: result.Candidates,
-					Probed: result.Probed, UnprobedCount: result.UnprobedCount, CanceledCount: result.CanceledCount,
+					Probed: result.Probed, PrioritizedCount: result.PrioritizedCount,
+					UnprobedCount: result.UnprobedCount, CanceledCount: result.CanceledCount,
 					ObservedQualifiedCount: result.ObservedQualifiedCount,
 					QualifiedCount:         result.QualifiedCount, DurationMS: result.DurationMS,
 				}

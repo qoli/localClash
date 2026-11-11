@@ -106,7 +106,7 @@ func rebuild(ctx context.Context, input poolcontract.Input, pools []poolcontract
 			return err
 		}
 		defer os.RemoveAll(stage)
-		opts := poolprepare.Options{CorePath: core, RuntimeDir: stage}
+		opts := poolprepare.Options{CorePath: core, RuntimeDir: workDir, ProbeDir: stage}
 		var failures error
 		for _, pool := range pools {
 			path := filepath.Join(workDir, pool.Path(input.Revision))

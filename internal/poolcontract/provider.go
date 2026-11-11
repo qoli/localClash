@@ -20,15 +20,26 @@ func PreparedProvider(pool Pool, path string) (bool, error) {
 		_, err := os.Stat(path)
 		return err == nil, err
 	}
+	document, err := readProvider(path)
+	return document.QualificationVersion == autoQualificationVersion && len(document.Proxies) > 0, err
+}
+
+// ReadProviderProxies reads definitions from a previously written pool.
+func ReadProviderProxies(path string) ([]map[string]any, error) {
+	document, err := readProvider(path)
+	return document.Proxies, err
+}
+
+func readProvider(path string) (providerDocument, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return false, err
+		return providerDocument{}, err
 	}
 	var document providerDocument
 	if err := json.Unmarshal(data, &document); err != nil {
-		return false, nil
+		return providerDocument{}, nil
 	}
-	return document.QualificationVersion == autoQualificationVersion && len(document.Proxies) > 0, nil
+	return document, nil
 }
 
 func ProviderData(pool Pool, input Input, qualified []string) ([]byte, []string, error) {

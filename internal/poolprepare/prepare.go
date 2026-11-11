@@ -19,6 +19,7 @@ const DefaultConcurrency = 16
 type Options struct {
 	CorePath    string
 	RuntimeDir  string
+	ProbeDir    string
 	Concurrency int
 	Force       bool
 }
@@ -55,7 +56,7 @@ func Prepare(ctx context.Context, input poolcontract.Input, pools []poolcontract
 		}
 		defer os.RemoveAll(stage)
 		probeOpts := opts
-		probeOpts.RuntimeDir = stage
+		probeOpts.ProbeDir = stage
 		qualifyPreparations(pending, func(pool poolcontract.Pool) (capability.Result, error) {
 			return Qualify(ctx, pool, input, probeOpts)
 		})

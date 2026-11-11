@@ -31,12 +31,14 @@ type measurement struct {
 
 func qualifyAuto(ctx context.Context, input poolcontract.Input, names []string, opts Options) (capability.Result, error) {
 	start := time.Now()
-	representatives, err := uniqueProxyNames(input.Proxies, names)
+	previous := previousAutoPriority(opts.RuntimeDir, input.Revision)
+	representatives, prioritized, err := autoCandidates(input.Proxies, names, previous)
 	if err != nil {
 		return capability.Result{}, err
 	}
 	result := capability.Result{
 		Profile: poolcontract.AutoCapability, Candidates: len(names),
+		PrioritizedCount:  prioritized,
 		DeduplicatedCount: len(names) - len(representatives),
 	}
 	var qualified []measurement
@@ -64,7 +66,7 @@ func qualifyAuto(ctx context.Context, input poolcontract.Input, names []string, 
 			}
 		}
 	}
-	// Stable ties preserve subscription order.
+	// Stable ties preserve probe order.
 	sort.SliceStable(qualified, func(i, j int) bool { return qualified[i].worst < qualified[j].worst })
 	result.UnprobedCount = len(representatives) - result.Probed
 	result.ObservedQualifiedCount = len(qualified)
@@ -76,13 +78,14 @@ func qualifyAuto(ctx context.Context, input poolcontract.Input, names []string, 
 	return result, nil
 }
 
-func uniqueProxyNames(proxies []map[string]any, eligible []string) ([]string, error) {
+func autoCandidates(proxies []map[string]any, eligible []string, previous map[string]bool) ([]string, int, error) {
 	selectable := make(map[string]bool, len(eligible))
 	for _, name := range eligible {
 		selectable[name] = true
 	}
 	seen := make(map[string]bool, len(eligible))
 	names := make([]string, 0, len(eligible))
+	preferred := make([]string, 0, len(previous))
 	for _, proxy := range proxies {
 		name, _ := proxy["name"].(string)
 		name = strings.TrimSpace(name)
@@ -91,19 +94,24 @@ func uniqueProxyNames(proxies []map[string]any, eligible []string) ([]string, er
 		}
 		fingerprint, err := proxyprobe.Fingerprint(proxy)
 		if err != nil {
-			return nil, fmt.Errorf("fingerprint automatic pool proxy %q: %w", name, err)
+			return nil, 0, fmt.Errorf("fingerprint automatic pool proxy %q: %w", name, err)
 		}
-		if !seen[fingerprint] {
+		if seen[fingerprint] {
+			continue
+		}
+		seen[fingerprint] = true
+		if previous[fingerprint] {
+			preferred = append(preferred, name)
+		} else {
 			names = append(names, name)
-			seen[fingerprint] = true
 		}
 	}
-	return names, nil
+	return append(preferred, names...), len(preferred), nil
 }
 
 func probeAutoBatch(ctx context.Context, proxies []map[string]any, names []string, needed int, opts Options) ([]measurement, error) {
 	session, err := proxyprobe.Start(ctx, proxies, names, proxyprobe.Options{
-		CorePath: opts.CorePath, RuntimeParent: opts.RuntimeDir, RuntimePrefix: "auto-pool-probe-",
+		CorePath: opts.CorePath, RuntimeParent: opts.ProbeDir, RuntimePrefix: "auto-pool-probe-",
 	})
 	if err != nil {
 		return nil, err
@@ -131,7 +139,9 @@ func runAutoProbes(ctx context.Context, names []string, concurrency, needed int,
 	var workers sync.WaitGroup
 	var qualified atomic.Int32
 	for range min(concurrency, len(names)) {
-		workers.Go(func() {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
 			for index := range jobs {
 				if ctx.Err() != nil {
 					return
@@ -142,7 +152,7 @@ func runAutoProbes(ctx context.Context, names []string, concurrency, needed int,
 					cancel()
 				}
 			}
-		})
+		}()
 	}
 dispatch:
 	for index := range names {
@@ -279,13 +289,13 @@ func Qualify(ctx context.Context, pool poolcontract.Pool, input poolcontract.Inp
 		return qualifyAuto(ctx, input, names, opts)
 	case poolcontract.ChatGPTCapability:
 		prober, err := chatgptavailable.NewMihomoProber(chatgptavailable.MihomoOptions{
-			CorePath: opts.CorePath, RuntimeParent: opts.RuntimeDir,
+			CorePath: opts.CorePath, RuntimeParent: opts.ProbeDir,
 			Definitions: input.Proxies, Concurrency: opts.Concurrency,
 		})
 		if err != nil {
 			return capability.Result{}, err
 		}
-		snapshot := filepath.Join(opts.RuntimeDir, pool.Provider+".json")
+		snapshot := filepath.Join(opts.ProbeDir, pool.Provider+".json")
 		return chatgptavailable.RebuildSelected(ctx, input.Proxies, names, prober, chatgptavailable.Options{SnapshotPath: snapshot})
 	default:
 		return capability.Result{}, fmt.Errorf("unsupported pool %q", pool.Capability)
