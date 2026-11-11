@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -180,31 +181,43 @@ func (s *Session) Err() error {
 	if err := s.process.exitError(); err != nil {
 		return err
 	}
-	unavailable := 0
-	firstAddress := ""
-	var firstErr error
-	for _, port := range s.ports {
-		address := "127.0.0.1:" + strconv.Itoa(port)
-		connection, err := net.DialTimeout("tcp", address, 200*time.Millisecond)
-		if err == nil {
-			_ = connection.Close()
-			continue
-		}
-		unavailable++
-		if firstErr == nil {
-			firstAddress = address
-			firstErr = err
-		}
-	}
-	if unavailable == 0 {
-		return nil
+	unavailable, err := s.process.unavailableListeners(s.ports)
+	if len(unavailable) == 0 && err == nil {
+		return s.process.exitError()
 	}
 	select {
 	case <-s.process.done:
 		return s.process.exitError()
 	case <-time.After(250 * time.Millisecond):
-		return fmt.Errorf("isolated Mihomo lost %d of %d proxy probe listeners; first unavailable listener %s: %w: %s", unavailable, len(s.ports), firstAddress, firstErr, s.process.output.String())
 	}
+	if len(unavailable) == 0 {
+		return fmt.Errorf("inspect isolated Mihomo proxy probe listeners: %w", err)
+	}
+	detail := "missing from the process listener table"
+	if err != nil {
+		detail = err.Error()
+	}
+	return fmt.Errorf("isolated Mihomo lost %d of %d proxy probe listeners; first unavailable listener 127.0.0.1:%d: %s: %s", len(unavailable), len(s.ports), unavailable[0], detail, s.process.output.String())
+}
+
+func (p *probeProcess) unavailableListeners(ports []int) ([]int, error) {
+	if runtime.GOOS == "linux" {
+		return missingLinuxListeners(p.cmd.Process.Pid, ports)
+	}
+	var unavailable []int
+	var firstErr error
+	for _, port := range ports {
+		connection, err := net.DialTimeout("tcp", "127.0.0.1:"+strconv.Itoa(port), 200*time.Millisecond)
+		if err != nil {
+			unavailable = append(unavailable, port)
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		_ = connection.Close()
+	}
+	return unavailable, firstErr
 }
 
 func (s *Session) Close() {

@@ -105,7 +105,11 @@ func TestSessionErrRejectsUnavailableReadinessListenerBeforeWaitCompletes(t *tes
 	}
 	port := listener.Addr().(*net.TCPAddr).Port
 	_ = listener.Close()
-	process := &probeProcess{done: make(chan struct{}), output: &limitedBuffer{limit: 128}}
+	process := &probeProcess{
+		cmd:    &exec.Cmd{Process: &os.Process{Pid: os.Getpid()}},
+		done:   make(chan struct{}),
+		output: &limitedBuffer{limit: 128},
+	}
 	session := &Session{ports: []int{port}, process: process}
 	err = session.Err()
 	if err == nil || !strings.Contains(err.Error(), "lost 1 of 1 proxy probe listeners") {
