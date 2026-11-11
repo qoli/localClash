@@ -188,7 +188,7 @@ func (p *MihomoProber) probeBatch(ctx context.Context, candidates []Candidate, o
 		go func() {
 			defer wg.Done()
 			for index := range jobs {
-				client, clientErr := session.HTTPClient(index, p.options.RequestTimeout, false)
+				client, clientErr := session.HTTPClient(index, p.options.RequestTimeout, true)
 				if clientErr != nil {
 					observations[index] = Observation{
 						Fingerprint:          candidates[index].Fingerprint,
@@ -204,6 +204,9 @@ func (p *MihomoProber) probeBatch(ctx context.Context, candidates []Candidate, o
 					candidateCtx = context.WithValue(ctx, timingCandidate, offset+index+1)
 				}
 				observations[index] = p.probeCandidate(candidateCtx, candidates[index], client)
+				// The proxy listener is unique to the candidate. Release its
+				// idle tunnels before taking another candidate from the queue.
+				client.CloseIdleConnections()
 			}
 		}()
 	}
