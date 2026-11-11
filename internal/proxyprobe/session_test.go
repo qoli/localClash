@@ -134,6 +134,32 @@ func TestReadyListenerCountRequiresEveryCandidateListener(t *testing.T) {
 	}
 }
 
+func TestProxyReadinessRequiresSuccessfulForwarding(t *testing.T) {
+	const target = "http://127.0.0.1:19000/"
+	var ready atomic.Bool
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.String() != target {
+			t.Errorf("readiness request = %s, want %s", r.URL, target)
+		}
+		if !ready.Load() {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer proxy.Close()
+	port := proxy.Listener.Addr().(*net.TCPAddr).Port
+	client := newProxyHTTPClient(port, time.Second, false)
+	ctx := context.Background()
+	if readyListenerCount([]int{port}) != 1 || proxyCanForward(ctx, client, target) {
+		t.Fatal("listening socket without forwarding was treated as ready")
+	}
+	ready.Store(true)
+	if !proxyCanForward(ctx, client, target) {
+		t.Fatal("successful forwarding was not treated as ready")
+	}
+}
+
 func TestGeneratedConfigPassesBundledMihomoValidation(t *testing.T) {
 	if runtime.GOOS != "darwin" || runtime.GOARCH != "arm64" {
 		t.Skip("bundled validation core is darwin-arm64")
@@ -148,7 +174,7 @@ func TestGeneratedConfigPassesBundledMihomoValidation(t *testing.T) {
 		"name": "US 01", "type": "ss", "server": "127.0.0.1", "port": 10001,
 		"cipher": "aes-128-gcm", "password": "secret",
 	}}
-	if err := writeConfig(configPath, proxies, []string{"US 01"}, []int{19001}, "test-probe"); err != nil {
+	if err := writeConfig(configPath, proxies, []string{"US 01", "DIRECT"}, []int{19001, 19002}, "test-probe"); err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

@@ -1,13 +1,17 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/binary"
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"slices"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -86,6 +90,7 @@ func TestNextRun(t *testing.T) {
 }
 
 func TestProviderDataKeepsSourceOrderAndRejectsEmptyPool(t *testing.T) {
+	pool, _ := poolcontract.Lookup(poolcontract.AutoCapability)
 	input, err := poolcontract.NewInput([]map[string]any{
 		{"name": "first", "type": "ss", "port": 443, "password": "fixture"},
 		{"name": "second", "type": "trojan", "port": 8443, "password": "fixture"},
@@ -97,7 +102,7 @@ func TestProviderDataKeepsSourceOrderAndRejectsEmptyPool(t *testing.T) {
 		{[]string{"second", "first"}, []string{"first", "second"}},
 		{nil, []string{poolcontract.RejectName}},
 	} {
-		data, names, err := providerData(input, tt.qualified)
+		data, names, err := providerData(pool, input, tt.qualified)
 		if err != nil || !slices.Equal(names, tt.want) {
 			t.Fatalf("provider names = %v, %v; want %v", names, err, tt.want)
 		}
@@ -114,15 +119,55 @@ func TestProviderDataKeepsSourceOrderAndRejectsEmptyPool(t *testing.T) {
 			}
 		}
 	}
-	if _, _, err := providerData(input, []string{"unknown"}); err == nil {
+	if _, _, err := providerData(pool, input, []string{"unknown"}); err == nil {
 		t.Fatal("unrecognized qualification was accepted")
 	}
 }
 
-func TestMeasureDoHRequiresBothAddressFamiliesOnBothEndpoints(t *testing.T) {
+func TestPrepareRechecksAutoProviderFromPreviousQualification(t *testing.T) {
+	pool, _ := poolcontract.Lookup(poolcontract.AutoCapability)
+	input, err := poolcontract.NewInput([]map[string]any{{"name": "node", "type": "ss"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtimeDir := t.TempDir()
+	path := filepath.Join(runtimeDir, pool.Path(input.Revision))
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	legacy, _, err := providerData(poolcontract.Pool{}, input, []string{"node"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, legacy, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	missingCore := filepath.Join(runtimeDir, "missing-core")
+	ctx := context.Background()
+	if _, err := rebuild(ctx, input, []poolcontract.Pool{pool}, missingCore, runtimeDir, nil); err == nil || !strings.Contains(err.Error(), "inspect isolated proxy probe core") {
+		t.Fatalf("prepare with a legacy provider = %v, want an attempted probe", err)
+	}
+	if got, err := os.ReadFile(path); err != nil || !bytes.Equal(got, legacy) {
+		t.Fatalf("failed probe replaced the legacy provider: %v", err)
+	}
+	if err := publish(ctx, nil, pool, path, input, []string{"node"}); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := rebuild(ctx, input, []poolcontract.Pool{pool}, missingCore, runtimeDir, nil); err != nil || len(got) != 0 {
+		t.Fatalf("prepare with a current provider = %v, %v, want cached result", got, err)
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
+func TestMeasureAutoRequiresHTTPSAndBothAddressFamiliesOnBothResolvers(t *testing.T) {
 	var requests atomic.Int32
 	var missingIPv6 atomic.Bool
-	resolver := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	resolver := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests.Add(1)
 		query, err := base64.RawURLEncoding.DecodeString(r.URL.Query().Get("dns"))
 		if err != nil || len(query) < 17 || r.Header.Get("Accept") != "application/dns-message" {
@@ -146,11 +191,31 @@ func TestMeasureDoHRequiresBothAddressFamiliesOnBothEndpoints(t *testing.T) {
 	previous := overseasDoH
 	t.Cleanup(func() { overseasDoH = previous })
 	overseasDoH = []string{resolver.URL + "/first", resolver.URL + "/second"}
-	if got := measureDoH(context.Background(), resolver.Client()); got <= 0 || requests.Load() != 4 {
-		t.Fatalf("healthy endpoints measured %v with %d requests", got, requests.Load())
+	client := resolver.Client()
+	resolverTransport := client.Transport
+	httpsStatus := http.StatusNoContent
+	httpsRequests := 0
+	client.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if req.URL.String() != poolcontract.AutoHTTPSProbeURL {
+			return resolverTransport.RoundTrip(req)
+		}
+		if req.Method != http.MethodHead {
+			t.Errorf("HTTPS probe used %s, want HEAD", req.Method)
+		}
+		httpsRequests++
+		return &http.Response{StatusCode: httpsStatus, Body: http.NoBody}, nil
+	})
+	ctx := context.Background()
+	if got := measureAuto(ctx, client); got <= 0 || httpsRequests != 1 || requests.Load() != 4 {
+		t.Fatalf("healthy endpoints measured %v with %d HTTPS and %d DNS requests", got, httpsRequests, requests.Load())
 	}
 	missingIPv6.Store(true)
-	if got := measureDoH(context.Background(), resolver.Client()); got != 0 {
-		t.Fatalf("endpoint without AAAA qualified with %v", got)
+	if got := measureAuto(ctx, client); got != 0 || httpsRequests != 2 || requests.Load() != 8 {
+		t.Fatalf("HTTPS passed but one resolver lacked AAAA, got %v with %d HTTPS and %d DNS requests", got, httpsRequests, requests.Load())
+	}
+	missingIPv6.Store(false)
+	httpsStatus = http.StatusOK
+	if got := measureAuto(ctx, client); got != 0 || httpsRequests != 3 || requests.Load() != 8 {
+		t.Fatalf("HTTPS endpoint returned an unexpected status, got %v with %d HTTPS and %d DNS requests", got, httpsRequests, requests.Load())
 	}
 }

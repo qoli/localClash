@@ -1337,6 +1337,9 @@ sources:
 	if got := auto["use"]; !reflect.DeepEqual(got, []any{"localclash-qualified-auto"}) {
 		t.Fatalf("automatic provider = %+v", got)
 	}
+	if auto["url"] != poolcontract.AutoHTTPSProbeURL || auto["expected-status"] != "204" {
+		t.Fatalf("automatic provider health check = %+v", auto)
+	}
 }
 
 func TestSubscriptionsRefreshCandidateConfigFailurePreservesPromotedConfig(t *testing.T) {

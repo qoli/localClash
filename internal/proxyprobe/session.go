@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -87,19 +88,34 @@ func Start(ctx context.Context, proxies []map[string]any, candidateNames []strin
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	ports, err := reservePorts(len(candidateNames))
+	readyListener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return nil, fmt.Errorf("listen for isolated proxy probe readiness: %w", err)
+	}
+	readyServer := http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})}
+	go func() { _ = readyServer.Serve(readyListener) }()
+	defer readyServer.Close()
+
+	// Mihomo starts accepting connections before it enables TCP forwarding.
+	// Test a local request through DIRECT so readiness does not depend on a node.
+	listenerNames := append(slices.Clone(candidateNames), "DIRECT")
+	listenerPorts, err := reservePorts(len(listenerNames))
 	if err != nil {
 		return nil, err
 	}
 	configPath := filepath.Join(runtimeDir, "config.yaml")
-	if err := writeConfig(configPath, proxies, candidateNames, ports, options.ListenerPrefix); err != nil {
+	if err := writeConfig(configPath, proxies, listenerNames, listenerPorts, options.ListenerPrefix); err != nil {
 		return nil, err
 	}
 	probeCore := filepath.Join(runtimeDir, "mihomo-probe")
 	if err := copyCore(options.CorePath, probeCore); err != nil {
 		return nil, fmt.Errorf("stage isolated Mihomo proxy probe: %w", err)
 	}
-	process, err := startCore(ctx, probeCore, runtimeDir, configPath, ports)
+	ports := listenerPorts[:len(candidateNames)]
+	readyPort := listenerPorts[len(candidateNames)]
+	process, err := startCore(ctx, probeCore, runtimeDir, configPath, ports, readyPort, "http://"+readyListener.Addr().String())
 	if err != nil {
 		return nil, err
 	}
@@ -138,10 +154,11 @@ func (s *Session) HTTPClient(index int, timeout time.Duration, reuseConnections 
 	if s == nil || index < 0 || index >= len(s.ports) {
 		return nil, fmt.Errorf("isolated proxy probe candidate index %d is out of range", index)
 	}
-	proxyURL, err := url.Parse("http://127.0.0.1:" + strconv.Itoa(s.ports[index]))
-	if err != nil {
-		return nil, fmt.Errorf("build isolated proxy probe URL: %w", err)
-	}
+	return newProxyHTTPClient(s.ports[index], timeout, reuseConnections), nil
+}
+
+func newProxyHTTPClient(port int, timeout time.Duration, reuseConnections bool) *http.Client {
+	proxyURL := &url.URL{Scheme: "http", Host: net.JoinHostPort("127.0.0.1", strconv.Itoa(port))}
 	transport := &http.Transport{
 		Proxy:               http.ProxyURL(proxyURL),
 		DisableKeepAlives:   !reuseConnections,
@@ -153,7 +170,7 @@ func (s *Session) HTTPClient(index int, timeout time.Duration, reuseConnections 
 		CheckRedirect: func(*http.Request, []*http.Request) error {
 			return http.ErrUseLastResponse
 		},
-	}, nil
+	}
 }
 
 func (s *Session) Err() error {
@@ -264,7 +281,7 @@ type probeProcess struct {
 	once       sync.Once
 }
 
-func startCore(ctx context.Context, corePath, runtimeDir, configPath string, readinessPorts []int) (*probeProcess, error) {
+func startCore(ctx context.Context, corePath, runtimeDir, configPath string, ports []int, readyPort int, readyURL string) (*probeProcess, error) {
 	processCtx, cancel := context.WithCancel(ctx)
 	cmd := exec.CommandContext(processCtx, corePath, "-d", runtimeDir, "-f", configPath)
 	output := &limitedBuffer{limit: 8192}
@@ -283,11 +300,13 @@ func startCore(ctx context.Context, corePath, runtimeDir, configPath string, rea
 
 	deadline := time.NewTimer(30 * time.Second)
 	defer deadline.Stop()
-	ticker := time.NewTicker(100 * time.Millisecond)
+	const pollInterval = 100 * time.Millisecond
+	client := newProxyHTTPClient(readyPort, pollInterval, false)
+	ticker := time.NewTicker(pollInterval)
 	defer ticker.Stop()
 	for {
-		ready := readyListenerCount(readinessPorts)
-		if ready == len(readinessPorts) {
+		forwarding := proxyCanForward(ctx, client, readyURL)
+		if forwarding && readyListenerCount(ports) == len(ports) {
 			return process, nil
 		}
 		select {
@@ -295,13 +314,27 @@ func startCore(ctx context.Context, corePath, runtimeDir, configPath string, rea
 			return nil, fmt.Errorf("isolated Mihomo exited before proxy probe was ready: %v: %s", process.waitErr, output.String())
 		case <-ticker.C:
 		case <-deadline.C:
+			ready := readyListenerCount(ports)
 			process.stop()
-			return nil, fmt.Errorf("isolated Mihomo made %d of %d proxy probe listeners ready before timeout: %s", ready, len(readinessPorts), output.String())
+			return nil, fmt.Errorf("isolated Mihomo proxy probe not ready before timeout (local forwarding: %t, candidate listeners: %d of %d): %s", forwarding, ready, len(ports), output.String())
 		case <-ctx.Done():
 			process.stop()
 			return nil, ctx.Err()
 		}
 	}
+}
+
+func proxyCanForward(ctx context.Context, client *http.Client, target string) bool {
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
+	if err != nil {
+		return false
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		return false
+	}
+	response.Body.Close()
+	return response.StatusCode == http.StatusNoContent
 }
 
 func readyListenerCount(ports []int) int {

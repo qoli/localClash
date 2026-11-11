@@ -31,11 +31,48 @@ type activeRuntime struct {
 	client  *mihomoapi.Client
 }
 
+const autoQualificationVersion = 2
+
+type providerDocument struct {
+	Proxies              []map[string]any `json:"proxies"`
+	QualificationVersion int              `json:"x-localclash-qualification-version,omitempty"`
+}
+
+func preparedProvider(pool poolcontract.Pool, path string) (bool, error) {
+	if pool.Capability != poolcontract.AutoCapability {
+		_, err := os.Stat(path)
+		return err == nil, err
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false, err
+	}
+	var document providerDocument
+	if err := json.Unmarshal(data, &document); err != nil {
+		return false, nil
+	}
+	return document.QualificationVersion == autoQualificationVersion && len(document.Proxies) > 0, nil
+}
+
 func refresh(ctx context.Context, workDir string) ([]capability.Result, error) {
 	live, data, err := readActiveRuntime(workDir)
 	if err != nil {
 		return nil, err
 	}
+	defer live.client.HTTPClient.CloseIdleConnections()
+	input, pools, err := decodePoolConfig(data)
+	if err != nil {
+		return nil, err
+	}
+	for _, pool := range pools {
+		if _, err := live.members(ctx, pool); err != nil {
+			return nil, err
+		}
+	}
+	return rebuild(ctx, input, pools, live.state.LauncherPath, workDir, live)
+}
+
+func decodePoolConfig(data []byte) (poolcontract.Input, []poolcontract.Pool, error) {
 	var config struct {
 		Revision  string           `yaml:"x-localclash-pool-revision"`
 		Proxies   []map[string]any `yaml:"proxies"`
@@ -45,14 +82,14 @@ func refresh(ctx context.Context, workDir string) ([]capability.Result, error) {
 		} `yaml:"proxy-providers"`
 	}
 	if err := yaml.Unmarshal(data, &config); err != nil {
-		return nil, errors.New("decode loaded Mihomo pool configuration")
+		return poolcontract.Input{}, nil, errors.New("decode loaded Mihomo pool configuration")
 	}
 	input, err := poolcontract.NewInput(config.Proxies)
 	if err != nil {
-		return nil, err
+		return poolcontract.Input{}, nil, err
 	}
 	if input.Revision != config.Revision {
-		return nil, errors.New("loaded configuration has no matching managed pool revision")
+		return poolcontract.Input{}, nil, errors.New("loaded configuration has no matching managed pool revision")
 	}
 	var pools []poolcontract.Pool
 	for _, id := range []string{poolcontract.AutoCapability, poolcontract.ChatGPTCapability} {
@@ -62,18 +99,14 @@ func refresh(ctx context.Context, workDir string) ([]capability.Result, error) {
 			continue
 		}
 		if provider.Type != "file" || filepath.Clean(provider.Path) != pool.Path(input.Revision) {
-			return nil, fmt.Errorf("loaded provider %s has an unexpected type or path", pool.Provider)
-		}
-		if _, err := live.members(ctx, pool); err != nil {
-			return nil, err
+			return poolcontract.Input{}, nil, fmt.Errorf("loaded provider %s has an unexpected type or path", pool.Provider)
 		}
 		pools = append(pools, pool)
 	}
 	if len(pools) == 0 {
-		return nil, errors.New("loaded configuration has no managed pool providers")
+		return poolcontract.Input{}, nil, errors.New("loaded configuration has no managed pool providers")
 	}
-	defer live.client.HTTPClient.CloseIdleConnections()
-	return rebuild(ctx, input, pools, live.state.LauncherPath, workDir, live)
+	return input, pools, nil
 }
 
 func readActiveRuntime(workDir string) (*activeRuntime, []byte, error) {
@@ -180,7 +213,7 @@ func (live *activeRuntime) update(ctx context.Context, pool poolcontract.Pool, e
 	return nil
 }
 
-func providerData(input poolcontract.Input, qualified []string) ([]byte, []string, error) {
+func providerData(pool poolcontract.Pool, input poolcontract.Input, qualified []string) ([]byte, []string, error) {
 	known := make(map[string]bool, len(input.Proxies))
 	for _, proxy := range input.Proxies {
 		name, _ := proxy["name"].(string)
@@ -207,12 +240,16 @@ func providerData(input poolcontract.Input, qualified []string) ([]byte, []strin
 		names = []string{poolcontract.RejectName}
 		proxies = []map[string]any{poolcontract.Reject()}
 	}
-	data, err := json.Marshal(map[string]any{"proxies": proxies})
+	document := providerDocument{Proxies: proxies}
+	if pool.Capability == poolcontract.AutoCapability {
+		document.QualificationVersion = autoQualificationVersion
+	}
+	data, err := json.Marshal(document)
 	return data, names, err
 }
 
 func publish(ctx context.Context, live *activeRuntime, pool poolcontract.Pool, path string, input poolcontract.Input, qualified []string) error {
-	data, names, err := providerData(input, qualified)
+	data, names, err := providerData(pool, input, qualified)
 	if err != nil {
 		return err
 	}
@@ -226,16 +263,34 @@ func publish(ctx context.Context, live *activeRuntime, pool poolcontract.Pool, p
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		current, _, err := readActiveRuntime(live.workDir)
+		current, config, err := readActiveRuntime(live.workDir)
 		if err != nil {
 			return err
 		}
 		defer current.client.HTTPClient.CloseIdleConnections()
-		if current.state.PID != live.state.PID || current.state.ConfigSHA256 != live.state.ConfigSHA256 || current.state.CoreSHA256 != live.state.CoreSHA256 {
-			return errors.New("Mihomo generation changed during pool qualification")
+		if err := verifyPoolInputs(live.state, current.state, config, pool, input.Revision); err != nil {
+			return err
 		}
-		return live.publishProvider(ctx, pool, path, data, names)
+		return current.publishProvider(ctx, pool, path, data, names)
 	})
+}
+
+func verifyPoolInputs(previous, current runtimesupervision.State, config []byte, pool poolcontract.Pool, revision string) error {
+	if current.CoreSHA256 != previous.CoreSHA256 {
+		return errors.New("Mihomo core changed during pool qualification")
+	}
+	if current.ConfigSHA256 == previous.ConfigSHA256 {
+		return nil
+	}
+	// A reload can retain the exact proxy definitions and provider that were probed.
+	input, pools, err := decodePoolConfig(config)
+	if err != nil {
+		return fmt.Errorf("verify pool after Mihomo configuration changed: %w", err)
+	}
+	if input.Revision != revision || !slices.Contains(pools, pool) {
+		return errors.New("Mihomo pool inputs changed during qualification")
+	}
+	return nil
 }
 
 func (live *activeRuntime) publishProvider(ctx context.Context, pool poolcontract.Pool, path string, data []byte, names []string) error {
@@ -252,7 +307,7 @@ func (live *activeRuntime) publishProvider(ctx context.Context, pool poolcontrac
 		if !slices.Equal(previousNames, []string{poolcontract.RejectName}) {
 			return errors.New("loaded provider has members but its provider file is missing")
 		}
-		previous, _, err = providerData(poolcontract.Input{}, nil)
+		previous, _, err = providerData(poolcontract.Pool{}, poolcontract.Input{}, nil)
 		if err != nil {
 			return err
 		}

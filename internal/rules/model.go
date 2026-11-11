@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"unicode"
@@ -65,7 +66,7 @@ const (
 	TerminalDirect           = "DIRECT"
 	TerminalReject           = "REJECT"
 
-	defaultAutoHealthCheckURL             = "https://cp.cloudflare.com/generate_204"
+	defaultAutoHealthCheckURL             = poolcontract.AutoHTTPSProbeURL
 	defaultAutoHealthCheckIntervalSeconds = 60
 )
 
@@ -909,9 +910,13 @@ func materializeProxyGroups(used map[string]bool, targets preparedTargets) ([]ma
 				groupType = "smart"
 			}
 			rendered := map[string]any{"name": name, "type": groupType, "use": []string{pool.Provider}, "empty-fallback": "REJECT"}
-			if group.Auto {
+			automaticPool := pool.Capability == poolcontract.AutoCapability
+			if group.Auto || (group.Smart && automaticPool) {
 				rendered["url"] = defaultAutoHealthCheckURL
 				rendered["interval"] = defaultAutoHealthCheckIntervalSeconds
+				if automaticPool {
+					rendered["expected-status"] = strconv.Itoa(poolcontract.AutoHTTPSProbeStatus)
+				}
 			}
 			groups = append(groups, rendered)
 			if group.Optional {

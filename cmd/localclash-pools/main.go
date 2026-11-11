@@ -103,9 +103,11 @@ func rebuild(ctx context.Context, input poolcontract.Input, pools []poolcontract
 		for _, pool := range pools {
 			path := filepath.Join(workDir, pool.Path(input.Revision))
 			if live == nil {
-				if _, err := os.Stat(path); err == nil {
+				ready, err := preparedProvider(pool, path)
+				if ready {
 					continue
-				} else if !errors.Is(err, os.ErrNotExist) {
+				}
+				if err != nil && !errors.Is(err, os.ErrNotExist) {
 					return err
 				}
 			}

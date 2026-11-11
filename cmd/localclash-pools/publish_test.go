@@ -15,6 +15,9 @@ import (
 
 	"localclash/internal/mihomoapi"
 	"localclash/internal/poolcontract"
+	"localclash/internal/runtimesupervision"
+
+	"gopkg.in/yaml.v3"
 )
 
 func TestProviderPublicationRestoresFileAndMembershipOnReadbackFailure(t *testing.T) {
@@ -26,11 +29,11 @@ func TestProviderPublicationRestoresFileAndMembershipOnReadbackFailure(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	old, oldNames, err := providerData(input, []string{"before"})
+	old, oldNames, err := providerData(poolcontract.Pool{}, input, []string{"before"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	replacement, newNames, err := providerData(input, []string{"after"})
+	replacement, newNames, err := providerData(pool, input, []string{"after"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,5 +98,47 @@ func TestProviderPublicationRestoresFileAndMembershipOnReadbackFailure(t *testin
 	defer mu.Unlock()
 	if !slices.Equal(members, oldNames) || !slices.Equal(updates, []string{"new file", "old file"}) {
 		t.Fatalf("provider after rollback = %v with updates %v", members, updates)
+	}
+}
+
+func TestVerifyPoolInputsAfterRuntimeChange(t *testing.T) {
+	pool, _ := poolcontract.Lookup(poolcontract.AutoCapability)
+	input, err := poolcontract.NewInput([]map[string]any{{"name": "node", "type": "ss", "port": 443}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed, err := poolcontract.NewInput([]map[string]any{{"name": "node", "type": "ss", "port": 8443}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	config := func(in poolcontract.Input, path string) []byte {
+		data, err := yaml.Marshal(map[string]any{
+			poolcontract.RevisionKey: in.Revision,
+			"proxies":                in.Proxies,
+			"proxy-providers":        map[string]any{pool.Provider: map[string]any{"type": "file", "path": path}},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return data
+	}
+	previous := runtimesupervision.State{PID: 100, CoreSHA256: "core", ConfigSHA256: "old-config"}
+	for _, tt := range []struct {
+		name    string
+		current runtimesupervision.State
+		config  []byte
+		wantErr bool
+	}{
+		{"same inputs after restart", runtimesupervision.State{PID: 101, CoreSHA256: "core", ConfigSHA256: "old-config"}, nil, false},
+		{"same inputs after config reload", runtimesupervision.State{PID: 100, CoreSHA256: "core", ConfigSHA256: "new-config"}, config(input, pool.Path(input.Revision)), false},
+		{"subscription changed", runtimesupervision.State{PID: 100, CoreSHA256: "core", ConfigSHA256: "new-config"}, config(changed, pool.Path(changed.Revision)), true},
+		{"provider path changed", runtimesupervision.State{PID: 100, CoreSHA256: "core", ConfigSHA256: "new-config"}, config(input, "elsewhere.yaml"), true},
+		{"core changed", runtimesupervision.State{PID: 101, CoreSHA256: "new-core", ConfigSHA256: "old-config"}, nil, true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := verifyPoolInputs(previous, tt.current, tt.config, pool, input.Revision); (err != nil) != tt.wantErr {
+				t.Fatalf("verifyPoolInputs = %v, want error: %v", err, tt.wantErr)
+			}
+		})
 	}
 }

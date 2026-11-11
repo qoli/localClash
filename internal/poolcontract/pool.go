@@ -11,12 +11,14 @@ import (
 )
 
 const (
-	AutoCapability    = "network.doh.qualified.v1"
-	ChatGPTCapability = "openai.chatgpt.oauth_statsig.v1"
-	AutoLimit         = 50
-	RevisionKey       = "x-localclash-pool-revision"
-	Directory         = "qualified-pools"
-	RejectName        = "localClash 无合格出口"
+	AutoCapability       = "network.doh.qualified.v1"
+	ChatGPTCapability    = "openai.chatgpt.oauth_statsig.v1"
+	AutoLimit            = 50
+	AutoHTTPSProbeURL    = "https://cp.cloudflare.com/generate_204"
+	AutoHTTPSProbeStatus = 204
+	RevisionKey          = "x-localclash-pool-revision"
+	Directory            = "qualified-pools"
+	RejectName           = "localClash 无合格出口"
 )
 
 type Pool struct {

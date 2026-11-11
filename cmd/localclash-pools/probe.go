@@ -34,7 +34,7 @@ func qualifyAuto(ctx context.Context, input poolcontract.Input, names []string, 
 	}
 	qualified := make([]measurement, 0, len(names))
 	for batch := range slices.Chunk(representatives, proxyprobe.BatchSize) {
-		results, err := probeDoHBatch(ctx, input.Proxies, batch, corePath, workDir)
+		results, err := probeAutoBatch(ctx, input.Proxies, batch, corePath, workDir)
 		if err != nil {
 			return capability.Result{}, err
 		}
@@ -74,7 +74,7 @@ func uniqueProxyNames(proxies []map[string]any, eligible []string) ([]string, er
 		}
 		fingerprint, err := proxyprobe.Fingerprint(proxy)
 		if err != nil {
-			return nil, fmt.Errorf("fingerprint DoH proxy %q: %w", name, err)
+			return nil, fmt.Errorf("fingerprint automatic pool proxy %q: %w", name, err)
 		}
 		if !seen[fingerprint] {
 			names = append(names, name)
@@ -84,9 +84,9 @@ func uniqueProxyNames(proxies []map[string]any, eligible []string) ([]string, er
 	return names, nil
 }
 
-func probeDoHBatch(ctx context.Context, proxies []map[string]any, names []string, corePath, workDir string) ([]measurement, error) {
+func probeAutoBatch(ctx context.Context, proxies []map[string]any, names []string, corePath, workDir string) ([]measurement, error) {
 	session, err := proxyprobe.Start(ctx, proxies, names, proxyprobe.Options{
-		CorePath: corePath, RuntimeParent: workDir, RuntimePrefix: "doh-probe-",
+		CorePath: corePath, RuntimeParent: workDir, RuntimePrefix: "auto-pool-probe-",
 	})
 	if err != nil {
 		return nil, err
@@ -102,7 +102,7 @@ func probeDoHBatch(ctx context.Context, proxies []map[string]any, names []string
 			for index := range jobs {
 				client, err := session.HTTPClient(index, 5*time.Second, true)
 				if err == nil {
-					results[index] = measurement{names[index], measureDoH(ctx, client)}
+					results[index] = measurement{names[index], measureAuto(ctx, client)}
 					client.CloseIdleConnections()
 				}
 			}
@@ -123,6 +123,28 @@ func probeDoHBatch(ctx context.Context, proxies []map[string]any, names []string
 		return nil, err
 	}
 	return results, session.Err()
+}
+
+func measureAuto(ctx context.Context, client *http.Client) time.Duration {
+	start := time.Now()
+	req, err := http.NewRequestWithContext(ctx, http.MethodHead, poolcontract.AutoHTTPSProbeURL, nil)
+	if err != nil {
+		return 0
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return 0
+	}
+	resp.Body.Close()
+	if resp.StatusCode != poolcontract.AutoHTTPSProbeStatus {
+		return 0
+	}
+	httpsLatency := time.Since(start)
+	dohLatency := measureDoH(ctx, client)
+	if dohLatency == 0 {
+		return 0
+	}
+	return max(httpsLatency, dohLatency)
 }
 
 func measureDoH(ctx context.Context, client *http.Client) time.Duration {
