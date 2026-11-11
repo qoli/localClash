@@ -20,9 +20,9 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// One mixed listener uses TCP and UDP sockets. Batch probes below the router's
-// 1024-descriptor limit while leaving room for their outbound connections.
-const BatchSize = 256
+// Each HTTP probe listener uses one TCP socket. Keep half of the router's
+// 1024-descriptor budget available for the core and its outbound connections.
+const BatchSize = 512
 
 type Options struct {
 	CorePath       string
@@ -220,7 +220,7 @@ func writeConfig(path string, proxies []map[string]any, candidateNames []string,
 		}
 		listeners = append(listeners, map[string]any{
 			"name":   fmt.Sprintf("%s-%d", listenerPrefix, index),
-			"type":   "mixed",
+			"type":   "http",
 			"listen": "127.0.0.1",
 			"port":   ports[index],
 			"proxy":  name,

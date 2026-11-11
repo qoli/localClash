@@ -81,8 +81,8 @@ func TestWriteConfigUsesAllDefinitionsAndDedicatedCandidateListeners(t *testing.
 			t.Fatalf("probe config missing %q:\n%s", want, text)
 		}
 	}
-	if strings.Count(text, "type: mixed") != 2 {
-		t.Fatalf("probe config listeners = %d, want two", strings.Count(text, "type: mixed"))
+	if strings.Count(text, "type: http") != 2 {
+		t.Fatalf("probe config listeners = %d, want two", strings.Count(text, "type: http"))
 	}
 }
 
