@@ -4,6 +4,7 @@ Manage Mihomo through the CLI and MCP.
 
 - [Core downloads](https://github.com/qoli/localClash/releases) · [OpenWrt installation](https://github.com/qoli/localclash-luci/releases)
 - CLI from source: `go run . --help`
+- Standalone subscription CLI: `go run ./cmd/localclash-subscriptions --help`
 - MCP from source: `go run . mcp serve`; connect to `http://127.0.0.1:8765/mcp`.
 - Codex routing skill: `scripts/install-codex-skill.sh`
 

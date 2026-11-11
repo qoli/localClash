@@ -1,4 +1,4 @@
-package main
+package poolprepare
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
@@ -26,7 +27,7 @@ type measurement struct {
 	worst time.Duration
 }
 
-func qualifyAuto(ctx context.Context, input poolcontract.Input, names []string, corePath, workDir string) (capability.Result, error) {
+func qualifyAuto(ctx context.Context, input poolcontract.Input, names []string, opts Options) (capability.Result, error) {
 	start := time.Now()
 	representatives, err := uniqueProxyNames(input.Proxies, names)
 	if err != nil {
@@ -34,7 +35,7 @@ func qualifyAuto(ctx context.Context, input poolcontract.Input, names []string, 
 	}
 	qualified := make([]measurement, 0, len(names))
 	for batch := range slices.Chunk(representatives, proxyprobe.BatchSize) {
-		results, err := probeAutoBatch(ctx, input.Proxies, batch, corePath, workDir)
+		results, err := probeAutoBatch(ctx, input.Proxies, batch, opts)
 		if err != nil {
 			return capability.Result{}, err
 		}
@@ -84,9 +85,9 @@ func uniqueProxyNames(proxies []map[string]any, eligible []string) ([]string, er
 	return names, nil
 }
 
-func probeAutoBatch(ctx context.Context, proxies []map[string]any, names []string, corePath, workDir string) ([]measurement, error) {
+func probeAutoBatch(ctx context.Context, proxies []map[string]any, names []string, opts Options) ([]measurement, error) {
 	session, err := proxyprobe.Start(ctx, proxies, names, proxyprobe.Options{
-		CorePath: corePath, RuntimeParent: workDir, RuntimePrefix: "auto-pool-probe-",
+		CorePath: opts.CorePath, RuntimeParent: opts.RuntimeDir, RuntimePrefix: "auto-pool-probe-",
 	})
 	if err != nil {
 		return nil, err
@@ -95,7 +96,7 @@ func probeAutoBatch(ctx context.Context, proxies []map[string]any, names []strin
 	results := make([]measurement, len(names))
 	jobs := make(chan int)
 	var workers sync.WaitGroup
-	for range min(16, len(names)) {
+	for range min(opts.Concurrency, len(names)) {
 		workers.Add(1)
 		go func() {
 			defer workers.Done()
@@ -230,13 +231,32 @@ func skipDNSName(data []byte, at int) int {
 	return len(data) + 1
 }
 
-func qualify(ctx context.Context, pool poolcontract.Pool, input poolcontract.Input, corePath, workDir, stage string) (capability.Result, error) {
+// Qualify measures a single pool in an isolated Mihomo process.
+func Qualify(ctx context.Context, pool poolcontract.Pool, input poolcontract.Input, opts Options) (capability.Result, error) {
+	if opts.Concurrency < 0 {
+		return capability.Result{}, fmt.Errorf("probe concurrency must be positive")
+	}
 	names, err := proxyprobe.SelectableNames(input.Proxies)
 	if err != nil {
 		return capability.Result{}, err
 	}
-	if pool.Capability == poolcontract.AutoCapability {
-		return qualifyAuto(ctx, input, names, corePath, workDir)
+	if opts.Concurrency == 0 {
+		opts.Concurrency = DefaultConcurrency
 	}
-	return chatgptavailable.RebuildSelectedCandidateWithMihomo(ctx, input.Proxies, names, corePath, workDir, stage, stage)
+	switch pool.Capability {
+	case poolcontract.AutoCapability:
+		return qualifyAuto(ctx, input, names, opts)
+	case poolcontract.ChatGPTCapability:
+		prober, err := chatgptavailable.NewMihomoProber(chatgptavailable.MihomoOptions{
+			CorePath: opts.CorePath, RuntimeParent: opts.RuntimeDir,
+			Definitions: input.Proxies, Concurrency: opts.Concurrency,
+		})
+		if err != nil {
+			return capability.Result{}, err
+		}
+		snapshot := filepath.Join(opts.RuntimeDir, pool.Provider+".json")
+		return chatgptavailable.RebuildSelected(ctx, input.Proxies, names, prober, chatgptavailable.Options{SnapshotPath: snapshot})
+	default:
+		return capability.Result{}, fmt.Errorf("unsupported pool %q", pool.Capability)
+	}
 }

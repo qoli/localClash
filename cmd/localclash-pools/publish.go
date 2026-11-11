@@ -14,7 +14,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strings"
 
 	"localclash/internal/capability"
 	"localclash/internal/corerun"
@@ -29,29 +28,6 @@ type activeRuntime struct {
 	workDir string
 	state   runtimesupervision.State
 	client  *mihomoapi.Client
-}
-
-const autoQualificationVersion = 2
-
-type providerDocument struct {
-	Proxies              []map[string]any `json:"proxies"`
-	QualificationVersion int              `json:"x-localclash-qualification-version,omitempty"`
-}
-
-func preparedProvider(pool poolcontract.Pool, path string) (bool, error) {
-	if pool.Capability != poolcontract.AutoCapability {
-		_, err := os.Stat(path)
-		return err == nil, err
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return false, err
-	}
-	var document providerDocument
-	if err := json.Unmarshal(data, &document); err != nil {
-		return false, nil
-	}
-	return document.QualificationVersion == autoQualificationVersion && len(document.Proxies) > 0, nil
 }
 
 func refresh(ctx context.Context, workDir string) ([]capability.Result, error) {
@@ -214,38 +190,7 @@ func (live *activeRuntime) update(ctx context.Context, pool poolcontract.Pool, e
 }
 
 func providerData(pool poolcontract.Pool, input poolcontract.Input, qualified []string) ([]byte, []string, error) {
-	known := make(map[string]bool, len(input.Proxies))
-	for _, proxy := range input.Proxies {
-		name, _ := proxy["name"].(string)
-		known[strings.TrimSpace(name)] = true
-	}
-	var names []string
-	var proxies []map[string]any
-	seen := make(map[string]bool, len(qualified))
-	for _, name := range qualified {
-		if !known[name] || seen[name] || name == poolcontract.RejectName {
-			return nil, nil, errors.New("qualified pool contains an invalid or duplicate subscription node")
-		}
-		seen[name] = true
-	}
-	// Publish in source order so latency changes alone do not rotate adapters.
-	for _, proxy := range input.Proxies {
-		name, _ := proxy["name"].(string)
-		if seen[strings.TrimSpace(name)] {
-			names = append(names, name)
-			proxies = append(proxies, proxy)
-		}
-	}
-	if len(proxies) == 0 {
-		names = []string{poolcontract.RejectName}
-		proxies = []map[string]any{poolcontract.Reject()}
-	}
-	document := providerDocument{Proxies: proxies}
-	if pool.Capability == poolcontract.AutoCapability {
-		document.QualificationVersion = autoQualificationVersion
-	}
-	data, err := json.Marshal(document)
-	return data, names, err
+	return poolcontract.ProviderData(pool, input, qualified)
 }
 
 func publish(ctx context.Context, live *activeRuntime, pool poolcontract.Pool, path string, input poolcontract.Input, qualified []string) error {
@@ -255,9 +200,6 @@ func publish(ctx context.Context, live *activeRuntime, pool poolcontract.Pool, p
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
-	}
-	if live == nil {
-		return replaceFile(path, data)
 	}
 	return runtimesupervision.WithLock(live.workDir, func() error {
 		if err := ctx.Err(); err != nil {
@@ -318,28 +260,15 @@ func (live *activeRuntime) publishProvider(ctx context.Context, pool poolcontrac
 		}
 		return live.update(ctx, pool, names)
 	}
-	if err := replaceFile(path, data); err != nil {
+	if err := poolcontract.WriteFile(path, data); err != nil {
 		return err
 	}
 	if err := live.update(ctx, pool, names); err != nil {
-		if rollbackErr := replaceFile(path, previous); rollbackErr != nil {
+		if rollbackErr := poolcontract.WriteFile(path, previous); rollbackErr != nil {
 			return errors.Join(err, fmt.Errorf("restore provider file: %w", rollbackErr))
 		}
 		rollbackErr := live.update(context.WithoutCancel(ctx), pool, previousNames)
 		return errors.Join(err, rollbackErr)
 	}
 	return nil
-}
-
-func replaceFile(path string, data []byte) error {
-	file, err := os.CreateTemp(filepath.Dir(path), ".pool-*")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(file.Name())
-	_, writeErr := file.Write(data)
-	if err := errors.Join(writeErr, file.Sync(), file.Close()); err != nil {
-		return err
-	}
-	return os.Rename(file.Name(), path)
 }

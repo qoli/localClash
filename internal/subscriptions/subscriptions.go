@@ -1514,6 +1514,12 @@ func parseSubscription(sourceID string, data []byte) (subscriptionDoc, error) {
 	return subscriptionDoc{Data: doc, Format: subscriptionFormatMihomoYAML}, nil
 }
 
+// ReadMerged loads the normalized document written by Refresh.
+func ReadMerged(path string) (map[string]any, error) {
+	doc, err := readSubscription(path)
+	return doc.Data, err
+}
+
 func readSubscription(path string) (subscriptionDoc, error) {
 	file, err := os.Open(path)
 	if err != nil {
