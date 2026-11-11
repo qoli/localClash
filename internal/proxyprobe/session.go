@@ -24,6 +24,10 @@ import (
 // 1024-descriptor budget available for the core and its outbound connections.
 const BatchSize = 512
 
+// Keep a batch's port reservation and startup together when two pools prepare
+// concurrently. The core binds these ports after the reservations are closed.
+var listenerStartup sync.Mutex
+
 type Options struct {
 	CorePath       string
 	RuntimeParent  string
@@ -78,6 +82,11 @@ func Start(ctx context.Context, proxies []map[string]any, candidateNames []strin
 		}
 	}()
 
+	listenerStartup.Lock()
+	defer listenerStartup.Unlock()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	ports, err := reservePorts(len(candidateNames))
 	if err != nil {
 		return nil, err

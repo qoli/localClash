@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 	_ "time/tzdata"
@@ -98,12 +99,7 @@ func rebuild(ctx context.Context, input poolcontract.Input, pools []poolcontract
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		stage, err := os.MkdirTemp(filepath.Dir(workDir), ".pool-probe-")
-		if err != nil {
-			return err
-		}
-		defer os.RemoveAll(stage)
-		var failures error
+		pending := make([]poolPreparation, 0, len(pools))
 		for _, pool := range pools {
 			path := filepath.Join(workDir, pool.Path(input.Revision))
 			if live == nil {
@@ -113,20 +109,61 @@ func rebuild(ctx context.Context, input poolcontract.Input, pools []poolcontract
 					return err
 				}
 			}
-			result, err := qualify(ctx, pool, input, core, stage, filepath.Join(stage, pool.Provider+".json"))
+			pending = append(pending, poolPreparation{pool: pool, path: path})
+		}
+		if len(pending) == 0 {
+			return nil
+		}
+		stage, err := os.MkdirTemp(filepath.Dir(workDir), ".pool-probe-")
+		if err != nil {
+			return err
+		}
+		defer os.RemoveAll(stage)
+		probe := func(pool poolcontract.Pool) (capability.Result, error) {
+			return qualify(ctx, pool, input, core, stage, filepath.Join(stage, pool.Provider+".json"))
+		}
+		if live == nil {
+			qualifyPreparations(pending, probe)
+		}
+		var failures error
+		for _, item := range pending {
+			result, err := item.result, item.err
+			if live != nil {
+				result, err = probe(item.pool)
+			}
 			if err == nil {
-				err = publish(ctx, live, pool, path, input, result.Qualified)
+				err = publish(ctx, live, item.pool, item.path, input, result.Qualified)
 			}
 			if err != nil {
-				failures = errors.Join(failures, fmt.Errorf("%s: %w", pool.Provider, err))
+				failures = errors.Join(failures, fmt.Errorf("%s: %w", item.pool.Provider, err))
 				continue
 			}
-			result.SnapshotPath = path
+			result.SnapshotPath = item.path
 			results = append(results, result)
 		}
 		return failures
 	})
 	return results, err
+}
+
+type poolPreparation struct {
+	pool   poolcontract.Pool
+	path   string
+	result capability.Result
+	err    error
+}
+
+func qualifyPreparations(pending []poolPreparation, probe func(poolcontract.Pool) (capability.Result, error)) {
+	var jobs sync.WaitGroup
+	for index := range pending {
+		item := &pending[index]
+		jobs.Add(1)
+		go func() {
+			defer jobs.Done()
+			item.result, item.err = probe(item.pool)
+		}()
+	}
+	jobs.Wait()
 }
 
 func nextRun(now time.Time, period string) (time.Time, error) {

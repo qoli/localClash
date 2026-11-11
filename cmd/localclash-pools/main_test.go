@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/binary"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -11,10 +12,53 @@ import (
 	"testing"
 	"time"
 
+	"localclash/internal/capability"
 	"localclash/internal/poolcontract"
 
 	"gopkg.in/yaml.v3"
 )
+
+func TestCandidatePoolsQualifyConcurrently(t *testing.T) {
+	auto, _ := poolcontract.Lookup(poolcontract.AutoCapability)
+	chatgpt, _ := poolcontract.Lookup(poolcontract.ChatGPTCapability)
+	jobs := []poolPreparation{{pool: auto}, {pool: chatgpt}}
+	started := make(chan string, len(jobs))
+	release := make(chan struct{})
+	done := make(chan struct{})
+	chatgptError := errors.New("chatgpt probe failed")
+	go func() {
+		qualifyPreparations(jobs, func(pool poolcontract.Pool) (capability.Result, error) {
+			started <- pool.Capability
+			<-release
+			if pool == chatgpt {
+				return capability.Result{}, chatgptError
+			}
+			return capability.Result{Profile: pool.Capability, Probed: 1000}, nil
+		})
+		close(done)
+	}()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	observed := make(map[string]bool)
+	for range jobs {
+		select {
+		case profile := <-started:
+			observed[profile] = true
+		case <-ctx.Done():
+			close(release)
+			<-done
+			t.Fatal("both qualification runs must start before either finishes")
+		}
+	}
+	close(release)
+	<-done
+	if !observed[auto.Capability] || !observed[chatgpt.Capability] {
+		t.Fatalf("started profiles = %v", observed)
+	}
+	if jobs[0].result.Profile != auto.Capability || jobs[0].result.Probed != 1000 || jobs[0].err != nil || !errors.Is(jobs[1].err, chatgptError) {
+		t.Fatalf("qualification results = %+v", jobs)
+	}
+}
 
 func TestNextRun(t *testing.T) {
 	location, err := time.LoadLocation("America/New_York")

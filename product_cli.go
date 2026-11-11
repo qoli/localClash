@@ -292,7 +292,16 @@ func refreshProductCapabilities(ctx context.Context, state appinit.RuntimeState,
 		Core:      normalizeCorePathForState(state, state.Paths.CorePath),
 		Runtime:   state.Paths.MihomoRuntimeDir,
 	}, config, subscriptionDoc)
-	writeProductCapabilityStage(logOutput, "done", started, err, map[string]any{"prepared_pools": len(results)})
+	profiles := make([]map[string]any, 0, len(results))
+	for _, result := range results {
+		profiles = append(profiles, map[string]any{
+			"profile": result.Profile, "candidates": result.Candidates,
+			"probed": result.Probed, "qualified": result.QualifiedCount, "duration_ms": result.DurationMS,
+		})
+	}
+	writeProductCapabilityStage(logOutput, "done", started, err, map[string]any{
+		"prepared_pools": len(results), "profiles": profiles,
+	})
 	return results, err
 }
 
