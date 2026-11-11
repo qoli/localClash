@@ -599,7 +599,7 @@ func readStatsigCountry(reader io.Reader) (string, error) {
 			country = strings.ToUpper(strings.TrimSpace(fields.Country))
 			continue
 		}
-		if err := skipJSONValue(decoder); err != nil {
+		if err := skipStatsigField(decoder); err != nil {
 			return "", err
 		}
 	}
@@ -618,37 +618,40 @@ func readStatsigCountry(reader io.Reader) (string, error) {
 	return country, nil
 }
 
-func skipJSONValue(decoder *json.Decoder) error {
+func skipStatsigField(decoder *json.Decoder) error {
 	token, err := decoder.Token()
 	if err != nil {
 		return err
 	}
-	delim, ok := token.(json.Delim)
+	container, ok := token.(json.Delim)
 	if !ok {
 		return nil
 	}
-	switch delim {
-	case '{':
-		for decoder.More() {
+	if container != '{' && container != '[' {
+		return fmt.Errorf("unexpected JSON delimiter %q", container)
+	}
+	// Decode one entry at a time so a large configuration array or object
+	// does not have to fit in the decoder's buffer as a single value.
+	var ignored ignoredStatsigField
+	for decoder.More() {
+		if container == '{' {
 			if _, err := decoder.Token(); err != nil {
 				return err
 			}
-			if err := skipJSONValue(decoder); err != nil {
-				return err
-			}
 		}
-	case '[':
-		for decoder.More() {
-			if err := skipJSONValue(decoder); err != nil {
-				return err
-			}
+		if err := decoder.Decode(&ignored); err != nil {
+			return err
 		}
-	default:
-		return fmt.Errorf("unexpected JSON delimiter %q", delim)
 	}
 	_, err = decoder.Token()
 	return err
 }
+
+// Decoder validates the complete value before calling UnmarshalJSON. Discarding
+// it here avoids creating a Go value for every token in the feature config.
+type ignoredStatsigField struct{}
+
+func (*ignoredStatsigField) UnmarshalJSON([]byte) error { return nil }
 
 type countingReader struct {
 	reader io.Reader

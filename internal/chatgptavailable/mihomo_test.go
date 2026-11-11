@@ -113,8 +113,12 @@ func TestRequestStatsigRejectsUncompressedResponse(t *testing.T) {
 	}
 }
 
-func TestReadStatsigCountryRejectsMissingOrTrailingData(t *testing.T) {
-	for _, input := range []string{`{"feature_gates":{}}`, `{"derived_fields":{"country":"US"}} true`} {
+func TestReadStatsigCountryRejectsMissingMalformedOrTrailingData(t *testing.T) {
+	for _, input := range []string{
+		`{"feature_gates":{}}`,
+		`{"derived_fields":{"country":"US"},"feature_gates":[{"value":}]}`,
+		`{"derived_fields":{"country":"US"}} true`,
+	} {
 		if country, err := readStatsigCountry(bytes.NewBufferString(input)); err == nil || country != "" {
 			t.Fatalf("input %q produced country=%q err=%v, want explicit failure", input, country, err)
 		}
