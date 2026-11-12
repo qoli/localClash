@@ -30,6 +30,10 @@ type measurement struct {
 	youtube  *youtubeObservation
 }
 
+func (result measurement) qualified() bool {
+	return result.worstDoH > 0 && result.youtube != nil && result.youtube.HTTPStatus == http.StatusNoContent
+}
+
 type autoBatchResult struct {
 	completed    []measurement
 	filledAt     time.Time
@@ -76,7 +80,7 @@ func qualifyAuto(ctx context.Context, input poolcontract.Input, names []string, 
 				}
 			}
 			history[candidate.fingerprint] = history[candidate.fingerprint].afterProbe(attempt)
-			if attempt.worstDoH > 0 {
+			if attempt.qualified() {
 				attempt.index += offset
 				qualified = append(qualified, attempt)
 			} else {
@@ -182,7 +186,7 @@ func runAutoProbes(ctx context.Context, count, concurrency, needed int, probe fu
 		attempt := <-completed
 		inFlight--
 		measured.completed = append(measured.completed, attempt)
-		if attempt.worstDoH > 0 {
+		if attempt.qualified() {
 			qualified++
 			if qualified == needed {
 				measured.filledAt = time.Now()

@@ -1,11 +1,39 @@
 package poolcontract
 
 import (
+	"path/filepath"
 	"slices"
 	"testing"
 
 	"gopkg.in/yaml.v3"
 )
+
+func TestPreparedAutoProviderRequiresYouTubeQualificationVersion(t *testing.T) {
+	pool, _ := Lookup(AutoCapability)
+	path := filepath.Join(t.TempDir(), pool.Provider+".yaml")
+	legacy := []byte(`{"x-localclash-qualification-version":2,"proxies":[{"name":"old","type":"ss"}]}`)
+	if err := WriteFile(path, legacy); err != nil {
+		t.Fatal(err)
+	}
+	if ready, err := PreparedProvider(pool, path); err != nil || ready {
+		t.Fatalf("old provider ready = %v, error %v", ready, err)
+	}
+
+	input, err := NewInput([]map[string]any{{"name": "old", "type": "ss"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, _, err := ProviderData(pool, input, []string{"old"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteFile(path, data); err != nil {
+		t.Fatal(err)
+	}
+	if ready, err := PreparedProvider(pool, path); err != nil || !ready {
+		t.Fatalf("new provider ready = %v, error %v", ready, err)
+	}
+}
 
 func TestProviderDataKeepsSourceOrderAndRejectsEmptyPool(t *testing.T) {
 	pool, _ := Lookup(AutoCapability)

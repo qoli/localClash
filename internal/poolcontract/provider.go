@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-const autoQualificationVersion = 2
+const autoQualificationVersion = 3
 
 type providerDocument struct {
 	Proxies              []map[string]any `json:"proxies"`

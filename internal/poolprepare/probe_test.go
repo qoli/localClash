@@ -23,13 +23,14 @@ func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 func TestRunAutoProbesDrainsAfterEnoughQualified(t *testing.T) {
 	started := make(chan struct{})
 	release := make(chan struct{})
+	youtube := &youtubeObservation{HTTPStatus: http.StatusNoContent}
 	measured := runAutoProbes(t.Context(), 4, 2, 2, func(ctx context.Context, index int) measurement {
 		switch index {
 		case 0:
 			close(started)
 			select {
 			case <-release:
-				return measurement{worstDoH: time.Millisecond}
+				return measurement{worstDoH: time.Millisecond, youtube: youtube}
 			case <-ctx.Done():
 				t.Error("in-flight probe was canceled")
 				return measurement{}
@@ -41,13 +42,13 @@ func TestRunAutoProbesDrainsAfterEnoughQualified(t *testing.T) {
 		default:
 			t.Errorf("unexpected probe after the pool filled: %d", index)
 		}
-		return measurement{worstDoH: time.Second}
+		return measurement{worstDoH: time.Second, youtube: youtube}
 	})
 	rankByDoH(measured.completed)
 	want := []measurement{
-		{index: 0, worstDoH: time.Millisecond},
-		{index: 1, worstDoH: time.Second},
-		{index: 2, worstDoH: time.Second},
+		{index: 0, worstDoH: time.Millisecond, youtube: youtube},
+		{index: 1, worstDoH: time.Second, youtube: youtube},
+		{index: 2, worstDoH: time.Second, youtube: youtube},
 	}
 	if !slices.Equal(measured.completed, want) || measured.filledAt.IsZero() || measured.drainedCount != 1 {
 		t.Fatalf("probe results = %+v, want %+v with one drained probe", measured, want)
@@ -55,14 +56,15 @@ func TestRunAutoProbesDrainsAfterEnoughQualified(t *testing.T) {
 }
 
 func TestRunAutoProbesExhaustsCandidatesWhenPoolIsShort(t *testing.T) {
-	youtube := &youtubeObservation{Error: "timeout"}
-	measured := runAutoProbes(t.Context(), 3, 1, 2, func(_ context.Context, index int) measurement {
-		if index == 1 {
-			return measurement{worstDoH: time.Millisecond, youtube: youtube}
-		}
-		return measurement{}
+	want := []measurement{
+		{index: 0, youtube: &youtubeObservation{HTTPStatus: http.StatusNoContent}},
+		{index: 1, worstDoH: time.Millisecond, youtube: &youtubeObservation{Error: "timeout"}},
+		{index: 2, worstDoH: time.Millisecond, youtube: &youtubeObservation{HTTPStatus: http.StatusOK}},
+		{index: 3},
+	}
+	measured := runAutoProbes(t.Context(), len(want), 1, 1, func(_ context.Context, index int) measurement {
+		return want[index]
 	})
-	want := []measurement{{index: 0}, {index: 1, worstDoH: time.Millisecond, youtube: youtube}, {index: 2}}
 	if !slices.Equal(measured.completed, want) || !measured.filledAt.IsZero() || measured.drainedCount != 0 {
 		t.Fatalf("probe results = %+v, want %+v with no drain", measured, want)
 	}
@@ -135,7 +137,7 @@ func TestMeasureAutoRequiresHTTPSAndBothAddressFamiliesOnBothResolvers(t *testin
 	})
 	ctx := t.Context()
 	got := measureAuto(ctx, client)
-	if got.worstDoH <= 0 || got.youtube == nil || got.youtube.HTTPStatus != http.StatusForbidden ||
+	if got.qualified() || got.worstDoH <= 0 || got.youtube == nil || got.youtube.HTTPStatus != http.StatusForbidden ||
 		httpsRequests != 1 || youtubeRequests != 1 || requests.Load() != 4 {
 		t.Fatalf("YouTube returned 403 with healthy DoH, got %+v and %d Cloudflare, %d YouTube, %d DNS requests",
 			got, httpsRequests, youtubeRequests, requests.Load())
@@ -143,7 +145,7 @@ func TestMeasureAutoRequiresHTTPSAndBothAddressFamiliesOnBothResolvers(t *testin
 	missingIPv6.Store(true)
 	youtubeStatus = http.StatusNoContent
 	got = measureAuto(ctx, client)
-	if got.worstDoH != 0 || got.youtube == nil || got.youtube.HTTPStatus != http.StatusNoContent ||
+	if got.qualified() || got.worstDoH != 0 || got.youtube == nil || got.youtube.HTTPStatus != http.StatusNoContent ||
 		httpsRequests != 2 || youtubeRequests != 2 || requests.Load() != 8 {
 		t.Fatalf("both HTTPS probes passed but a resolver lacked AAAA, got %+v and %d Cloudflare, %d YouTube, %d DNS requests",
 			got, httpsRequests, youtubeRequests, requests.Load())
@@ -153,6 +155,12 @@ func TestMeasureAutoRequiresHTTPSAndBothAddressFamiliesOnBothResolvers(t *testin
 	got = measureAuto(ctx, client)
 	if got != (measurement{}) || httpsRequests != 3 || youtubeRequests != 2 || requests.Load() != 8 {
 		t.Fatalf("Cloudflare returned 200, got %+v and %d Cloudflare, %d YouTube, %d DNS requests",
+			got, httpsRequests, youtubeRequests, requests.Load())
+	}
+	httpsStatus = http.StatusNoContent
+	got = measureAuto(ctx, client)
+	if !got.qualified() || httpsRequests != 4 || youtubeRequests != 3 || requests.Load() != 12 {
+		t.Fatalf("Cloudflare, YouTube and DoH passed, got %+v and %d Cloudflare, %d YouTube, %d DNS requests",
 			got, httpsRequests, youtubeRequests, requests.Load())
 	}
 }

@@ -1,9 +1,10 @@
 package poolprepare
 
 import (
-	"maps"
+	"net/http"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -20,7 +21,10 @@ func TestAutoHistoryKeepsSkippedObservationsAndDropsRemovedCandidates(t *testing
 	history["failed"] = autoObservation{WorstDoHNS: int64(time.Second)}.afterProbe(measurement{})
 	history["skipped"] = autoObservation{WorstDoHNS: int64(time.Millisecond)}
 	history["removed"] = autoObservation{ConsecutiveFailures: 1}
-	history["recovered"] = autoObservation{ConsecutiveFailures: 2}.afterProbe(measurement{worstDoH: 20 * time.Millisecond})
+	youtube := &youtubeObservation{HTTPStatus: http.StatusNoContent}
+	history["recovered"] = autoObservation{ConsecutiveFailures: 2}.afterProbe(measurement{
+		worstDoH: 20 * time.Millisecond, youtube: youtube,
+	})
 	candidates := []autoCandidate{
 		{fingerprint: "failed"}, {fingerprint: "skipped"},
 		{fingerprint: "recovered"}, {fingerprint: "unmeasured"},
@@ -32,9 +36,9 @@ func TestAutoHistoryKeepsSkippedObservationsAndDropsRemovedCandidates(t *testing
 	want := map[string]autoObservation{
 		"failed":    {WorstDoHNS: int64(time.Second), ConsecutiveFailures: 1},
 		"skipped":   {WorstDoHNS: int64(time.Millisecond)},
-		"recovered": {WorstDoHNS: int64(20 * time.Millisecond)},
+		"recovered": {WorstDoHNS: int64(20 * time.Millisecond), YouTube: youtube},
 	}
-	if err != nil || !maps.Equal(got, want) {
+	if err != nil || !reflect.DeepEqual(got, want) {
 		t.Fatalf("read history = %+v, %v, want %+v", got, err, want)
 	}
 }
@@ -56,13 +60,16 @@ func TestAutoHistoryRecordsLatestYouTubeAttemptWithLegacyHistory(t *testing.T) {
 		Node: "example", CheckedAt: time.Date(2026, 11, 12, 8, 0, 0, 0, time.UTC), DurationMS: 5000, Error: "timeout",
 	}
 	observed := history["candidate"].afterProbe(measurement{worstDoH: 20 * time.Millisecond, youtube: &youtube})
+	if observed.ConsecutiveFailures != 1 {
+		t.Fatalf("YouTube timed out with healthy DoH, got %d consecutive failures, want 1", observed.ConsecutiveFailures)
+	}
 	history["candidate"] = observed.afterProbe(measurement{})
 	if err := writeAutoHistory(runtimeDir, []autoCandidate{{fingerprint: "candidate"}}, history); err != nil {
 		t.Fatal(err)
 	}
 	saved, err := readAutoHistory(runtimeDir)
 	got := saved["candidate"]
-	if err != nil || got.WorstDoHNS != (20*time.Millisecond).Nanoseconds() || got.ConsecutiveFailures != 1 ||
+	if err != nil || got.WorstDoHNS != (20*time.Millisecond).Nanoseconds() || got.ConsecutiveFailures != 2 ||
 		got.YouTube == nil || *got.YouTube != youtube {
 		t.Fatalf("history after a skipped YouTube check = %+v, YouTube %+v, error %v", got, got.YouTube, err)
 	}

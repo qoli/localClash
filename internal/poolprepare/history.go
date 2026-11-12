@@ -88,6 +88,8 @@ func (observation autoObservation) afterProbe(result measurement) autoObservatio
 	}
 	if result.worstDoH > 0 {
 		observation.WorstDoHNS = result.worstDoH.Nanoseconds()
+	}
+	if result.qualified() {
 		observation.ConsecutiveFailures = 0
 	} else {
 		observation.ConsecutiveFailures++

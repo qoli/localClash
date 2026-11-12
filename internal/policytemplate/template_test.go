@@ -59,7 +59,7 @@ func TestRealMinimalTemplateUsesQualifiedPoolWithNarrowSmartPriority(t *testing.
 		t.Fatal(err)
 	}
 	auto := config.ProxyGroups["⚡ 自动选择"]
-	if auto.Reason != "由独立探测进程验证海外 DoH 和普通 HTTPS，使用最多 50 个合格订阅节点。" {
+	if auto.Reason != "由独立探测进程验证 Cloudflare 204、YouTube 204 和海外 DoH，使用最多 50 个合格订阅节点。" {
 		t.Fatalf("minimal automatic reason = %q", auto.Reason)
 	}
 	if auto.Boundary != "qualified_doh_pool" {
@@ -254,7 +254,7 @@ func TestRealLocalClashDefaultTemplateIsLayered(t *testing.T) {
 	if auto.Mode != "auto" || auto.Capability != poolcontract.AutoCapability || auto.Match != nil || !reflect.DeepEqual(auto.SmartPriority, wantAutoPriority) {
 		t.Fatalf("default template auto selector = %+v, want qualified pool with Smart priority", auto)
 	}
-	if auto.Reason != "由独立探测进程验证海外 DoH 和普通 HTTPS，使用最多 50 个合格订阅节点。" {
+	if auto.Reason != "由独立探测进程验证 Cloudflare 204、YouTube 204 和海外 DoH，使用最多 50 个合格订阅节点。" {
 		t.Fatalf("default template automatic reason = %q", auto.Reason)
 	}
 	if auto.Boundary != "qualified_doh_pool" {
