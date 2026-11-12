@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"path/filepath"
 	"slices"
@@ -19,11 +20,14 @@ import (
 	"localclash/internal/proxyprobe"
 )
 
+const autoYouTubeProbeURL = "https://www.youtube.com/generate_204"
+
 var overseasDoH = []string{"https://1.1.1.1/dns-query", "https://8.8.8.8/dns-query"}
 
 type measurement struct {
 	index    int
 	worstDoH time.Duration
+	youtube  *youtubeObservation
 }
 
 type autoBatchResult struct {
@@ -63,8 +67,15 @@ func qualifyAuto(ctx context.Context, input poolcontract.Input, names []string, 
 			result.AutoQuality.DrainedCount = measured.drainedCount
 		}
 		for _, attempt := range measured.completed {
-			fingerprint := batch[attempt.index].fingerprint
-			history[fingerprint] = history[fingerprint].afterProbe(attempt.worstDoH)
+			candidate := batch[attempt.index]
+			if attempt.youtube != nil {
+				attempt.youtube.Node = candidate.name
+				result.AutoQuality.YouTube.Probed++
+				if attempt.youtube.HTTPStatus == http.StatusNoContent {
+					result.AutoQuality.YouTube.Passed++
+				}
+			}
+			history[candidate.fingerprint] = history[candidate.fingerprint].afterProbe(attempt)
 			if attempt.worstDoH > 0 {
 				attempt.index += offset
 				qualified = append(qualified, attempt)
@@ -136,10 +147,10 @@ func probeAutoBatch(ctx context.Context, proxies []map[string]any, candidates []
 		return autoBatchResult{}, err
 	}
 	defer session.Close()
-	measured := runAutoProbes(ctx, len(names), opts.Concurrency, needed, func(ctx context.Context, index int) time.Duration {
+	measured := runAutoProbes(ctx, len(names), opts.Concurrency, needed, func(ctx context.Context, index int) measurement {
 		client, err := session.HTTPClient(index, 5*time.Second, true)
 		if err != nil {
-			return 0
+			return measurement{}
 		}
 		defer client.CloseIdleConnections()
 		return measureAuto(ctx, client)
@@ -150,7 +161,7 @@ func probeAutoBatch(ctx context.Context, proxies []map[string]any, candidates []
 	return measured, session.Err()
 }
 
-func runAutoProbes(ctx context.Context, count, concurrency, needed int, probe func(context.Context, int) time.Duration) autoBatchResult {
+func runAutoProbes(ctx context.Context, count, concurrency, needed int, probe func(context.Context, int) measurement) autoBatchResult {
 	completed := make(chan measurement)
 	var measured autoBatchResult
 	next, inFlight, qualified := 0, 0, 0
@@ -159,7 +170,9 @@ func runAutoProbes(ctx context.Context, count, concurrency, needed int, probe fu
 		next++
 		inFlight++
 		go func() {
-			completed <- measurement{index: index, worstDoH: probe(ctx, index)}
+			result := probe(ctx, index)
+			result.index = index
+			completed <- result
 		}()
 	}
 	for next < min(concurrency, count) && ctx.Err() == nil {
@@ -183,20 +196,52 @@ func runAutoProbes(ctx context.Context, count, concurrency, needed int, probe fu
 	return measured
 }
 
-func measureAuto(ctx context.Context, client *http.Client) time.Duration {
-	req, err := http.NewRequestWithContext(ctx, http.MethodHead, poolcontract.AutoHTTPSProbeURL, nil)
+func measureAuto(ctx context.Context, client *http.Client) measurement {
+	status, err := headStatus(ctx, client, poolcontract.AutoHTTPSProbeURL)
+	if err != nil || status != poolcontract.AutoHTTPSProbeStatus {
+		return measurement{}
+	}
+
+	youtube := make(chan youtubeObservation, 1)
+	go func() {
+		youtube <- measureYouTube(ctx, client)
+	}()
+	worstDoH := measureDoH(ctx, client)
+	observation := <-youtube
+	return measurement{worstDoH: worstDoH, youtube: &observation}
+}
+
+func headStatus(ctx context.Context, client *http.Client, target string) (int, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodHead, target, nil)
 	if err != nil {
-		return 0
+		return 0, err
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return 0
+		return 0, err
 	}
 	resp.Body.Close()
-	if resp.StatusCode != poolcontract.AutoHTTPSProbeStatus {
-		return 0
+	return resp.StatusCode, nil
+}
+
+func measureYouTube(ctx context.Context, client *http.Client) youtubeObservation {
+	start := time.Now()
+	status, err := headStatus(ctx, client, autoYouTubeProbeURL)
+	finished := time.Now()
+	result := youtubeObservation{
+		CheckedAt:  finished.UTC(),
+		DurationMS: finished.Sub(start).Milliseconds(),
+		HTTPStatus: status,
 	}
-	return measureDoH(ctx, client)
+	if err != nil {
+		var networkError net.Error
+		if errors.Is(err, context.DeadlineExceeded) || (errors.As(err, &networkError) && networkError.Timeout()) {
+			result.Error = "timeout"
+		} else {
+			result.Error = "transport_error"
+		}
+	}
+	return result
 }
 
 func measureDoH(ctx context.Context, client *http.Client) time.Duration {

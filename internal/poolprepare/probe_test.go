@@ -23,16 +23,16 @@ func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 func TestRunAutoProbesDrainsAfterEnoughQualified(t *testing.T) {
 	started := make(chan struct{})
 	release := make(chan struct{})
-	measured := runAutoProbes(t.Context(), 4, 2, 2, func(ctx context.Context, index int) time.Duration {
+	measured := runAutoProbes(t.Context(), 4, 2, 2, func(ctx context.Context, index int) measurement {
 		switch index {
 		case 0:
 			close(started)
 			select {
 			case <-release:
-				return time.Millisecond
+				return measurement{worstDoH: time.Millisecond}
 			case <-ctx.Done():
 				t.Error("in-flight probe was canceled")
-				return 0
+				return measurement{}
 			}
 		case 1:
 			<-started
@@ -41,7 +41,7 @@ func TestRunAutoProbesDrainsAfterEnoughQualified(t *testing.T) {
 		default:
 			t.Errorf("unexpected probe after the pool filled: %d", index)
 		}
-		return time.Second
+		return measurement{worstDoH: time.Second}
 	})
 	rankByDoH(measured.completed)
 	want := []measurement{
@@ -55,13 +55,14 @@ func TestRunAutoProbesDrainsAfterEnoughQualified(t *testing.T) {
 }
 
 func TestRunAutoProbesExhaustsCandidatesWhenPoolIsShort(t *testing.T) {
-	measured := runAutoProbes(t.Context(), 3, 1, 2, func(_ context.Context, index int) time.Duration {
+	youtube := &youtubeObservation{Error: "timeout"}
+	measured := runAutoProbes(t.Context(), 3, 1, 2, func(_ context.Context, index int) measurement {
 		if index == 1 {
-			return time.Millisecond
+			return measurement{worstDoH: time.Millisecond, youtube: youtube}
 		}
-		return 0
+		return measurement{}
 	})
-	want := []measurement{{index: 0}, {index: 1, worstDoH: time.Millisecond}, {index: 2}}
+	want := []measurement{{index: 0}, {index: 1, worstDoH: time.Millisecond, youtube: youtube}, {index: 2}}
 	if !slices.Equal(measured.completed, want) || !measured.filledAt.IsZero() || measured.drainedCount != 0 {
 		t.Fatalf("probe results = %+v, want %+v with no drain", measured, want)
 	}
@@ -112,27 +113,83 @@ func TestMeasureAutoRequiresHTTPSAndBothAddressFamiliesOnBothResolvers(t *testin
 	resolverTransport := client.Transport
 	httpsStatus := http.StatusNoContent
 	httpsRequests := 0
+	youtubeStatus := http.StatusForbidden
+	youtubeRequests := 0
 	client.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
-		if req.URL.String() != poolcontract.AutoHTTPSProbeURL {
+		switch req.URL.String() {
+		case poolcontract.AutoHTTPSProbeURL:
+			if req.Method != http.MethodHead {
+				t.Errorf("Cloudflare probe used %s, want HEAD", req.Method)
+			}
+			httpsRequests++
+			return &http.Response{StatusCode: httpsStatus, Body: http.NoBody}, nil
+		case autoYouTubeProbeURL:
+			if req.Method != http.MethodHead {
+				t.Errorf("YouTube probe used %s, want HEAD", req.Method)
+			}
+			youtubeRequests++
+			return &http.Response{StatusCode: youtubeStatus, Body: http.NoBody}, nil
+		default:
 			return resolverTransport.RoundTrip(req)
 		}
-		if req.Method != http.MethodHead {
-			t.Errorf("HTTPS probe used %s, want HEAD", req.Method)
-		}
-		httpsRequests++
-		return &http.Response{StatusCode: httpsStatus, Body: http.NoBody}, nil
 	})
-	ctx := context.Background()
-	if got := measureAuto(ctx, client); got <= 0 || httpsRequests != 1 || requests.Load() != 4 {
-		t.Fatalf("healthy endpoints measured %v with %d HTTPS and %d DNS requests", got, httpsRequests, requests.Load())
+	ctx := t.Context()
+	got := measureAuto(ctx, client)
+	if got.worstDoH <= 0 || got.youtube == nil || got.youtube.HTTPStatus != http.StatusForbidden ||
+		httpsRequests != 1 || youtubeRequests != 1 || requests.Load() != 4 {
+		t.Fatalf("YouTube returned 403 with healthy DoH, got %+v and %d Cloudflare, %d YouTube, %d DNS requests",
+			got, httpsRequests, youtubeRequests, requests.Load())
 	}
 	missingIPv6.Store(true)
-	if got := measureAuto(ctx, client); got != 0 || httpsRequests != 2 || requests.Load() != 8 {
-		t.Fatalf("HTTPS passed but one resolver lacked AAAA, got %v with %d HTTPS and %d DNS requests", got, httpsRequests, requests.Load())
+	youtubeStatus = http.StatusNoContent
+	got = measureAuto(ctx, client)
+	if got.worstDoH != 0 || got.youtube == nil || got.youtube.HTTPStatus != http.StatusNoContent ||
+		httpsRequests != 2 || youtubeRequests != 2 || requests.Load() != 8 {
+		t.Fatalf("both HTTPS probes passed but a resolver lacked AAAA, got %+v and %d Cloudflare, %d YouTube, %d DNS requests",
+			got, httpsRequests, youtubeRequests, requests.Load())
 	}
 	missingIPv6.Store(false)
 	httpsStatus = http.StatusOK
-	if got := measureAuto(ctx, client); got != 0 || httpsRequests != 3 || requests.Load() != 8 {
-		t.Fatalf("HTTPS endpoint returned an unexpected status, got %v with %d HTTPS and %d DNS requests", got, httpsRequests, requests.Load())
+	got = measureAuto(ctx, client)
+	if got != (measurement{}) || httpsRequests != 3 || youtubeRequests != 2 || requests.Load() != 8 {
+		t.Fatalf("Cloudflare returned 200, got %+v and %d Cloudflare, %d YouTube, %d DNS requests",
+			got, httpsRequests, youtubeRequests, requests.Load())
+	}
+}
+
+func TestMeasureAutoOverlapsYouTubeWithDoH(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	youtubeStarted := make(chan struct{})
+	dohStarted := make(chan struct{})
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.String() {
+		case poolcontract.AutoHTTPSProbeURL:
+			return &http.Response{StatusCode: http.StatusNoContent, Body: http.NoBody}, nil
+		case autoYouTubeProbeURL:
+			close(youtubeStarted)
+			select {
+			case <-dohStarted:
+				return nil, context.DeadlineExceeded
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		default:
+			close(dohStarted)
+			select {
+			case <-youtubeStarted:
+				return &http.Response{StatusCode: http.StatusBadGateway, Body: http.NoBody}, nil
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
+	})}
+	got := measureAuto(ctx, client)
+	if ctx.Err() != nil {
+		t.Fatal("YouTube and DoH did not start while the other request was in flight")
+	}
+	if got.worstDoH != 0 || got.youtube == nil || got.youtube.Error != "timeout" ||
+		got.youtube.HTTPStatus != 0 || got.youtube.CheckedAt.IsZero() || got.youtube.DurationMS < 0 {
+		t.Fatalf("expected a timed YouTube timeout and a failed DoH check, got %+v, YouTube %+v", got, got.youtube)
 	}
 }

@@ -14,8 +14,17 @@ import (
 const autoHistoryVersion = 1
 
 type autoObservation struct {
-	WorstDoHNS          int64 `json:"worst_doh_ns,omitempty"`
-	ConsecutiveFailures int   `json:"consecutive_failures,omitempty"`
+	WorstDoHNS          int64               `json:"worst_doh_ns,omitempty"`
+	ConsecutiveFailures int                 `json:"consecutive_failures,omitempty"`
+	YouTube             *youtubeObservation `json:"youtube,omitempty"`
+}
+
+type youtubeObservation struct {
+	Node       string    `json:"node"`
+	CheckedAt  time.Time `json:"checked_at"`
+	DurationMS int64     `json:"duration_ms"`
+	HTTPStatus int       `json:"http_status,omitempty"`
+	Error      string    `json:"error,omitempty"`
 }
 
 type autoHistory struct {
@@ -73,10 +82,15 @@ func autoHistoryPath(runtimeDir string) string {
 	return filepath.Join(runtimeDir, poolcontract.Directory, "auto-probe-history.json")
 }
 
-func (observation autoObservation) afterProbe(worstDoH time.Duration) autoObservation {
-	if worstDoH > 0 {
-		return autoObservation{WorstDoHNS: worstDoH.Nanoseconds()}
+func (observation autoObservation) afterProbe(result measurement) autoObservation {
+	if result.youtube != nil {
+		observation.YouTube = result.youtube
 	}
-	observation.ConsecutiveFailures++
+	if result.worstDoH > 0 {
+		observation.WorstDoHNS = result.worstDoH.Nanoseconds()
+		observation.ConsecutiveFailures = 0
+	} else {
+		observation.ConsecutiveFailures++
+	}
 	return observation
 }
