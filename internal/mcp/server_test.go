@@ -1198,6 +1198,9 @@ func stubMihomoCandidateTest(t *testing.T, server *Server) {
 func TestToolsCallSubscriptionsRefreshPreparesQualifiedProviders(t *testing.T) {
 	dir := t.TempDir()
 	profile := filepath.Join(dir, runtimeprofile.DefaultPath)
+	if err := runtimeprofile.SetPoolsEnabled(profile, true); err != nil {
+		t.Fatal(err)
+	}
 	subscriptionServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`proxies:
   - name: US 01

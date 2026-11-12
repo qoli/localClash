@@ -58,7 +58,8 @@ func runProductPools(args []string, state appinit.RuntimeState) error {
 	changed := false
 	err := runtimesupervision.WithLock(state.Paths.RuntimeRoot, func() error {
 		profile, _, err := runtimeprofile.Load(state.Paths.RuntimeProfilePath)
-		if err != nil || profile.PoolsDisabled == !*enabled {
+		// An older profile with no setting may still have pools in its rendered config.
+		if err != nil || (profile.PoolsSettingExplicit && profile.PoolsDisabled == !*enabled) {
 			return err
 		}
 		reloaded, err := configureProductPools(ctx, state, *enabled)

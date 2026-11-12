@@ -46,13 +46,14 @@ var dynamicConfigKeys = map[string]bool{
 }
 
 type File struct {
-	Version       int                `yaml:"version" json:"version"`
-	Mode          string             `yaml:"mode" json:"mode"`
-	Core          string             `yaml:"core" json:"core"`
-	PoolsDisabled bool               `yaml:"-" json:"pools_disabled,omitempty"`
-	Profiles      map[string]Profile `yaml:"-" json:"-"`
-	Cores         map[string]Core    `yaml:"-" json:"-"`
-	Smart         SmartOptions       `yaml:"-" json:"-"`
+	Version              int                `yaml:"version" json:"version"`
+	Mode                 string             `yaml:"mode" json:"mode"`
+	Core                 string             `yaml:"core" json:"core"`
+	PoolsDisabled        bool               `yaml:"-" json:"pools_disabled"`
+	PoolsSettingExplicit bool               `yaml:"-" json:"-"`
+	Profiles             map[string]Profile `yaml:"-" json:"-"`
+	Cores                map[string]Core    `yaml:"-" json:"-"`
+	Smart                SmartOptions       `yaml:"-" json:"-"`
 }
 
 type Profile struct {
@@ -65,7 +66,7 @@ type diskFile struct {
 	Version       int    `yaml:"version" json:"version"`
 	Mode          string `yaml:"mode" json:"mode"`
 	Core          string `yaml:"core" json:"core"`
-	PoolsDisabled bool   `json:"pools_disabled,omitempty"`
+	PoolsDisabled *bool  `json:"pools_disabled"`
 }
 
 type Core struct {
@@ -106,6 +107,7 @@ func Load(path string) (File, bool, error) {
 		if err := write(path, file); err != nil {
 			return File{}, false, err
 		}
+		file.PoolsSettingExplicit = true
 		return file, true, nil
 	}
 	if err != nil {
@@ -318,12 +320,13 @@ func IsDynamicConfigKey(key string) bool {
 
 func DefaultFile() File {
 	file := File{
-		Version:  2,
-		Mode:     ModeNormal,
-		Core:     CoreMeta,
-		Cores:    defaultCores(),
-		Smart:    defaultSmartOptions(),
-		Profiles: map[string]Profile{},
+		Version:       2,
+		Mode:          ModeNormal,
+		Core:          CoreMeta,
+		PoolsDisabled: true,
+		Cores:         defaultCores(),
+		Smart:         defaultSmartOptions(),
+		Profiles:      map[string]Profile{},
 	}
 	for _, mode := range []string{ModeNormal, ModeRouter} {
 		profile, err := readEmbeddedDefaultProfile(mode)
@@ -357,7 +360,10 @@ func normalizeDiskFile(file diskFile) File {
 	out.Version = file.Version
 	out.Mode = file.Mode
 	out.Core = file.Core
-	out.PoolsDisabled = file.PoolsDisabled
+	if file.PoolsDisabled != nil {
+		out.PoolsDisabled = *file.PoolsDisabled
+		out.PoolsSettingExplicit = true
+	}
 	return out
 }
 
@@ -536,7 +542,7 @@ func write(path string, file File) error {
 		Version:       file.Version,
 		Mode:          file.Mode,
 		Core:          file.Core,
-		PoolsDisabled: file.PoolsDisabled,
+		PoolsDisabled: &file.PoolsDisabled,
 	}
 	data, err := json.MarshalIndent(disk, "", "  ")
 	if err != nil {

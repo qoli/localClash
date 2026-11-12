@@ -479,6 +479,9 @@ custom_rules:
 func TestRunProductConfigRenderUsesQualifiedCapabilitySnapshot(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
+	if err := runtimeprofile.SetPoolsEnabled(filepath.Join(dir, runtimeprofile.DefaultPath), true); err != nil {
+		t.Fatal(err)
+	}
 
 	writeMainTestFile(t, "subscription.gob", `proxies:
   - name: "US 01"
@@ -541,6 +544,16 @@ func TestRunProductSubscriptionRefreshBuildsCapabilityForFollowingRender(t *test
 	dir := t.TempDir()
 	t.Chdir(dir)
 	t.Setenv("LOCALCLASH_WORKDIR", dir)
+	profilePath := filepath.Join(dir, runtimeprofile.DefaultPath)
+	output := captureStdout(t, func() error { return run([]string{"config", "pools", "--json"}) })
+	var poolReadback struct {
+		OK     bool              `json:"ok"`
+		Status *poolConfigStatus `json:"status"`
+	}
+	if err := json.Unmarshal([]byte(output), &poolReadback); err != nil || !poolReadback.OK || poolReadback.Status == nil || poolReadback.Status.Enabled {
+		t.Fatalf("default pool status = %s, error = %v", output, err)
+	}
+	captureStdout(t, func() error { return run([]string{"config", "pools", "--enabled", "true", "--json"}) })
 
 	subscriptionServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`proxies:
@@ -642,6 +655,8 @@ custom_rules:
 	prepareCalled = false
 	core := filepath.Join(dir, runtimeprofile.MetaCorePath)
 	writeMainExecutableCore(t, core, "Mihomo Meta fixture")
+	// Older Core versions saved enabled pools by omitting the setting.
+	writeMainTestFile(t, profilePath, `{"version":2,"mode":"normal","core":"meta"}`)
 	if _, err := captureStdoutAllowError(t, func() error {
 		return run([]string{"config", "pools", "--enabled", "false", "--json"})
 	}); err != nil {
@@ -669,7 +684,11 @@ func TestRunProductSubscriptionRefreshRebuildsTemplateOwnedGroupsBeforeCapabilit
 		SubscriptionRuntime: filepath.Join(runtimeRoot, "subscriptions"),
 		SubscriptionPath:    filepath.Join(dir, "subscription.gob"),
 		CorePath:            filepath.Join(dir, "mihomo"),
+		RuntimeProfilePath:  filepath.Join(dir, runtimeprofile.DefaultPath),
 	}}
+	if err := runtimeprofile.SetPoolsEnabled(state.Paths.RuntimeProfilePath, true); err != nil {
+		t.Fatal(err)
+	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("proxies:\n  - name: US 01\n    type: ss\n    server: us.example\n    port: 443\n    cipher: aes-128-gcm\n    password: secret\n"))
 	}))
@@ -876,6 +895,9 @@ func TestApplyTemplateTransactionRestoresPriorIntentAndRegistryWhenCapabilityRef
 		PacksSelectionPath:  filepath.Join(dir, "localclash-packs.gob"),
 		RuntimeProfilePath:  filepath.Join(dir, "localclash-runtime.json"),
 	}}
+	if err := runtimeprofile.SetPoolsEnabled(state.Paths.RuntimeProfilePath, true); err != nil {
+		t.Fatal(err)
+	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`proxies:
   - name: healthy

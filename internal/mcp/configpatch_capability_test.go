@@ -10,6 +10,7 @@ import (
 	"localclash/internal/configpatch"
 	"localclash/internal/localconfig"
 	"localclash/internal/poolcontract"
+	"localclash/internal/runtimeprofile"
 )
 
 func TestConfigPatchPreservesPoolProvidersForUnrelatedChanges(t *testing.T) {
@@ -27,6 +28,10 @@ func TestConfigPatchPreservesPoolProvidersForUnrelatedChanges(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			paths := setupMCPPlanFixture(t)
 			dir := filepath.Dir(paths.subscription)
+			profile := filepath.Join(dir, runtimeprofile.DefaultPath)
+			if err := runtimeprofile.SetPoolsEnabled(profile, true); err != nil {
+				t.Fatal(err)
+			}
 			runtimeRoot := filepath.Join(dir, ".runtime")
 			if tc.statePaths {
 				runtimeRoot = filepath.Join(dir, "state-runtime")
@@ -56,7 +61,7 @@ func TestConfigPatchPreservesPoolProvidersForUnrelatedChanges(t *testing.T) {
 					RulesCacheDir:      paths.cache,
 					GeneratedConfig:    generated,
 					MihomoRuntimeDir:   filepath.Dir(generated),
-					RuntimeProfilePath: filepath.Join(dir, "localclash-runtime.json"),
+					RuntimeProfilePath: profile,
 					PacksSelectionPath: filepath.Join(dir, "localclash-packs.gob"),
 					CorePath:           core,
 				}})

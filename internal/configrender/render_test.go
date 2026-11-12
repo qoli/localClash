@@ -927,14 +927,11 @@ enabled_packs:
 	}
 }
 
-func TestRenderDisablesManagedPoolProvidersWithoutChangingPolicyTargets(t *testing.T) {
+func TestRenderDefaultsManagedPoolsOffWithoutChangingPolicyTargets(t *testing.T) {
 	paths := writeRenderFixture(t)
 	dir := paths.dir
 	profile := filepath.Join(dir, runtimeprofile.DefaultPath)
 	if _, err := runtimeprofile.Configure(profile, "", runtimeprofile.CoreSmart); err != nil {
-		t.Fatal(err)
-	}
-	if err := runtimeprofile.SetPoolsEnabled(profile, false); err != nil {
 		t.Fatal(err)
 	}
 	selection := rules.Selection{

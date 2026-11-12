@@ -12,23 +12,23 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-func TestPoolSettingKeepsLegacyDefaultAndSurvivesModeChanges(t *testing.T) {
+func TestPoolSettingDefaultsOffAndPreservesExplicitEnablement(t *testing.T) {
 	path := filepath.Join(t.TempDir(), DefaultPath)
 	if err := os.WriteFile(path, []byte(`{"version":2,"mode":"normal","core":"meta"}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	file, _, err := Load(path)
-	if err != nil || file.PoolsDisabled {
+	if err != nil || !file.PoolsDisabled || file.PoolsSettingExplicit {
 		t.Fatalf("legacy profile = %+v, error = %v", file, err)
 	}
-	if err := SetPoolsEnabled(path, false); err != nil {
+	if err := SetPoolsEnabled(path, true); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := Configure(path, ModeRouter, CoreSmart); err != nil {
 		t.Fatal(err)
 	}
 	file, _, err = Load(path)
-	if err != nil || !file.PoolsDisabled || file.Mode != ModeRouter || file.Core != CoreSmart {
+	if err != nil || file.PoolsDisabled || !file.PoolsSettingExplicit || file.Mode != ModeRouter || file.Core != CoreSmart {
 		t.Fatalf("updated profile = %+v, error = %v", file, err)
 	}
 }
@@ -60,7 +60,7 @@ func TestStatusForMissingFileInitializesV2RuntimeSelectorWithoutWorkingProfiles(
 		t.Fatal(err)
 	}
 	text := string(data)
-	for _, want := range []string{`"version": 2`, `"mode": "normal"`, `"core": "meta"`} {
+	for _, want := range []string{`"version": 2`, `"mode": "normal"`, `"core": "meta"`, `"pools_disabled": true`} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("runtime selector missing %q:\n%s", want, text)
 		}
