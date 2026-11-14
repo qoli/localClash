@@ -8,12 +8,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
+	"time"
 
 	"localclash/internal/capability"
 	"localclash/internal/corerun"
@@ -30,7 +33,70 @@ type activeRuntime struct {
 	client  *mihomoapi.Client
 }
 
-func refresh(ctx context.Context, workDir string, enhancedFilter bool) ([]capability.Result, error) {
+func (live *activeRuntime) videoDegradations(ctx context.Context, data []byte, pool poolcontract.Pool, since time.Time) (map[string]bool, error) {
+	var config struct {
+		Groups []struct {
+			Name string   `yaml:"name"`
+			Type string   `yaml:"type"`
+			Use  []string `yaml:"use"`
+		} `yaml:"proxy-groups"`
+	}
+	if err := yaml.Unmarshal(data, &config); err != nil {
+		return nil, errors.New("decode Smart groups using the automatic pool")
+	}
+	var degraded map[string]bool
+	for _, group := range config.Groups {
+		if group.Type != "smart" || !slices.Contains(group.Use, pool.Provider) {
+			continue
+		}
+		observed, err := live.smartVideoDegradations(ctx, group.Name, since, time.Now())
+		if err != nil {
+			return nil, err
+		}
+		if observed == nil {
+			continue
+		}
+		if degraded == nil {
+			degraded = make(map[string]bool)
+		}
+		maps.Copy(degraded, observed)
+	}
+	return degraded, nil
+}
+
+func (live *activeRuntime) smartVideoDegradations(ctx context.Context, name string, since, now time.Time) (map[string]bool, error) {
+	var group struct {
+		Type  string `json:"type"`
+		Video *[]struct {
+			Node       string    `json:"node"`
+			Network    string    `json:"network"`
+			ObservedAt time.Time `json:"observed_at"`
+			Until      time.Time `json:"until"`
+		} `json:"videoDegradations"`
+	}
+	if err := live.readJSON(ctx, "/proxies/", name, &group); err != nil {
+		return nil, fmt.Errorf("read Smart video degradation for %q: %w", name, err)
+	}
+	if group.Type != "Smart" {
+		return nil, fmt.Errorf("invalid Smart group response for %q", name)
+	}
+	if group.Video == nil {
+		return nil, nil
+	}
+	degraded := make(map[string]bool)
+	for _, event := range *group.Video {
+		node := strings.TrimSpace(event.Node)
+		if node == "" || (event.Network != "tcp" && event.Network != "udp") || event.ObservedAt.IsZero() || !event.Until.After(event.ObservedAt) {
+			return nil, fmt.Errorf("invalid Smart video degradation for %q", name)
+		}
+		if now.Before(event.Until) || (!since.IsZero() && event.ObservedAt.After(since)) {
+			degraded[node] = true
+		}
+	}
+	return degraded, nil
+}
+
+func refresh(ctx context.Context, workDir string, enhancedFilter bool, since time.Time) ([]capability.Result, error) {
 	live, data, err := readActiveRuntime(workDir)
 	if err != nil {
 		return nil, err
@@ -45,7 +111,7 @@ func refresh(ctx context.Context, workDir string, enhancedFilter bool) ([]capabi
 			return nil, err
 		}
 	}
-	return rebuild(ctx, input, pools, live.state.LauncherPath, workDir, live, enhancedFilter)
+	return rebuild(ctx, input, pools, live, data, enhancedFilter, since)
 }
 
 func decodePoolConfig(data []byte) (poolcontract.Input, []poolcontract.Pool, error) {
@@ -141,29 +207,11 @@ func providerPath(pool poolcontract.Pool) string {
 }
 
 func (live *activeRuntime) members(ctx context.Context, pool poolcontract.Pool) ([]string, error) {
-	ctx, cancel := context.WithTimeout(ctx, mihomoapi.DefaultTimeout)
-	defer cancel()
-	address := url.URL{Scheme: "http", Host: live.client.Controller, Path: providerPath(pool)}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, address.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-	if live.client.Secret != "" {
-		req.Header.Set("Authorization", "Bearer "+live.client.Secret)
-	}
-	resp, err := live.client.HTTPClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("read Mihomo provider %s: HTTP %d", pool.Provider, resp.StatusCode)
-	}
 	var provider struct {
 		Proxies []struct{ Name string } `json:"proxies"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&provider); err != nil {
-		return nil, fmt.Errorf("decode Mihomo provider membership: %w", err)
+	if err := live.readJSON(ctx, "/providers/proxies/", pool.Provider, &provider); err != nil {
+		return nil, fmt.Errorf("read Mihomo provider %s: %w", pool.Provider, err)
 	}
 	if provider.Proxies == nil {
 		return nil, errors.New("Mihomo provider response has no proxy list")
@@ -176,6 +224,28 @@ func (live *activeRuntime) members(ctx context.Context, pool poolcontract.Pool) 
 		names = append(names, proxy.Name)
 	}
 	return names, nil
+}
+
+func (live *activeRuntime) readJSON(ctx context.Context, prefix, name string, result any) error {
+	ctx, cancel := context.WithTimeout(ctx, mihomoapi.DefaultTimeout)
+	defer cancel()
+	address := url.URL{Scheme: "http", Host: live.client.Controller, Path: prefix + name, RawPath: prefix + url.PathEscape(name)}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, address.String(), nil)
+	if err != nil {
+		return err
+	}
+	if live.client.Secret != "" {
+		req.Header.Set("Authorization", "Bearer "+live.client.Secret)
+	}
+	resp, err := live.client.HTTPClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	return json.NewDecoder(resp.Body).Decode(result)
 }
 
 func (live *activeRuntime) update(ctx context.Context, pool poolcontract.Pool, expected []string) error {

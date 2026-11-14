@@ -35,6 +35,8 @@ type AutoQuality struct {
 	DrainedCount   int                   `json:"drained_count"`
 	HistoryMatches int                   `json:"history_matches,omitempty"`
 	HistoryWarning string                `json:"history_warning,omitempty"`
+	// Nil means the running core does not provide live YouTube degradation data.
+	VideoDegradedSkipped *int `json:"youtube_degraded_skipped,omitempty"`
 }
 
 type YouTubeProbeSummary struct {

@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"localclash/internal/mihomoapi"
 	"localclash/internal/poolcontract"
@@ -19,6 +20,66 @@ import (
 
 	"gopkg.in/yaml.v3"
 )
+
+func TestReadVideoDegradationFromManagedAutoPoolGroups(t *testing.T) {
+	pool, _ := poolcontract.Lookup(poolcontract.AutoCapability)
+	const group = "⚡ 自動/選擇"
+	now := time.Now().UTC()
+	since := now.Add(-20 * time.Minute)
+	config := []byte("proxy-groups:\n" +
+		"  - {name: '" + group + "', type: smart, use: [" + pool.Provider + "]}\n" +
+		"  - {name: Other Smart, type: smart, use: [localclash-qualified-chatgpt]}\n" +
+		"  - {name: Meta auto, type: url-test, use: [" + pool.Provider + "]}\n")
+	for _, mode := range []string{"current", "older Smart", "malformed"} {
+		t.Run(mode, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodGet || r.URL.Path != "/proxies/"+group || !strings.Contains(r.URL.EscapedPath(), "%2F") || r.Header.Get("Authorization") != "Bearer test" {
+					t.Errorf("unexpected Smart query: %s %s", r.Method, r.URL.EscapedPath())
+					http.NotFound(w, r)
+					return
+				}
+				result := map[string]any{"type": "Smart"}
+				switch mode {
+				case "current":
+					result["videoDegradations"] = []map[string]any{
+						{"node": "active", "network": "udp", "observed_at": now.Add(-time.Minute), "until": now.Add(4 * time.Minute)},
+						{"node": "from previous round", "network": "tcp", "observed_at": now.Add(-10 * time.Minute), "until": now.Add(-5 * time.Minute)},
+						{"node": "old", "network": "udp", "observed_at": since.Add(-10 * time.Minute), "until": since.Add(-5 * time.Minute)},
+					}
+				case "malformed":
+					result["videoDegradations"] = []map[string]any{{"node": "node", "network": "udp"}}
+				}
+				json.NewEncoder(w).Encode(result)
+			}))
+			defer server.Close()
+			client, err := mihomoapi.New(server.URL, "test")
+			if err != nil {
+				t.Fatal(err)
+			}
+			client.HTTPClient = server.Client()
+			live := &activeRuntime{client: client}
+			got, err := live.videoDegradations(t.Context(), config, pool, since)
+			switch mode {
+			case "current":
+				if err != nil || len(got) != 2 || !got["active"] || !got["from previous round"] {
+					t.Fatalf("degradation = %v, error = %v", got, err)
+				}
+				manual, err := live.videoDegradations(t.Context(), config, pool, time.Time{})
+				if err != nil || len(manual) != 1 || !manual["active"] {
+					t.Fatalf("manual refresh degradation = %v, error = %v", manual, err)
+				}
+			case "older Smart":
+				if err != nil || got != nil {
+					t.Fatalf("unsupported degradation = %v, error = %v", got, err)
+				}
+			case "malformed":
+				if err == nil {
+					t.Fatal("malformed evidence was accepted")
+				}
+			}
+		})
+	}
+}
 
 func TestProviderPublicationRestoresFileAndMembershipOnReadbackFailure(t *testing.T) {
 	pool, _ := poolcontract.Lookup(poolcontract.AutoCapability)

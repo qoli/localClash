@@ -20,6 +20,43 @@ func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return f(req)
 }
 
+func TestEnhancedAutoQualificationSkipsActiveVideoDegradation(t *testing.T) {
+	input, err := poolcontract.NewInput([]map[string]any{
+		{"name": "slow", "type": "ss", "server": "slow.example"},
+		{"name": "recovered", "type": "ss", "server": "recovered.example"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := []string{"slow", "recovered"}
+	degraded := map[string]bool{"slow": true}
+	for _, enhanced := range []bool{false, true} {
+		want := names
+		if enhanced {
+			want = names[1:]
+		}
+		prober := func(_ context.Context, _ []map[string]any, candidates []autoCandidate, _ int, _ Options) (autoBatchResult, error) {
+			if got := candidateNames(candidates); !slices.Equal(got, want) {
+				t.Fatalf("enhanced=%t: probed %v, want %v", enhanced, got, want)
+			}
+			var measured autoBatchResult
+			for i := range candidates {
+				measured.completed = append(measured.completed, measurement{index: i, worstDoH: time.Millisecond,
+					youtube: &youtubeObservation{HTTPStatus: http.StatusNoContent}})
+			}
+			return measured, nil
+		}
+		result, err := qualifyAutoWithProbe(t.Context(), input, names, Options{EnhancedFilter: enhanced, VideoDegraded: degraded}, prober)
+		if err != nil || !slices.Equal(result.Qualified, want) || result.UnprobedCount != 0 || result.UnavailableCount != 0 {
+			t.Fatalf("enhanced=%t: result=%+v, error=%v", enhanced, result, err)
+		}
+		skipped := result.AutoQuality.VideoDegradedSkipped
+		if (enhanced && (skipped == nil || *skipped != 1)) || (!enhanced && skipped != nil) {
+			t.Fatalf("enhanced=%t: invalid skip evidence %+v", enhanced, result.AutoQuality)
+		}
+	}
+}
+
 func TestRunAutoProbesDrainsAfterEnoughQualified(t *testing.T) {
 	started := make(chan struct{})
 	release := make(chan struct{})

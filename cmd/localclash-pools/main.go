@@ -96,14 +96,15 @@ func run(ctx context.Context, args []string) error {
 		if args[0] == "schedule" {
 			return schedule(ctx, *workDir, *period, *enhancedFilter)
 		}
-		results, err := refresh(ctx, *workDir, *enhancedFilter)
+		results, err := refresh(ctx, *workDir, *enhancedFilter, time.Time{})
 		return errors.Join(json.NewEncoder(os.Stdout).Encode(results), err)
 	default:
 		return fmt.Errorf("unknown localclash-pools command %q", args[0])
 	}
 }
 
-func rebuild(ctx context.Context, input poolcontract.Input, pools []poolcontract.Pool, core, workDir string, live *activeRuntime, enhancedFilter bool) ([]capability.Result, error) {
+func rebuild(ctx context.Context, input poolcontract.Input, pools []poolcontract.Pool, live *activeRuntime, config []byte, enhancedFilter bool, since time.Time) ([]capability.Result, error) {
+	workDir := live.workDir
 	parent := filepath.Join(workDir, poolcontract.Directory)
 	var results []capability.Result
 	err := runtimesupervision.WithLock(parent, func() error {
@@ -115,10 +116,18 @@ func rebuild(ctx context.Context, input poolcontract.Input, pools []poolcontract
 			return err
 		}
 		defer os.RemoveAll(stage)
-		opts := poolprepare.Options{CorePath: core, RuntimeDir: workDir, ProbeDir: stage, EnhancedFilter: enhancedFilter}
+		opts := poolprepare.Options{CorePath: live.state.LauncherPath, RuntimeDir: workDir, ProbeDir: stage, EnhancedFilter: enhancedFilter}
 		var failures error
 		for _, pool := range pools {
 			path := filepath.Join(workDir, pool.Path(input.Revision))
+			if enhancedFilter && pool.Capability == poolcontract.AutoCapability {
+				var err error
+				opts.VideoDegraded, err = live.videoDegradations(ctx, config, pool, since)
+				if err != nil {
+					failures = errors.Join(failures, fmt.Errorf("%s: %w", pool.Provider, err))
+					continue
+				}
+			}
 			result, err := poolprepare.Qualify(ctx, pool, input, opts)
 			if err == nil {
 				err = publish(ctx, live, pool, path, input, result.Qualified)
@@ -158,6 +167,7 @@ type scheduleStatus struct {
 	DurationMS       int64                            `json:"duration_ms,omitempty"`
 	NextRunAt        *time.Time                       `json:"next_run_at,omitempty"`
 	LastRunAt        *time.Time                       `json:"last_run_at,omitempty"`
+	LastAutoProbeAt  *time.Time                       `json:"last_auto_probe_at,omitempty"`
 	Qualified        map[string]int                   `json:"qualified,omitempty"`
 	Error            string                           `json:"error,omitempty"`
 }
@@ -199,7 +209,13 @@ func schedule(ctx context.Context, workDir, period string, enhancedFilter bool) 
 			return err
 		}
 		started := time.Now()
-		results, err := refresh(ctx, workDir, enhancedFilter)
+		var since time.Time
+		if status.LastAutoProbeAt != nil {
+			since = *status.LastAutoProbeAt
+		} else if status.LastRunAt != nil {
+			since = *status.LastRunAt
+		}
+		results, err := refresh(ctx, workDir, enhancedFilter, since)
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
@@ -219,6 +235,9 @@ func schedule(ctx context.Context, workDir, period string, enhancedFilter bool) 
 			switch result.Profile {
 			case poolcontract.AutoCapability:
 				status.AutoQuality = result.AutoQuality
+				if enhancedFilter && result.AutoQuality != nil && result.AutoQuality.VideoDegradedSkipped != nil {
+					status.LastAutoProbeAt = &started
+				}
 			case poolcontract.ChatGPTCapability:
 				status.ChatGPTStreaming = result.ChatGPTStreaming
 			}

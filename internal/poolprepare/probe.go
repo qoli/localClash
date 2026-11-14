@@ -43,6 +43,11 @@ type autoBatchResult struct {
 }
 
 func qualifyAuto(ctx context.Context, input poolcontract.Input, names []string, opts Options) (capability.Result, error) {
+	return qualifyAutoWithProbe(ctx, input, names, opts, probeAutoBatch)
+}
+
+func qualifyAutoWithProbe(ctx context.Context, input poolcontract.Input, names []string, opts Options,
+	probe func(context.Context, []map[string]any, []autoCandidate, int, Options) (autoBatchResult, error)) (capability.Result, error) {
 	start := time.Now()
 	previous := previousAutoPriority(opts.RuntimeDir, input.Revision)
 	history, historyErr := readAutoHistory(opts.RuntimeDir)
@@ -59,14 +64,22 @@ func qualifyAuto(ctx context.Context, input poolcontract.Input, names []string, 
 	if opts.EnhancedFilter {
 		result.AutoQuality.Enhanced = &capability.EnhancedProbeSummary{Checks: make(map[string]capability.NetworkProbeSummary)}
 	}
+	probeCandidates := representatives
+	if opts.EnhancedFilter && opts.VideoDegraded != nil {
+		probeCandidates = slices.DeleteFunc(slices.Clone(representatives), func(candidate autoCandidate) bool {
+			return opts.VideoDegraded[candidate.name]
+		})
+		skipped := len(representatives) - len(probeCandidates)
+		result.AutoQuality.VideoDegradedSkipped = &skipped
+	}
 	var qualified []measurement
 	offset := 0
-	for batch := range slices.Chunk(representatives, proxyprobe.BatchSize) {
+	for batch := range slices.Chunk(probeCandidates, proxyprobe.BatchSize) {
 		remaining := poolcontract.AutoLimit - len(qualified)
 		if remaining <= 0 {
 			break
 		}
-		measured, err := probeAutoBatch(ctx, input.Proxies, batch, remaining, opts)
+		measured, err := probe(ctx, input.Proxies, batch, remaining, opts)
 		if err != nil {
 			return capability.Result{}, err
 		}
@@ -97,7 +110,7 @@ func qualifyAuto(ctx context.Context, input poolcontract.Input, names []string, 
 		}
 		offset += len(batch)
 	}
-	result.UnprobedCount = len(representatives) - result.Probed
+	result.UnprobedCount = len(probeCandidates) - result.Probed
 	result.ObservedQualifiedCount = len(qualified)
 	limit := min(len(qualified), poolcontract.AutoLimit)
 	result.AutoQuality.FirstQualified = summarizeDoH(qualified[:limit])
@@ -105,7 +118,7 @@ func qualifyAuto(ctx context.Context, input poolcontract.Input, names []string, 
 	selected := qualified[:limit]
 	result.AutoQuality.Selected = summarizeDoH(selected)
 	for _, entry := range selected {
-		result.Qualified = append(result.Qualified, representatives[entry.index].name)
+		result.Qualified = append(result.Qualified, probeCandidates[entry.index].name)
 	}
 	result.QualifiedCount = len(result.Qualified)
 	if err := ctx.Err(); err != nil {

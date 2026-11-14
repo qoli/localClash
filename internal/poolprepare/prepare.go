@@ -23,6 +23,7 @@ type Options struct {
 	Concurrency    int
 	Force          bool
 	EnhancedFilter bool
+	VideoDegraded  map[string]bool
 }
 
 // Prepare publishes each successfully qualified pool and returns its result.
