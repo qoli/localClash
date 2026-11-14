@@ -44,8 +44,9 @@ func run(ctx context.Context, args []string) error {
 			return errors.New("usage: localclash-pools features")
 		}
 		return json.NewEncoder(os.Stdout).Encode(struct {
-			EnhancedFilter bool `json:"enhanced_filter"`
-		}{EnhancedFilter: true})
+			EnhancedFilter           bool `json:"enhanced_filter"`
+			EnhancedChatGPTStreaming bool `json:"enhanced_chatgpt_streaming"`
+		}{EnhancedFilter: true, EnhancedChatGPTStreaming: true})
 	case "prepare":
 		core := flags.String("core", "", "Mihomo executable")
 		workDir := flags.String("runtime", "", "Mihomo runtime directory")
@@ -85,7 +86,7 @@ func run(ctx context.Context, args []string) error {
 	case "refresh", "schedule":
 		workDir := flags.String("runtime", "", "Mihomo runtime directory")
 		period := flags.String("period", defaultPeriod, "5m, 15m, 30m, 1h or daily-08")
-		enhancedFilter := flags.Bool("enhanced-filter", false, "require SMTP, Ubuntu, TMDB and Microsoft connectivity for the automatic pool")
+		enhancedFilter := flags.Bool("enhanced-filter", false, "require additional connectivity for the automatic pool and complete SSE and WebSocket streams for the ChatGPT pool")
 		if err := flags.Parse(args[1:]); err != nil {
 			return err
 		}
@@ -151,13 +152,14 @@ func nextRun(now time.Time, period string) (time.Time, error) {
 }
 
 type scheduleStatus struct {
-	EnhancedFilter bool                    `json:"enhanced_filter"`
-	AutoQuality    *capability.AutoQuality `json:"auto_quality,omitempty"`
-	DurationMS     int64                   `json:"duration_ms,omitempty"`
-	NextRunAt      *time.Time              `json:"next_run_at,omitempty"`
-	LastRunAt      *time.Time              `json:"last_run_at,omitempty"`
-	Qualified      map[string]int          `json:"qualified,omitempty"`
-	Error          string                  `json:"error,omitempty"`
+	EnhancedFilter   bool                             `json:"enhanced_filter"`
+	AutoQuality      *capability.AutoQuality          `json:"auto_quality,omitempty"`
+	ChatGPTStreaming *capability.EnhancedProbeSummary `json:"chatgpt_streaming,omitempty"`
+	DurationMS       int64                            `json:"duration_ms,omitempty"`
+	NextRunAt        *time.Time                       `json:"next_run_at,omitempty"`
+	LastRunAt        *time.Time                       `json:"last_run_at,omitempty"`
+	Qualified        map[string]int                   `json:"qualified,omitempty"`
+	Error            string                           `json:"error,omitempty"`
 }
 
 func schedule(ctx context.Context, workDir, period string, enhancedFilter bool) error {
@@ -204,6 +206,7 @@ func schedule(ctx context.Context, workDir, period string, enhancedFilter bool) 
 		finished := time.Now()
 		status.DurationMS = finished.Sub(started).Milliseconds()
 		status.AutoQuality = nil
+		status.ChatGPTStreaming = nil
 		status.LastRunAt = &finished
 		status.Error = ""
 		if err != nil {
@@ -213,8 +216,11 @@ func schedule(ctx context.Context, workDir, period string, enhancedFilter bool) 
 		status.Qualified = make(map[string]int, len(results))
 		for _, result := range results {
 			status.Qualified[result.Profile] = result.QualifiedCount
-			if result.Profile == poolcontract.AutoCapability {
+			switch result.Profile {
+			case poolcontract.AutoCapability:
 				status.AutoQuality = result.AutoQuality
+			case poolcontract.ChatGPTCapability:
+				status.ChatGPTStreaming = result.ChatGPTStreaming
 			}
 		}
 		due, _ = nextRun(due, period)

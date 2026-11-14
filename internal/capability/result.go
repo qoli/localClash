@@ -22,6 +22,8 @@ type Result struct {
 	UnavailableCount       int          `json:"unavailable_count"`
 	DurationMS             int64        `json:"duration_ms"`
 	AutoQuality            *AutoQuality `json:"auto_quality,omitempty"`
+	// ChatGPTStreaming counts distinct tested exits. Its per-check counters count attempts.
+	ChatGPTStreaming *EnhancedProbeSummary `json:"chatgpt_streaming,omitempty"`
 }
 
 type AutoQuality struct {

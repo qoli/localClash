@@ -37,6 +37,11 @@ type probeTiming struct {
 	WireBytes    int64  `json:"wire_bytes,omitempty"`
 	DecodedBytes int64  `json:"decoded_bytes,omitempty"`
 	BodyMS       int64  `json:"body_ms,omitempty"`
+	Protocol     string `json:"protocol,omitempty"`
+	StreamStage  string `json:"stream_stage,omitempty"`
+	Messages     int    `json:"messages,omitempty"`
+	FirstMS      int64  `json:"first_ms,omitempty"`
+	SpanMS       int64  `json:"span_ms,omitempty"`
 }
 
 type probeTimings struct {

@@ -84,6 +84,7 @@ for goarch in amd64 arm64; do
 	GOOS=linux GOARCH="$goarch" CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" \
 		-o "$worker_dir/localclash-pools" ./cmd/localclash-pools
 done
+cp third-party-licenses/coder-websocket.txt "$geox_tmp/bin/localclash-pools-websocket.LICENSE.txt"
 fetch_asset "$geox_tmp/.runtime/mihomo/Country.mmdb" \
 	$(raw_github_mirrors "https://raw.githubusercontent.com/alecthw/mmdb_china_ip_list/release/Country.mmdb") \
 	"https://testingcf.jsdelivr.net/gh/alecthw/mmdb_china_ip_list@release/Country.mmdb"
@@ -145,6 +146,7 @@ cat > "$dist/localclash-release-manifest.json" <<EOF
       "rule-sources/",
       "bin/linux-amd64/localclash-pools",
       "bin/linux-arm64/localclash-pools",
+      "bin/localclash-pools-websocket.LICENSE.txt",
       ".runtime/mihomo/Country.mmdb",
       ".runtime/mihomo/geoip.dat",
       ".runtime/mihomo/geosite.dat",

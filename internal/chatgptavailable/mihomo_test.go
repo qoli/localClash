@@ -138,6 +138,14 @@ func TestNewMihomoProberDefaultsIncludeOAuthAndStatsig(t *testing.T) {
 	if options.Concurrency != 16 || options.RequestTimeout != 5*time.Second || options.Attempts != 2 || options.OAuthEndpoint != oauthTokenURL || options.OAuthClientID != oauthClientID || options.StatsigEndpoint != statsigInitializeURL || options.StatsigClientKey != statsigClientKey || options.DNSOverHTTPSEndpoint != dnsOverHTTPSEndpoint || prober.probeIPPaths == nil {
 		t.Fatalf("probe defaults = %+v, want OAuth and Statsig defaults", options)
 	}
+	if prober.probeStreams != nil {
+		t.Fatal("basic qualification enabled the streaming probes")
+	}
+	options.VerifyStreaming = true
+	prober, err = NewMihomoProber(options)
+	if err != nil || prober.probeStreams == nil {
+		t.Fatalf("enhanced qualification has no streaming probes: %v", err)
+	}
 }
 
 func TestProbeCandidateRequiresOAuthAndStatsigIntersection(t *testing.T) {
@@ -171,6 +179,46 @@ func TestProbeCandidateRequiresOAuthAndStatsigIntersection(t *testing.T) {
 			observation := prober.probeCandidate(context.Background(), Candidate{Fingerprint: "node"}, &http.Client{})
 			if observation.Available != test.want || observation.ServiceRejected != test.wantReject || oauthCalls != 1 || statsigCalls != 1 {
 				t.Fatalf("observation = %+v OAuth calls=%d Statsig calls=%d", observation, oauthCalls, statsigCalls)
+			}
+		})
+	}
+}
+
+func TestProbeCandidateRunsStreamingOnlyAfterIPAdmission(t *testing.T) {
+	for _, tt := range []struct {
+		name        string
+		enhanced    bool
+		ipAvailable bool
+		pairs       int
+		available   bool
+	}{
+		{"basic", false, true, 0, true},
+		{"enhanced with IP rejection", true, false, 2, false},
+		{"enhanced with incomplete pairs", true, true, 1, false},
+		{"enhanced with two complete pairs", true, true, 2, true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			prober := &MihomoProber{
+				options: MihomoOptions{Attempts: 1},
+				probeOAuth: func(context.Context, *http.Client, string, string, time.Duration) oauthProbeResult {
+					return oauthProbeResult{decision: oauthRegionSupported}
+				},
+				probeStatsig: func(context.Context, *http.Client, string, string, time.Duration) statsigProbeResult {
+					return statsigProbeResult{decision: statsigReachable}
+				},
+				probeIPPaths: func(context.Context, *http.Client) IPVerification {
+					return IPVerification{Available: tt.ipAvailable, RegionRejected: !tt.ipAvailable}
+				},
+			}
+			if tt.enhanced {
+				prober.probeStreams = func(context.Context, *http.Client) *streamVerification {
+					return &streamVerification{SuccessfulPairs: tt.pairs}
+				}
+			}
+			observed := prober.probeCandidate(t.Context(), Candidate{Fingerprint: "node"}, &http.Client{})
+			if observed.Available != tt.available || observed.ServiceRejected == tt.ipAvailable ||
+				(observed.Streaming != nil) != (tt.enhanced && tt.ipAvailable) {
+				t.Fatalf("observation = %+v", observed)
 			}
 		})
 	}

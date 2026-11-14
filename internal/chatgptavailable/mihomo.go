@@ -52,6 +52,7 @@ type MihomoOptions struct {
 	StatsigEndpoint      string
 	StatsigClientKey     string
 	DNSOverHTTPSEndpoint string
+	VerifyStreaming      bool
 }
 
 type MihomoProber struct {
@@ -60,6 +61,8 @@ type MihomoProber struct {
 	probeOAuth   func(context.Context, *http.Client, string, string, time.Duration) oauthProbeResult
 	probeStatsig func(context.Context, *http.Client, string, string, time.Duration) statsigProbeResult
 	probeIPPaths func(context.Context, *http.Client) IPVerification
+	probeStreams func(context.Context, *http.Client) *streamVerification
+	streamSlots  chan struct{}
 }
 
 func RebuildWithMihomo(ctx context.Context, proxies []map[string]any, corePath, runtimeParent, snapshotPath string) (Result, error) {
@@ -130,6 +133,10 @@ func NewMihomoProber(options MihomoOptions) (*MihomoProber, error) {
 	}
 	prober := &MihomoProber{options: options, timings: newProbeTimings(), probeOAuth: probeOAuthToken, probeStatsig: requestStatsig}
 	prober.probeIPPaths = prober.verifyIPPaths
+	if options.VerifyStreaming {
+		prober.streamSlots = make(chan struct{}, streamingConcurrency)
+		prober.probeStreams = prober.probeStreaming
+	}
 	return prober, nil
 }
 
@@ -298,6 +305,10 @@ func (p *MihomoProber) probeCandidate(ctx context.Context, candidate Candidate, 
 		p.recordTiming(ctx, ipStarted, probeTiming{
 			Phase: "ip_verification", Outcome: timingOutcome(observation), Addresses: len(verification.Paths),
 		}, nil)
+	}
+	if observation.Available && p.probeStreams != nil {
+		observation.Streaming = p.probeStreams(ctx, client)
+		observation.Available = observation.Streaming.passed()
 	}
 	observation.Duration = time.Since(started)
 	p.recordTiming(ctx, started, probeTiming{Phase: "candidate", Outcome: timingOutcome(observation)}, nil)

@@ -365,12 +365,15 @@ func Qualify(ctx context.Context, pool poolcontract.Pool, input poolcontract.Inp
 		prober, err := chatgptavailable.NewMihomoProber(chatgptavailable.MihomoOptions{
 			CorePath: opts.CorePath, RuntimeParent: opts.ProbeDir,
 			Definitions: input.Proxies, Concurrency: opts.Concurrency,
+			VerifyStreaming: opts.EnhancedFilter,
 		})
 		if err != nil {
 			return capability.Result{}, err
 		}
 		snapshot := filepath.Join(opts.ProbeDir, pool.Provider+".json")
-		return chatgptavailable.RebuildSelected(ctx, input.Proxies, names, prober, chatgptavailable.Options{SnapshotPath: snapshot})
+		return chatgptavailable.RebuildSelected(ctx, input.Proxies, names, prober, chatgptavailable.Options{
+			SnapshotPath: snapshot, VerifyStreaming: opts.EnhancedFilter,
+		})
 	default:
 		return capability.Result{}, fmt.Errorf("unsupported pool %q", pool.Capability)
 	}
