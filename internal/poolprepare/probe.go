@@ -28,10 +28,12 @@ type measurement struct {
 	index    int
 	worstDoH time.Duration
 	youtube  *youtubeObservation
+	enhanced *enhancedObservation
 }
 
 func (result measurement) qualified() bool {
-	return result.worstDoH > 0 && result.youtube != nil && result.youtube.HTTPStatus == http.StatusNoContent
+	return result.worstDoH > 0 && result.youtube != nil && result.youtube.HTTPStatus == http.StatusNoContent &&
+		(result.enhanced == nil || result.enhanced.passed())
 }
 
 type autoBatchResult struct {
@@ -53,6 +55,9 @@ func qualifyAuto(ctx context.Context, input poolcontract.Input, names []string, 
 		PrioritizedCount:  prioritized,
 		DeduplicatedCount: len(names) - len(representatives),
 		AutoQuality:       &capability.AutoQuality{HistoryMatches: matches},
+	}
+	if opts.EnhancedFilter {
+		result.AutoQuality.Enhanced = &capability.EnhancedProbeSummary{Checks: make(map[string]capability.NetworkProbeSummary)}
 	}
 	var qualified []measurement
 	offset := 0
@@ -78,6 +83,9 @@ func qualifyAuto(ctx context.Context, input poolcontract.Input, names []string, 
 				if attempt.youtube.HTTPStatus == http.StatusNoContent {
 					result.AutoQuality.YouTube.Passed++
 				}
+			}
+			if attempt.enhanced != nil {
+				attempt.enhanced.record(result.AutoQuality.Enhanced)
 			}
 			history[candidate.fingerprint] = history[candidate.fingerprint].afterProbe(attempt)
 			if attempt.qualified() {
@@ -157,7 +165,14 @@ func probeAutoBatch(ctx context.Context, proxies []map[string]any, candidates []
 			return measurement{}
 		}
 		defer client.CloseIdleConnections()
-		return measureAuto(ctx, client)
+		measured := measureAuto(ctx, client)
+		if opts.EnhancedFilter && measured.qualified() {
+			observation := measureEnhanced(ctx, client, func(ctx context.Context, address string) (net.Conn, error) {
+				return session.DialContext(ctx, index, address)
+			})
+			measured.enhanced = &observation
+		}
+		return measured
 	})
 	if err := ctx.Err(); err != nil {
 		return autoBatchResult{}, err

@@ -14,9 +14,10 @@ import (
 const autoHistoryVersion = 1
 
 type autoObservation struct {
-	WorstDoHNS          int64               `json:"worst_doh_ns,omitempty"`
-	ConsecutiveFailures int                 `json:"consecutive_failures,omitempty"`
-	YouTube             *youtubeObservation `json:"youtube,omitempty"`
+	WorstDoHNS          int64                `json:"worst_doh_ns,omitempty"`
+	ConsecutiveFailures int                  `json:"consecutive_failures,omitempty"`
+	YouTube             *youtubeObservation  `json:"youtube,omitempty"`
+	Enhanced            *enhancedObservation `json:"enhanced,omitempty"`
 }
 
 type youtubeObservation struct {
@@ -85,6 +86,9 @@ func autoHistoryPath(runtimeDir string) string {
 func (observation autoObservation) afterProbe(result measurement) autoObservation {
 	if result.youtube != nil {
 		observation.YouTube = result.youtube
+	}
+	if result.enhanced != nil {
+		observation.Enhanced = result.enhanced
 	}
 	if result.worstDoH > 0 {
 		observation.WorstDoHNS = result.worstDoH.Nanoseconds()

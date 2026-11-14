@@ -35,10 +35,17 @@ func main() {
 
 func run(ctx context.Context, args []string) error {
 	if len(args) == 0 {
-		return errors.New("usage: localclash-pools prepare|refresh|schedule")
+		return errors.New("usage: localclash-pools prepare|refresh|schedule|features")
 	}
 	flags := flag.NewFlagSet(args[0], flag.ContinueOnError)
 	switch args[0] {
+	case "features":
+		if len(args) != 1 {
+			return errors.New("usage: localclash-pools features")
+		}
+		return json.NewEncoder(os.Stdout).Encode(struct {
+			EnhancedFilter bool `json:"enhanced_filter"`
+		}{EnhancedFilter: true})
 	case "prepare":
 		core := flags.String("core", "", "Mihomo executable")
 		workDir := flags.String("runtime", "", "Mihomo runtime directory")
@@ -78,6 +85,7 @@ func run(ctx context.Context, args []string) error {
 	case "refresh", "schedule":
 		workDir := flags.String("runtime", "", "Mihomo runtime directory")
 		period := flags.String("period", defaultPeriod, "5m, 15m, 30m, 1h or daily-08")
+		enhancedFilter := flags.Bool("enhanced-filter", false, "require SMTP, Ubuntu, TMDB and Microsoft connectivity for the automatic pool")
 		if err := flags.Parse(args[1:]); err != nil {
 			return err
 		}
@@ -85,16 +93,16 @@ func run(ctx context.Context, args []string) error {
 			return errors.New("an absolute --runtime directory is required")
 		}
 		if args[0] == "schedule" {
-			return schedule(ctx, *workDir, *period)
+			return schedule(ctx, *workDir, *period, *enhancedFilter)
 		}
-		results, err := refresh(ctx, *workDir)
+		results, err := refresh(ctx, *workDir, *enhancedFilter)
 		return errors.Join(json.NewEncoder(os.Stdout).Encode(results), err)
 	default:
 		return fmt.Errorf("unknown localclash-pools command %q", args[0])
 	}
 }
 
-func rebuild(ctx context.Context, input poolcontract.Input, pools []poolcontract.Pool, core, workDir string, live *activeRuntime) ([]capability.Result, error) {
+func rebuild(ctx context.Context, input poolcontract.Input, pools []poolcontract.Pool, core, workDir string, live *activeRuntime, enhancedFilter bool) ([]capability.Result, error) {
 	parent := filepath.Join(workDir, poolcontract.Directory)
 	var results []capability.Result
 	err := runtimesupervision.WithLock(parent, func() error {
@@ -106,7 +114,7 @@ func rebuild(ctx context.Context, input poolcontract.Input, pools []poolcontract
 			return err
 		}
 		defer os.RemoveAll(stage)
-		opts := poolprepare.Options{CorePath: core, RuntimeDir: workDir, ProbeDir: stage}
+		opts := poolprepare.Options{CorePath: core, RuntimeDir: workDir, ProbeDir: stage, EnhancedFilter: enhancedFilter}
 		var failures error
 		for _, pool := range pools {
 			path := filepath.Join(workDir, pool.Path(input.Revision))
@@ -143,13 +151,16 @@ func nextRun(now time.Time, period string) (time.Time, error) {
 }
 
 type scheduleStatus struct {
-	NextRunAt *time.Time     `json:"next_run_at,omitempty"`
-	LastRunAt *time.Time     `json:"last_run_at,omitempty"`
-	Qualified map[string]int `json:"qualified,omitempty"`
-	Error     string         `json:"error,omitempty"`
+	EnhancedFilter bool                    `json:"enhanced_filter"`
+	AutoQuality    *capability.AutoQuality `json:"auto_quality,omitempty"`
+	DurationMS     int64                   `json:"duration_ms,omitempty"`
+	NextRunAt      *time.Time              `json:"next_run_at,omitempty"`
+	LastRunAt      *time.Time              `json:"last_run_at,omitempty"`
+	Qualified      map[string]int          `json:"qualified,omitempty"`
+	Error          string                  `json:"error,omitempty"`
 }
 
-func schedule(ctx context.Context, workDir, period string) error {
+func schedule(ctx context.Context, workDir, period string, enhancedFilter bool) error {
 	due, err := nextRun(time.Now(), period)
 	if err != nil {
 		return err
@@ -169,6 +180,7 @@ func schedule(ctx context.Context, workDir, period string) error {
 		return err
 	}
 	for {
+		status.EnhancedFilter = enhancedFilter
 		status.NextRunAt = &due
 		if err := writeScheduleStatus(statusPath, status); err != nil {
 			return err
@@ -184,11 +196,14 @@ func schedule(ctx context.Context, workDir, period string) error {
 		if err := writeScheduleStatus(statusPath, status); err != nil {
 			return err
 		}
-		results, err := refresh(ctx, workDir)
+		started := time.Now()
+		results, err := refresh(ctx, workDir, enhancedFilter)
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
 		finished := time.Now()
+		status.DurationMS = finished.Sub(started).Milliseconds()
+		status.AutoQuality = nil
 		status.LastRunAt = &finished
 		status.Error = ""
 		if err != nil {
@@ -198,6 +213,9 @@ func schedule(ctx context.Context, workDir, period string) error {
 		status.Qualified = make(map[string]int, len(results))
 		for _, result := range results {
 			status.Qualified[result.Profile] = result.QualifiedCount
+			if result.Profile == poolcontract.AutoCapability {
+				status.AutoQuality = result.AutoQuality
+			}
 		}
 		due, _ = nextRun(due, period)
 		for !due.After(finished) {

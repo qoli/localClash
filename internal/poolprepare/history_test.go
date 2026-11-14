@@ -43,6 +43,33 @@ func TestAutoHistoryKeepsSkippedObservationsAndDropsRemovedCandidates(t *testing
 	}
 }
 
+func TestAutoHistoryPreservesLastEnhancedObservationDuringBasicPreparation(t *testing.T) {
+	runtimeDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Dir(autoHistoryPath(runtimeDir)), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	enhanced := &enhancedObservation{CheckedAt: time.Now().UTC(), DurationMS: 123,
+		Checks: []networkObservation{{Probe: "smtp_starttls", Target: smtpProbeAddress, Error: "timeout"}}}
+	base := measurement{worstDoH: time.Millisecond, youtube: &youtubeObservation{HTTPStatus: http.StatusNoContent}}
+	failed := base
+	failed.enhanced = enhanced
+	observed := (autoObservation{}).afterProbe(failed)
+	if observed.ConsecutiveFailures != 1 {
+		t.Fatalf("enhanced failure history = %+v", observed)
+	}
+	observed = observed.afterProbe(base)
+	if observed.ConsecutiveFailures != 0 || observed.Enhanced != enhanced {
+		t.Fatalf("basic preparation lost the previous enhanced observation: %+v", observed)
+	}
+	if err := writeAutoHistory(runtimeDir, []autoCandidate{{fingerprint: "node"}}, map[string]autoObservation{"node": observed}); err != nil {
+		t.Fatal(err)
+	}
+	saved, err := readAutoHistory(runtimeDir)
+	if err != nil || !reflect.DeepEqual(saved["node"].Enhanced, enhanced) {
+		t.Fatalf("enhanced history round trip = %+v, %v", saved, err)
+	}
+}
+
 func TestAutoHistoryRecordsLatestYouTubeAttemptWithLegacyHistory(t *testing.T) {
 	runtimeDir := t.TempDir()
 	path := autoHistoryPath(runtimeDir)

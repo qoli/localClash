@@ -93,4 +93,8 @@ func TestPrepareRechecksAutoProviderFromPreviousQualification(t *testing.T) {
 	if got, err := Prepare(ctx, input, []poolcontract.Pool{pool}, opts); err != nil || len(got) != 0 {
 		t.Fatalf("prepare with a current provider = %v, %v, want cached result", got, err)
 	}
+	opts.EnhancedFilter = true
+	if _, err := Prepare(ctx, input, []poolcontract.Pool{pool}, opts); err == nil || !strings.Contains(err.Error(), "inspect isolated proxy probe core") {
+		t.Fatalf("enhanced preparation reused a basic provider: %v", err)
+	}
 }

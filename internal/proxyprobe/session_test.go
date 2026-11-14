@@ -3,6 +3,7 @@ package proxyprobe
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -16,6 +17,73 @@ import (
 	"testing"
 	"time"
 )
+
+func TestDialContextUsesCandidateCONNECTAndPreservesBufferedGreeting(t *testing.T) {
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodConnect || r.Host != "smtp.example:587" {
+			t.Errorf("proxy request = %s %s", r.Method, r.Host)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		conn, _, err := w.(http.Hijacker).Hijack()
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		defer conn.Close()
+		fmt.Fprint(conn, "HTTP/1.1 200 Connection Established\r\n\r\n220 smtp.example ready\r\n")
+		data := make([]byte, len("QUIT\r\n"))
+		if _, err := io.ReadFull(conn, data); err != nil || string(data) != "QUIT\r\n" {
+			t.Errorf("tunnel data = %q, %v", data, err)
+		}
+		fmt.Fprint(conn, "221 bye\r\n")
+	}))
+	defer proxy.Close()
+	session := &Session{ports: []int{proxy.Listener.Addr().(*net.TCPAddr).Port}}
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	conn, err := session.DialContext(ctx, 0, "smtp.example:587")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	data := make([]byte, len("220 smtp.example ready\r\n"))
+	if _, err := io.ReadFull(conn, data); err != nil || string(data) != "220 smtp.example ready\r\n" {
+		t.Fatalf("greeting after CONNECT = %q, %v", data, err)
+	}
+	fmt.Fprint(conn, "QUIT\r\n")
+	data = make([]byte, len("221 bye\r\n"))
+	if _, err := io.ReadFull(conn, data); err != nil || string(data) != "221 bye\r\n" {
+		t.Fatalf("SMTP response = %q, %v", data, err)
+	}
+}
+
+func TestDialContextRejectsFailedOrStalledCONNECT(t *testing.T) {
+	for _, status := range []int{http.StatusBadGateway, 0} {
+		t.Run(fmt.Sprint(status), func(t *testing.T) {
+			release := make(chan struct{})
+			proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				if status == 0 {
+					<-release
+					return
+				}
+				w.WriteHeader(status)
+			}))
+			defer proxy.Close()
+			defer close(release)
+			session := &Session{ports: []int{proxy.Listener.Addr().(*net.TCPAddr).Port}}
+			ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+			defer cancel()
+			conn, err := session.DialContext(ctx, 0, "smtp.example:587")
+			if err == nil || conn != nil {
+				t.Fatalf("CONNECT %d = %v, %v", status, conn, err)
+			}
+		})
+	}
+	if _, err := (*Session)(nil).DialContext(t.Context(), 0, "smtp.example:587"); err == nil {
+		t.Fatal("nil session accepted a TCP tunnel")
+	}
+}
 
 func TestHTTPClientReusesConnectionsWhenRequested(t *testing.T) {
 	var opened atomic.Int32

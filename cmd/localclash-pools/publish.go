@@ -30,7 +30,7 @@ type activeRuntime struct {
 	client  *mihomoapi.Client
 }
 
-func refresh(ctx context.Context, workDir string) ([]capability.Result, error) {
+func refresh(ctx context.Context, workDir string, enhancedFilter bool) ([]capability.Result, error) {
 	live, data, err := readActiveRuntime(workDir)
 	if err != nil {
 		return nil, err
@@ -45,7 +45,7 @@ func refresh(ctx context.Context, workDir string) ([]capability.Result, error) {
 			return nil, err
 		}
 	}
-	return rebuild(ctx, input, pools, live.state.LauncherPath, workDir, live)
+	return rebuild(ctx, input, pools, live.state.LauncherPath, workDir, live, enhancedFilter)
 }
 
 func decodePoolConfig(data []byte) (poolcontract.Input, []poolcontract.Pool, error) {

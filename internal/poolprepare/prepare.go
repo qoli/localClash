@@ -17,15 +17,16 @@ import (
 const DefaultConcurrency = 16
 
 type Options struct {
-	CorePath    string
-	RuntimeDir  string
-	ProbeDir    string
-	Concurrency int
-	Force       bool
+	CorePath       string
+	RuntimeDir     string
+	ProbeDir       string
+	Concurrency    int
+	Force          bool
+	EnhancedFilter bool
 }
 
 // Prepare publishes each successfully qualified pool and returns its result.
-// An existing provider for the revision is reused unless Force is set.
+// Basic preparation reuses an existing provider for the revision unless Force is set.
 func Prepare(ctx context.Context, input poolcontract.Input, pools []poolcontract.Pool, opts Options) ([]capability.Result, error) {
 	parent := filepath.Join(opts.RuntimeDir, poolcontract.Directory)
 	var results []capability.Result
@@ -36,7 +37,7 @@ func Prepare(ctx context.Context, input poolcontract.Input, pools []poolcontract
 		pending := make([]poolPreparation, 0, len(pools))
 		for _, pool := range pools {
 			path := filepath.Join(opts.RuntimeDir, pool.Path(input.Revision))
-			if !opts.Force {
+			if !opts.Force && !opts.EnhancedFilter {
 				ready, err := poolcontract.PreparedProvider(pool, path)
 				if ready {
 					continue

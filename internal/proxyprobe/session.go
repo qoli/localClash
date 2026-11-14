@@ -1,6 +1,7 @@
 package proxyprobe
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"errors"
@@ -156,6 +157,57 @@ func (s *Session) HTTPClient(index int, timeout time.Duration, reuseConnections 
 		return nil, fmt.Errorf("isolated proxy probe candidate index %d is out of range", index)
 	}
 	return newProxyHTTPClient(s.ports[index], timeout, reuseConnections), nil
+}
+
+// DialContext opens a TCP tunnel through the same per-candidate HTTP listener.
+func (s *Session) DialContext(ctx context.Context, index int, address string) (net.Conn, error) {
+	if s == nil || index < 0 || index >= len(s.ports) {
+		return nil, fmt.Errorf("isolated proxy probe candidate index %d is out of range", index)
+	}
+	proxy := net.JoinHostPort("127.0.0.1", strconv.Itoa(s.ports[index]))
+	conn, err := (&net.Dialer{}).DialContext(ctx, "tcp", proxy)
+	if err != nil {
+		return nil, err
+	}
+	stop := context.AfterFunc(ctx, func() { conn.Close() })
+	defer stop()
+	ready := false
+	defer func() {
+		if !ready {
+			conn.Close()
+		}
+	}()
+	if deadline, ok := ctx.Deadline(); ok {
+		if err := conn.SetDeadline(deadline); err != nil {
+			return nil, err
+		}
+	}
+	req := &http.Request{Method: http.MethodConnect, URL: &url.URL{Opaque: address}, Host: address}
+	if err := req.Write(conn); err != nil {
+		return nil, err
+	}
+	reader := bufio.NewReader(conn)
+	response, err := http.ReadResponse(reader, req)
+	if err != nil {
+		return nil, err
+	}
+	if response.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("proxy CONNECT: HTTP %d", response.StatusCode)
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	ready = true
+	return &tunnelConn{Conn: conn, reader: reader}, nil
+}
+
+type tunnelConn struct {
+	net.Conn
+	reader *bufio.Reader
+}
+
+func (conn *tunnelConn) Read(data []byte) (int, error) {
+	return conn.reader.Read(data)
 }
 
 func newProxyHTTPClient(port int, timeout time.Duration, reuseConnections bool) *http.Client {

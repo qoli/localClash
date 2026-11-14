@@ -25,18 +25,30 @@ type Result struct {
 }
 
 type AutoQuality struct {
-	FirstQualified DoHLatencySummary   `json:"first_qualified"`
-	Selected       DoHLatencySummary   `json:"selected"`
-	YouTube        YouTubeProbeSummary `json:"youtube"`
-	FillDurationMS int64               `json:"fill_duration_ms,omitempty"`
-	DrainedCount   int                 `json:"drained_count"`
-	HistoryMatches int                 `json:"history_matches,omitempty"`
-	HistoryWarning string              `json:"history_warning,omitempty"`
+	FirstQualified DoHLatencySummary     `json:"first_qualified"`
+	Selected       DoHLatencySummary     `json:"selected"`
+	YouTube        YouTubeProbeSummary   `json:"youtube"`
+	Enhanced       *EnhancedProbeSummary `json:"enhanced,omitempty"`
+	FillDurationMS int64                 `json:"fill_duration_ms,omitempty"`
+	DrainedCount   int                   `json:"drained_count"`
+	HistoryMatches int                   `json:"history_matches,omitempty"`
+	HistoryWarning string                `json:"history_warning,omitempty"`
 }
 
 type YouTubeProbeSummary struct {
 	Probed int `json:"probed"`
 	Passed int `json:"passed"`
+}
+
+type NetworkProbeSummary struct {
+	Probed int `json:"probed"`
+	Passed int `json:"passed"`
+}
+
+type EnhancedProbeSummary struct {
+	Probed int                            `json:"probed"`
+	Passed int                            `json:"passed"`
+	Checks map[string]NetworkProbeSummary `json:"checks"`
 }
 
 // DoHLatencySummary describes each exit's slowest successful DoH query.
