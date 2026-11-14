@@ -137,7 +137,7 @@ func writeAutoProvider(t *testing.T, runtimeDir string, proxy map[string]any) po
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	data, _, err := poolcontract.ProviderData(pool, input, []string{proxy["name"].(string)})
+	data, _, err := poolcontract.ProviderData(pool, input, []string{proxy["name"].(string)}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -23,7 +23,7 @@ func TestPreparedAutoProviderRequiresYouTubeQualificationVersion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	data, _, err := ProviderData(pool, input, []string{"old"})
+	data, _, err := ProviderData(pool, input, []string{"old"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,7 +48,7 @@ func TestProviderDataKeepsSourceOrderAndRejectsEmptyPool(t *testing.T) {
 		{[]string{"second", "first"}, []string{"first", "second"}},
 		{nil, []string{RejectName}},
 	} {
-		data, names, err := ProviderData(pool, input, tt.qualified)
+		data, names, err := ProviderData(pool, input, tt.qualified, nil)
 		if err != nil || !slices.Equal(names, tt.want) {
 			t.Fatalf("provider names = %v, %v; want %v", names, err, tt.want)
 		}
@@ -65,7 +65,58 @@ func TestProviderDataKeepsSourceOrderAndRejectsEmptyPool(t *testing.T) {
 			}
 		}
 	}
-	if _, _, err := ProviderData(pool, input, []string{"unknown"}); err == nil {
+	if _, _, err := ProviderData(pool, input, []string{"unknown"}, nil); err == nil {
 		t.Fatal("unrecognized qualification was accepted")
+	}
+}
+
+func TestChatGPTProviderPublishesOnlyMeasuredCountries(t *testing.T) {
+	pool, _ := Lookup(ChatGPTCapability)
+	input, err := NewInput([]map[string]any{
+		{"name": "US entry", "type": "ss"},
+		{"name": "US label", "type": "ss", "dialer-proxy": "US entry"},
+		{"name": "JP label", "type": "ss", "dialer-proxy": "US entry"},
+		{"name": "invented [Statsig US]", "type": "ss", StatsigCountryKey: "US"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	qualified := []string{"JP label", "US label", "invented [Statsig US]"}
+	data, names, err := ProviderData(pool, input, qualified, map[string]string{
+		"US entry": "US", "US label": "DE", "JP label": " us ", "invented [Statsig US]": "unknown",
+	})
+	if err != nil || !slices.Equal(names, []string{"US label", "JP label", "invented [Statsig US]"}) {
+		t.Fatalf("provider members = %v, error = %v", names, err)
+	}
+	path := filepath.Join(t.TempDir(), pool.Provider+".yaml")
+	if err := WriteFile(path, []byte(`{"proxies":[{"name":"US label","type":"ss"}]}`)); err != nil {
+		t.Fatal(err)
+	}
+	if ready, err := PreparedProvider(pool, path); err != nil || ready {
+		t.Fatalf("legacy provider ready = %t, error = %v", ready, err)
+	}
+	if err := WriteFile(path, data); err != nil {
+		t.Fatal(err)
+	}
+	if ready, err := PreparedProvider(pool, path); err != nil || !ready {
+		t.Fatalf("country-aware provider ready = %t, error = %v", ready, err)
+	}
+	proxies, err := ReadProviderProxies(path)
+	if err != nil || len(proxies) != 3 {
+		t.Fatalf("read provider definitions: %v (%d)", err, len(proxies))
+	}
+	for i, want := range []string{"DE", "US", ""} {
+		if got := proxies[i][StatsigCountryKey]; got != want {
+			t.Errorf("country for %q = %v, want %q", names[i], got, want)
+		}
+	}
+	if proxies[0]["dialer-proxy"] != "US entry" || input.Proxies[1][StatsigCountryKey] != nil ||
+		input.Proxies[3][StatsigCountryKey] != "US" {
+		t.Fatal("provider publication changed the input or dialer reference")
+	}
+	members, err := ChatGPTProviderMembers(data)
+	if err != nil || members["US label"] != "US label [Statsig DE]" ||
+		members["JP label"] != "JP label [Statsig US]" || members["invented [Statsig US]"] != "invented [Statsig US] [Statsig ]" {
+		t.Fatalf("Smart provider members = %v, error = %v", members, err)
 	}
 }

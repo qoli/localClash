@@ -67,7 +67,7 @@ func TestPrepareRechecksAutoProviderFromPreviousQualification(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	legacy, _, err := poolcontract.ProviderData(poolcontract.Pool{}, input, []string{"node"})
+	legacy, _, err := poolcontract.ProviderData(poolcontract.Pool{}, input, []string{"node"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +83,7 @@ func TestPrepareRechecksAutoProviderFromPreviousQualification(t *testing.T) {
 	if got, err := os.ReadFile(path); err != nil || !bytes.Equal(got, legacy) {
 		t.Fatalf("failed probe replaced the legacy provider: %v", err)
 	}
-	current, _, err := poolcontract.ProviderData(pool, input, []string{"node"})
+	current, _, err := poolcontract.ProviderData(pool, input, []string{"node"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

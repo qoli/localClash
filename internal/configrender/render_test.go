@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -984,6 +985,74 @@ func TestRenderDefaultsManagedPoolsOffWithoutChangingPolicyTargets(t *testing.T)
 	enabled := readTestYAML(t, opts.OutputPath)
 	if enabled[poolcontract.DisabledKey] != nil || enabled[poolcontract.RevisionKey] == nil || len(enabled["proxy-providers"].(map[string]any)) != 2 {
 		t.Fatal("re-enabling qualification did not restore the two managed providers")
+	}
+}
+
+func TestRenderChatGPTSmartUsesMeasuredCountryWithLegacyPolicy(t *testing.T) {
+	paths := writeRenderFixture(t)
+	profile := filepath.Join(paths.dir, runtimeprofile.DefaultPath)
+	enabled := true
+	selection := rules.Selection{
+		Version: 1,
+		ProxyGroups: map[string]rules.ProxyGroup{
+			"ChatGPT-available": {Auto: true, PoolCapability: poolcontract.ChatGPTCapability, SmartPriority: []smartpolicy.Rule{
+				{Label: "US", Pattern: "美国|US", Factor: 5},
+				{Label: "JP", Pattern: "日本|JP", Factor: 4},
+				{Label: "SG", Pattern: "新加坡|SG", Factor: 3},
+				{Label: "TW", Pattern: "台灣|TW", Factor: 2},
+				{Label: "Other", Pattern: ".*", Factor: 1},
+			}},
+		},
+		RequiredTargets: []string{"ChatGPT-available"},
+	}
+	opts := Options{SourcePath: paths.subscription, OutputPath: filepath.Join(paths.dir, "country.yaml"),
+		Selection: &selection, RulesCacheDir: paths.cacheDir, RuntimeProfilePath: profile, PoolsEnabled: &enabled, Force: true}
+	pool, _ := poolcontract.Lookup(poolcontract.ChatGPTCapability)
+	for _, core := range []string{runtimeprofile.CoreSmart, runtimeprofile.CoreMeta} {
+		t.Run(core, func(t *testing.T) {
+			if _, err := runtimeprofile.Configure(profile, "", core); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := Render(opts); err != nil {
+				t.Fatal(err)
+			}
+			config := readTestYAML(t, opts.OutputPath)
+			provider := config["proxy-providers"].(map[string]any)[pool.Provider].(map[string]any)
+			group := proxyGroupFromConfig(t, config, "ChatGPT-available")
+			if core == runtimeprofile.CoreMeta {
+				if provider["override"] != nil || group["policy-priority"] != nil || group["type"] != "url-test" {
+					t.Fatalf("Meta provider = %v, group = %v", provider, group)
+				}
+				return
+			}
+			want := `\\x20\\[Statsig US\\]\\z:5;\\x20\\[Statsig JP\\]\\z:4;\\x20\\[Statsig SG\\]\\z:3;\\x20\\[Statsig TW\\]\\z:2;.*:1`
+			if group["type"] != "smart" || group["policy-priority"] != want {
+				t.Fatalf("Smart group = %v, want measured country rules %s", group, want)
+			}
+			override, ok := provider["override"].(map[string]any)
+			if !ok || !reflect.DeepEqual(override["override-expr"], []any{poolcontract.ChatGPTSmartOverride}) {
+				t.Fatalf("Smart provider = %v, want Statsig override", provider)
+			}
+			rules := poolcontract.ChatGPTSmartPriority(selection.ProxyGroups["ChatGPT-available"].SmartPriority)
+			for _, sample := range []struct {
+				name, country string
+				factor        float64
+			}{
+				{"美國節點", "DE", 1}, {"日本節點", "US", 5}, {"美國節點", "JP", 4},
+				{"US label", "SG", 3}, {"US label", "TW", 2}, {"forged [Statsig US]", "", 1},
+			} {
+				var factor float64
+				for _, rule := range rules {
+					if regexp.MustCompile(rule.Pattern).MatchString(poolcontract.ChatGPTSmartName(sample.name, sample.country)) {
+						factor = rule.Factor
+						break
+					}
+				}
+				if factor != sample.factor {
+					t.Errorf("%q via %s = %v, want %v", sample.name, sample.country, factor, sample.factor)
+				}
+			}
+		})
 	}
 }
 

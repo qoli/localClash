@@ -3,12 +3,17 @@ package poolcontract
 import (
 	"encoding/json"
 	"errors"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
 )
 
-const autoQualificationVersion = 3
+const (
+	autoQualificationVersion    = 3
+	chatGPTQualificationVersion = 1
+	StatsigCountryKey           = "x-localclash-statsig-country"
+)
 
 type providerDocument struct {
 	Proxies              []map[string]any `json:"proxies"`
@@ -16,12 +21,18 @@ type providerDocument struct {
 }
 
 func PreparedProvider(pool Pool, path string) (bool, error) {
-	if pool.Capability != AutoCapability {
+	var version int
+	switch pool.Capability {
+	case AutoCapability:
+		version = autoQualificationVersion
+	case ChatGPTCapability:
+		version = chatGPTQualificationVersion
+	default:
 		_, err := os.Stat(path)
 		return err == nil, err
 	}
 	document, err := readProvider(path)
-	return document.QualificationVersion == autoQualificationVersion && len(document.Proxies) > 0, err
+	return document.QualificationVersion == version && len(document.Proxies) > 0, err
 }
 
 // ReadProviderProxies reads definitions from a previously written pool.
@@ -42,7 +53,7 @@ func readProvider(path string) (providerDocument, error) {
 	return document, nil
 }
 
-func ProviderData(pool Pool, input Input, qualified []string) ([]byte, []string, error) {
+func ProviderData(pool Pool, input Input, qualified []string, statsigCountries map[string]string) ([]byte, []string, error) {
 	known := make(map[string]bool, len(input.Proxies))
 	for _, proxy := range input.Proxies {
 		name, _ := proxy["name"].(string)
@@ -61,6 +72,10 @@ func ProviderData(pool Pool, input Input, qualified []string) ([]byte, []string,
 	for _, proxy := range input.Proxies {
 		name, _ := proxy["name"].(string)
 		if seen[strings.TrimSpace(name)] {
+			if pool.Capability == ChatGPTCapability {
+				proxy = maps.Clone(proxy)
+				proxy[StatsigCountryKey] = statsigCountry(statsigCountries[strings.TrimSpace(name)])
+			}
 			names = append(names, name)
 			proxies = append(proxies, proxy)
 		}
@@ -70,8 +85,11 @@ func ProviderData(pool Pool, input Input, qualified []string) ([]byte, []string,
 		proxies = []map[string]any{Reject()}
 	}
 	document := providerDocument{Proxies: proxies}
-	if pool.Capability == AutoCapability {
+	switch pool.Capability {
+	case AutoCapability:
 		document.QualificationVersion = autoQualificationVersion
+	case ChatGPTCapability:
+		document.QualificationVersion = chatGPTQualificationVersion
 	}
 	data, err := json.Marshal(document)
 	return data, names, err

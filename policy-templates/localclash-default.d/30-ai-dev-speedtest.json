@@ -10,22 +10,22 @@
         "smart_priority": [
           {
             "label": "US",
-            "pattern": "(🇺🇸|美国|美國|(^|[^A-Za-z])US([^A-Za-z]|$)|United.?States|America)",
+            "pattern": "^US$",
             "factor": 5
           },
           {
             "label": "JP",
-            "pattern": "(🇯🇵|日本|(^|[^A-Za-z])JP([^A-Za-z]|$)|Japan)",
+            "pattern": "^JP$",
             "factor": 4
           },
           {
             "label": "SG",
-            "pattern": "(🇸🇬|新加坡|狮城|獅城|(^|[^A-Za-z])SG([^A-Za-z]|$)|Singapore)",
+            "pattern": "^SG$",
             "factor": 3
           },
           {
             "label": "TW",
-            "pattern": "(🇹🇼|台湾|台灣|(^|[^A-Za-z])TW([^A-Za-z]|$)|Taiwan)",
+            "pattern": "^TW$",
             "factor": 2
           },
           {
@@ -35,7 +35,7 @@
           }
         ],
         "optional": true,
-        "reason": "由独立探测进程分别验证 auth.openai.com OAuth 地区准入和 ab.chatgpt.com Statsig 初始化。",
+        "reason": "由独立探测进程验证 OAuth 地区准入和 Statsig 初始化，Smart 按 Statsig 实测出口国家加权。",
         "boundary": "chatgpt_service_qualified_subscription_nodes"
       }
     },

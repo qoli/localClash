@@ -200,7 +200,7 @@ func Render(opts Options) (Result, error) {
 	if opts.PoolsEnabled != nil {
 		poolsEnabled = *opts.PoolsEnabled
 	}
-	if err := configurePools(dynamic, source, selection, poolsEnabled); err != nil {
+	if err := configurePools(dynamic, source, selection, poolsEnabled, runtimeFile.Core == runtimeprofile.CoreSmart); err != nil {
 		finish(err, nil)
 		return Result{}, err
 	}
@@ -717,7 +717,7 @@ func buildDynamicConfig(proxies []any, fragment *rulespkg.Fragment, fallbackTarg
 	return config, nil
 }
 
-func configurePools(dynamic, source map[string]any, selection *rulespkg.Selection, enabled bool) error {
+func configurePools(dynamic, source map[string]any, selection *rulespkg.Selection, enabled, smart bool) error {
 	if !enabled {
 		dynamic[poolcontract.DisabledKey] = true
 	}
@@ -743,12 +743,19 @@ func configurePools(dynamic, source map[string]any, selection *rulespkg.Selectio
 		return disablePoolGroups(pools, poolGroups, input.Proxies)
 	}
 	providers := make(map[string]any, len(pools))
-	for _, pool := range pools {
-		providers[pool.Provider] = map[string]any{
+	for i, pool := range pools {
+		provider := map[string]any{
 			"type":    "file",
 			"path":    "./" + filepath.ToSlash(pool.Path(input.Revision)),
 			"payload": []map[string]any{poolcontract.Reject()},
 		}
+		groupType := stringValue(poolGroups[i]["type"])
+		if smart && pool.Capability == poolcontract.ChatGPTCapability && (groupType == "url-test" || groupType == "smart") {
+			provider["override"] = map[string]any{"override-expr": []string{poolcontract.ChatGPTSmartOverride}}
+		} else if providers[pool.Provider] != nil {
+			continue
+		}
+		providers[pool.Provider] = provider
 	}
 	dynamic["proxy-providers"] = providers
 	dynamic[poolcontract.RevisionKey] = input.Revision
@@ -852,12 +859,19 @@ func applySmartCoreProxyGroups(config map[string]any, opts runtimeprofile.SmartO
 		if groupType == "smart" {
 			name := strings.TrimSpace(stringValue(group["name"]))
 			if selection != nil {
-				if selected, exists := selection.ProxyGroups[name]; exists && len(selected.SmartPriority) > 0 {
-					compiled, err := smartpolicy.Compile(selected.SmartPriority)
-					if err != nil {
-						return fmt.Errorf("proxy group %q: %w", name, err)
+				if selected, exists := selection.ProxyGroups[name]; exists {
+					priority := selected.SmartPriority
+					measuredCountry := selected.PoolCapability == poolcontract.ChatGPTCapability
+					if measuredCountry {
+						priority = poolcontract.ChatGPTSmartPriority(priority)
 					}
-					group["policy-priority"] = compiled
+					if len(priority) > 0 || measuredCountry {
+						compiled, err := smartpolicy.Compile(priority)
+						if err != nil {
+							return fmt.Errorf("proxy group %q: %w", name, err)
+						}
+						group["policy-priority"] = compiled
+					}
 				}
 			}
 			applySmartGroupOptions(group, opts)

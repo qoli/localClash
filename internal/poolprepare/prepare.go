@@ -81,7 +81,7 @@ func Prepare(ctx context.Context, input poolcontract.Input, pools []poolcontract
 }
 
 func writeProvider(item poolPreparation, input poolcontract.Input) error {
-	data, _, err := poolcontract.ProviderData(item.pool, input, item.result.Qualified)
+	data, _, err := poolcontract.ProviderData(item.pool, input, item.result.Qualified, item.result.StatsigCountries)
 	if err != nil {
 		return err
 	}

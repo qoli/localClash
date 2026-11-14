@@ -227,23 +227,43 @@ func (live *activeRuntime) members(ctx context.Context, pool poolcontract.Pool) 
 }
 
 func (live *activeRuntime) readJSON(ctx context.Context, prefix, name string, result any) error {
+	return live.requestJSON(ctx, http.MethodGet, prefix, name, nil, result)
+}
+
+func (live *activeRuntime) requestJSON(ctx context.Context, method, prefix, name string, input, result any) error {
 	ctx, cancel := context.WithTimeout(ctx, mihomoapi.DefaultTimeout)
 	defer cancel()
 	address := url.URL{Scheme: "http", Host: live.client.Controller, Path: prefix + name, RawPath: prefix + url.PathEscape(name)}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, address.String(), nil)
+	var body *bytes.Reader
+	if input == nil {
+		body = bytes.NewReader(nil)
+	} else {
+		data, err := json.Marshal(input)
+		if err != nil {
+			return err
+		}
+		body = bytes.NewReader(data)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, address.String(), body)
 	if err != nil {
 		return err
 	}
 	if live.client.Secret != "" {
 		req.Header.Set("Authorization", "Bearer "+live.client.Secret)
 	}
+	if input != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
 	resp, err := live.client.HTTPClient.Do(req)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		return fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	if result == nil {
+		return nil
 	}
 	return json.NewDecoder(resp.Body).Decode(result)
 }
@@ -263,12 +283,8 @@ func (live *activeRuntime) update(ctx context.Context, pool poolcontract.Pool, e
 	return nil
 }
 
-func providerData(pool poolcontract.Pool, input poolcontract.Input, qualified []string) ([]byte, []string, error) {
-	return poolcontract.ProviderData(pool, input, qualified)
-}
-
-func publish(ctx context.Context, live *activeRuntime, pool poolcontract.Pool, path string, input poolcontract.Input, qualified []string) error {
-	data, names, err := providerData(pool, input, qualified)
+func publish(ctx context.Context, live *activeRuntime, pool poolcontract.Pool, path string, input poolcontract.Input, result capability.Result) error {
+	data, names, err := poolcontract.ProviderData(pool, input, result.Qualified, result.StatsigCountries)
 	if err != nil {
 		return err
 	}
@@ -287,7 +303,23 @@ func publish(ctx context.Context, live *activeRuntime, pool poolcontract.Pool, p
 		if err := verifyPoolInputs(live.state, current.state, config, pool, input.Revision); err != nil {
 			return err
 		}
-		return current.publishProvider(ctx, pool, path, data, names)
+		var chatGPTGroups []string
+		if pool.Capability == poolcontract.ChatGPTCapability {
+			chatGPTGroups, err = chatGPTSmartGroups(config, pool.Provider)
+			if err != nil {
+				return err
+			}
+			if len(chatGPTGroups) > 0 {
+				members, err := poolcontract.ChatGPTProviderMembers(data)
+				if err != nil {
+					return err
+				}
+				for i, name := range names {
+					names[i] = members[name]
+				}
+			}
+		}
+		return current.publishProvider(ctx, pool, path, data, names, chatGPTGroups)
 	})
 }
 
@@ -309,7 +341,7 @@ func verifyPoolInputs(previous, current runtimesupervision.State, config []byte,
 	return nil
 }
 
-func (live *activeRuntime) publishProvider(ctx context.Context, pool poolcontract.Pool, path string, data []byte, names []string) error {
+func (live *activeRuntime) publishProvider(ctx context.Context, pool poolcontract.Pool, path string, data []byte, names, chatGPTGroups []string) error {
 	previous, err := os.ReadFile(path)
 	missing := errors.Is(err, os.ErrNotExist)
 	if err != nil && !missing {
@@ -323,26 +355,37 @@ func (live *activeRuntime) publishProvider(ctx context.Context, pool poolcontrac
 		if !slices.Equal(previousNames, []string{poolcontract.RejectName}) {
 			return errors.New("loaded provider has members but its provider file is missing")
 		}
-		previous, _, err = providerData(poolcontract.Pool{}, poolcontract.Input{}, nil)
+		previous, _, err = poolcontract.ProviderData(poolcontract.Pool{}, poolcontract.Input{}, nil, nil)
 		if err != nil {
 			return err
 		}
 	}
-	if !missing && bytes.Equal(previous, data) {
-		if slices.Equal(previousNames, names) {
-			return nil
+	if !missing && bytes.Equal(previous, data) && slices.Equal(previousNames, names) {
+		return nil
+	}
+	var fixed []chatGPTFixedSelection
+	if len(chatGPTGroups) > 0 {
+		fixed, err = live.chatGPTProviderChanges(ctx, chatGPTGroups, previous, data)
+		if err != nil {
+			return err
 		}
-		return live.update(ctx, pool, names)
 	}
 	if err := poolcontract.WriteFile(path, data); err != nil {
 		return err
 	}
-	if err := live.update(ctx, pool, names); err != nil {
+	err = live.update(ctx, pool, names)
+	if err == nil {
+		err = live.restoreChatGPTFixedSelections(ctx, fixed, false)
+	}
+	if err != nil {
 		if rollbackErr := poolcontract.WriteFile(path, previous); rollbackErr != nil {
 			return errors.Join(err, fmt.Errorf("restore provider file: %w", rollbackErr))
 		}
-		rollbackErr := live.update(context.WithoutCancel(ctx), pool, previousNames)
-		return errors.Join(err, rollbackErr)
+		rollbackCtx := context.WithoutCancel(ctx)
+		if rollbackErr := live.update(rollbackCtx, pool, previousNames); rollbackErr != nil {
+			return errors.Join(err, rollbackErr)
+		}
+		return errors.Join(err, live.restoreChatGPTFixedSelections(rollbackCtx, fixed, true))
 	}
 	return nil
 }

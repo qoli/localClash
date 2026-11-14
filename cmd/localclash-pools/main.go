@@ -130,7 +130,7 @@ func rebuild(ctx context.Context, input poolcontract.Input, pools []poolcontract
 			}
 			result, err := poolprepare.Qualify(ctx, pool, input, opts)
 			if err == nil {
-				err = publish(ctx, live, pool, path, input, result.Qualified)
+				err = publish(ctx, live, pool, path, input, result)
 			}
 			if err != nil {
 				failures = errors.Join(failures, fmt.Errorf("%s: %w", pool.Provider, err))

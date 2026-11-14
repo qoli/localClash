@@ -268,10 +268,10 @@ func TestRealLocalClashDefaultTemplateIsLayered(t *testing.T) {
 		t.Fatalf("ChatGPT-available group = %+v, want optional ChatGPT capability auto group", chatGPTAvailable)
 	}
 	wantPriority := []smartpolicy.Rule{
-		{Label: "US", Pattern: `(🇺🇸|美国|美國|(^|[^A-Za-z])US([^A-Za-z]|$)|United.?States|America)`, Factor: 5},
-		{Label: "JP", Pattern: `(🇯🇵|日本|(^|[^A-Za-z])JP([^A-Za-z]|$)|Japan)`, Factor: 4},
-		{Label: "SG", Pattern: `(🇸🇬|新加坡|狮城|獅城|(^|[^A-Za-z])SG([^A-Za-z]|$)|Singapore)`, Factor: 3},
-		{Label: "TW", Pattern: `(🇹🇼|台湾|台灣|(^|[^A-Za-z])TW([^A-Za-z]|$)|Taiwan)`, Factor: 2},
+		{Label: "US", Pattern: `^US$`, Factor: 5},
+		{Label: "JP", Pattern: `^JP$`, Factor: 4},
+		{Label: "SG", Pattern: `^SG$`, Factor: 3},
+		{Label: "TW", Pattern: `^TW$`, Factor: 2},
 		{Label: "Other", Pattern: `.*`, Factor: 1},
 	}
 	if !reflect.DeepEqual(chatGPTAvailable.SmartPriority, wantPriority) {

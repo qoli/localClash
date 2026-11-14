@@ -156,6 +156,7 @@ func Rebuild(ctx context.Context, proxies []map[string]any, prober Prober, opts 
 		Nodes:     make(map[string]NodeState, len(candidates)),
 	}
 	qualifiedSet := map[string]bool{}
+	statsigCountries := make(map[string]string)
 	observedQualifiedSet := map[string]bool{}
 	retainedSet := map[string]bool{}
 	streaming := newStreamingSummary(opts.VerifyStreaming)
@@ -215,6 +216,9 @@ func Rebuild(ctx context.Context, proxies []map[string]any, prober Prober, opts 
 		if state.Available {
 			for _, name := range byFingerprint[candidate.Fingerprint] {
 				qualifiedSet[name] = true
+				if state.StatsigCountry != "" {
+					statsigCountries[name] = state.StatsigCountry
+				}
 			}
 		}
 	}
@@ -237,6 +241,7 @@ func Rebuild(ctx context.Context, proxies []map[string]any, prober Prober, opts 
 		Candidates:             len(proxies),
 		Probed:                 len(candidates),
 		Qualified:              qualified,
+		StatsigCountries:       statsigCountries,
 		QualifiedCount:         len(qualified),
 		ObservedQualifiedCount: len(observedQualifiedSet),
 		RetainedCount:          len(retainedSet),

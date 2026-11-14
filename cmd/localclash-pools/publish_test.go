@@ -90,11 +90,11 @@ func TestProviderPublicationRestoresFileAndMembershipOnReadbackFailure(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	old, oldNames, err := providerData(poolcontract.Pool{}, input, []string{"before"})
+	old, oldNames, err := poolcontract.ProviderData(poolcontract.Pool{}, input, []string{"before"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	replacement, newNames, err := providerData(pool, input, []string{"after"})
+	replacement, newNames, err := poolcontract.ProviderData(pool, input, []string{"after"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,7 +148,7 @@ func TestProviderPublicationRestoresFileAndMembershipOnReadbackFailure(t *testin
 	}
 	client.HTTPClient = server.Client()
 	live := &activeRuntime{client: client}
-	err = live.publishProvider(context.Background(), pool, path, replacement, newNames)
+	err = live.publishProvider(context.Background(), pool, path, replacement, newNames, nil)
 	if err == nil || !strings.Contains(err.Error(), "membership mismatch") {
 		t.Fatalf("publication error = %v, want original readback failure", err)
 	}

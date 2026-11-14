@@ -67,7 +67,7 @@ func TestStandaloneRefreshAndQualifyPreparedRevision(t *testing.T) {
 	for _, profile := range []string{poolcontract.AutoCapability, poolcontract.ChatGPTCapability} {
 		pool, _ := poolcontract.Lookup(profile)
 		path := filepath.Join(runtime, pool.Path(input.Revision))
-		data, _, err := poolcontract.ProviderData(pool, input, []string{"test-node"})
+		data, _, err := poolcontract.ProviderData(pool, input, []string{"test-node"}, nil)
 		if err != nil {
 			t.Fatal(err)
 		}

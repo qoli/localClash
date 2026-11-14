@@ -65,6 +65,9 @@ func TestRebuildPublishesOnlyQualifiedNodes(t *testing.T) {
 	if !reflect.DeepEqual(result.Qualified, []string{"US 01"}) {
 		t.Fatalf("qualified = %+v, want US 01", result.Qualified)
 	}
+	if !reflect.DeepEqual(result.StatsigCountries, map[string]string{"US 01": "US"}) {
+		t.Fatalf("published Statsig countries = %v", result.StatsigCountries)
+	}
 	if result.Candidates != 2 || result.Probed != 2 || result.UnavailableCount != 1 {
 		t.Fatalf("result counts = %+v", result)
 	}
@@ -89,6 +92,26 @@ func TestRebuildPublishesOnlyQualifiedNodes(t *testing.T) {
 	}
 	if !reflect.DeepEqual(qualified, []string{"US 01"}) {
 		t.Fatalf("loaded qualified nodes = %+v, want US 01", qualified)
+	}
+}
+
+func TestRebuildAssignsMeasuredCountryToAliasesOfTheSameChain(t *testing.T) {
+	proxies := []map[string]any{
+		{"name": "🇺🇸 alias", "type": "ss", "server": "landing.example", "dialer-proxy": "US entry"},
+		{"name": "🇯🇵 alias", "type": "ss", "server": "landing.example", "dialer-proxy": "US entry"},
+		{"name": "🇸🇬 other chain", "type": "ss", "server": "landing.example", "dialer-proxy": "SG entry"},
+	}
+	prober := fakeProber{observations: map[string]Observation{
+		"🇺🇸 alias":       {Available: true, StatsigCountry: "DE"},
+		"🇸🇬 other chain": {Available: true},
+	}}
+	result, err := Rebuild(t.Context(), proxies, prober, Options{SnapshotPath: filepath.Join(t.TempDir(), "snapshot.json")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{"🇺🇸 alias": "DE", "🇯🇵 alias": "DE"}
+	if result.QualifiedCount != 3 || result.Probed != 2 || !reflect.DeepEqual(result.StatsigCountries, want) {
+		t.Fatalf("result = %+v, want three qualified names and measured countries %v", result, want)
 	}
 }
 
