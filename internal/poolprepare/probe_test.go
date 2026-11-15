@@ -4,14 +4,18 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/binary"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"slices"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"localclash/internal/poolcontract"
+	"localclash/internal/proxyprobe"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
@@ -54,6 +58,86 @@ func TestEnhancedAutoQualificationSkipsActiveVideoDegradation(t *testing.T) {
 		if (enhanced && (skipped == nil || *skipped != 1)) || (!enhanced && skipped != nil) {
 			t.Fatalf("enhanced=%t: invalid skip evidence %+v", enhanced, result.AutoQuality)
 		}
+	}
+}
+
+func TestEnhancedAutoQualificationUsesBasicResultsForShortRounds(t *testing.T) {
+	var names []string
+	var proxies []map[string]any
+	position := make(map[string]int)
+	for i := range proxyprobe.BatchSize + 3 {
+		name := fmt.Sprintf("node-%03d", i)
+		names = append(names, name)
+		proxies = append(proxies, map[string]any{"name": name, "type": "ss", "server": name + ".example"})
+		position[name] = i
+	}
+	input, err := poolcontract.NewInput(proxies)
+	if err != nil {
+		t.Fatal(err)
+	}
+	opts := Options{EnhancedFilter: true, RuntimeDir: t.TempDir()}
+	if err := os.MkdirAll(filepath.Join(opts.RuntimeDir, poolcontract.Directory), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	fastestFirst := slices.Clone(names)
+	slices.Reverse(fastestFirst)
+	for _, test := range []struct {
+		name           string
+		basicPassed    int
+		enhancedPassed int
+		want           []string
+		fallback       bool
+	}{
+		{"seven enhanced qualifiers use the complete basic result before the cap", len(names), 7, fastestFirst, true},
+		{"the next round with eight uses enhanced qualifiers", len(names), 8, fastestFirst[len(names)-8:], false},
+		{"only current basic qualifiers are eligible even below eight", 4, 0, fastestFirst[len(names)-4:], true},
+		{"zero basic qualifiers yield an empty result", 0, 0, nil, true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			prober := func(_ context.Context, _ []map[string]any, candidates []autoCandidate, _ int, opts Options) (autoBatchResult, error) {
+				if !opts.EnhancedFilter {
+					t.Fatal("round skipped enhanced filtering")
+				}
+				var measured autoBatchResult
+				for i, candidate := range candidates {
+					index := position[candidate.name]
+					attempt := measurement{
+						index:    i,
+						worstDoH: time.Duration(len(names)-index) * time.Millisecond,
+						youtube:  &youtubeObservation{HTTPStatus: http.StatusNoContent},
+					}
+					switch {
+					case index < test.basicPassed:
+						attempt.enhanced = &enhancedObservation{Checks: []networkObservation{{
+							Probe: "smtp_starttls", Passed: index < test.enhancedPassed,
+						}}}
+					case index%2 == 0:
+						attempt.youtube.HTTPStatus = http.StatusForbidden
+					default:
+						attempt.worstDoH = 0
+					}
+					measured.completed = append(measured.completed, attempt)
+				}
+				return measured, nil
+			}
+			result, err := qualifyAutoWithProbe(t.Context(), input, names, opts, prober)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := test.want[:min(len(test.want), poolcontract.AutoLimit)]
+			if !slices.Equal(result.Qualified, want) || result.QualifiedCount != len(want) {
+				t.Fatalf("qualified = %v (%d), want %v", result.Qualified, result.QualifiedCount, want)
+			}
+			if result.Probed != len(names) || result.UnprobedCount != 0 ||
+				result.ObservedQualifiedCount != len(test.want) || result.UnavailableCount != len(names)-len(test.want) {
+				t.Fatalf("unexpected probe counts: %+v", result)
+			}
+			quality := result.AutoQuality
+			if quality.UsedBasicFallback != test.fallback || quality.Enhanced.Probed != test.basicPassed ||
+				quality.Enhanced.Passed != test.enhancedPassed || quality.HistoryWarning != "" {
+				t.Fatalf("unexpected qualification evidence: %+v, enhanced=%+v", quality, quality.Enhanced)
+			}
+		})
 	}
 }
 

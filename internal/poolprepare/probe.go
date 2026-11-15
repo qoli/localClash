@@ -20,7 +20,10 @@ import (
 	"localclash/internal/proxyprobe"
 )
 
-const autoYouTubeProbeURL = "https://www.youtube.com/generate_204"
+const (
+	autoYouTubeProbeURL = "https://www.youtube.com/generate_204"
+	autoEnhancedMinimum = 8
+)
 
 var overseasDoH = []string{"https://1.1.1.1/dns-query", "https://8.8.8.8/dns-query"}
 
@@ -31,9 +34,12 @@ type measurement struct {
 	enhanced *enhancedObservation
 }
 
+func (result measurement) basicQualified() bool {
+	return result.worstDoH > 0 && result.youtube != nil && result.youtube.HTTPStatus == http.StatusNoContent
+}
+
 func (result measurement) qualified() bool {
-	return result.worstDoH > 0 && result.youtube != nil && result.youtube.HTTPStatus == http.StatusNoContent &&
-		(result.enhanced == nil || result.enhanced.passed())
+	return result.basicQualified() && (result.enhanced == nil || result.enhanced.passed())
 }
 
 type autoBatchResult struct {
@@ -72,7 +78,7 @@ func qualifyAutoWithProbe(ctx context.Context, input poolcontract.Input, names [
 		skipped := len(representatives) - len(probeCandidates)
 		result.AutoQuality.VideoDegradedSkipped = &skipped
 	}
-	var qualified []measurement
+	var qualified, basicQualified []measurement
 	offset := 0
 	for batch := range slices.Chunk(probeCandidates, proxyprobe.BatchSize) {
 		remaining := poolcontract.AutoLimit - len(qualified)
@@ -101,17 +107,23 @@ func qualifyAutoWithProbe(ctx context.Context, input poolcontract.Input, names [
 				attempt.enhanced.record(result.AutoQuality.Enhanced)
 			}
 			history[candidate.fingerprint] = history[candidate.fingerprint].afterProbe(attempt)
+			attempt.index += offset
 			if attempt.qualified() {
-				attempt.index += offset
 				qualified = append(qualified, attempt)
-			} else {
-				result.UnavailableCount++
+			}
+			if opts.EnhancedFilter && attempt.basicQualified() {
+				basicQualified = append(basicQualified, attempt)
 			}
 		}
 		offset += len(batch)
 	}
+	if opts.EnhancedFilter && len(qualified) < autoEnhancedMinimum {
+		qualified = basicQualified
+		result.AutoQuality.UsedBasicFallback = true
+	}
 	result.UnprobedCount = len(probeCandidates) - result.Probed
 	result.ObservedQualifiedCount = len(qualified)
+	result.UnavailableCount = result.Probed - result.ObservedQualifiedCount
 	limit := min(len(qualified), poolcontract.AutoLimit)
 	result.AutoQuality.FirstQualified = summarizeDoH(qualified[:limit])
 	rankByDoH(qualified)
@@ -179,7 +191,7 @@ func probeAutoBatch(ctx context.Context, proxies []map[string]any, candidates []
 		}
 		defer client.CloseIdleConnections()
 		measured := measureAuto(ctx, client)
-		if opts.EnhancedFilter && measured.qualified() {
+		if opts.EnhancedFilter && measured.basicQualified() {
 			observation := measureEnhanced(ctx, client, func(ctx context.Context, address string) (net.Conn, error) {
 				return session.DialContext(ctx, index, address)
 			})
