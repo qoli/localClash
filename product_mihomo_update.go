@@ -15,9 +15,12 @@ import (
 	"localclash/internal/runtimeprofile"
 )
 
+const stagedMihomoEnv = "LOCALCLASH_STAGED_MIHOMO"
+
 type mihomoUpdateStatus struct {
 	Downloads          []coredownload.Result        `json:"downloads"`
 	Promoted           []string                     `json:"promoted"`
+	StagedCore         string                       `json:"staged_core,omitempty"`
 	Removed            []string                     `json:"removed,omitempty"`
 	Changed            bool                         `json:"changed"`
 	ConfigValidation   *mihomotest.ValidationResult `json:"config_validation,omitempty"`
@@ -32,11 +35,18 @@ type mihomoPromotion struct {
 	promoted  bool
 }
 
-func updateMihomoComponents(ctx context.Context, state appinit.RuntimeState) (mihomoUpdateStatus, error) {
-	return updateSelectedMihomo(ctx, state, true, "")
+func mihomoMaterialCore(corePath string) string {
+	if staged := os.Getenv(stagedMihomoEnv); staged != "" {
+		return staged
+	}
+	return corePath
 }
 
-func updateSelectedMihomo(ctx context.Context, state appinit.RuntimeState, validateCurrentConfig bool, requestedMode string) (mihomoUpdateStatus, error) {
+func updateMihomoComponents(ctx context.Context, state appinit.RuntimeState, stageDir string) (mihomoUpdateStatus, error) {
+	return updateSelectedMihomo(ctx, state, true, "", stageDir)
+}
+
+func updateSelectedMihomo(ctx context.Context, state appinit.RuntimeState, validateCurrentConfig bool, requestedMode, stageDir string) (mihomoUpdateStatus, error) {
 	status := mihomoUpdateStatus{}
 	flavor, err := coredownload.FlavorForPath(state.Paths.CorePath)
 	if err != nil {
@@ -54,14 +64,23 @@ func updateSelectedMihomo(ctx context.Context, state appinit.RuntimeState, valid
 		target = coredownload.TargetForMode(requestedMode)
 	}
 	candidateParent := filepath.Join(productWorkspaceRoot(state), ".runtime")
-	if err := os.MkdirAll(candidateParent, 0o755); err != nil {
+	if stageDir != "" {
+		candidateParent, err = filepath.Abs(stageDir)
+		if err != nil {
+			return status, fmt.Errorf("resolve Mihomo staging directory: %w", err)
+		}
+	} else if err := os.MkdirAll(candidateParent, 0o755); err != nil {
 		return status, fmt.Errorf("create Mihomo update transaction root: %w", err)
 	}
 	candidateRoot, err := os.MkdirTemp(candidateParent, ".mihomo-update-")
 	if err != nil {
 		return status, fmt.Errorf("create Mihomo update transaction: %w", err)
 	}
-	defer os.RemoveAll(candidateRoot)
+	defer func() {
+		if status.StagedCore == "" {
+			_ = os.RemoveAll(candidateRoot)
+		}
+	}()
 
 	downloads, err := downloadCore(ctx, coredownload.Options{
 		Version:    "latest",
@@ -121,6 +140,11 @@ func updateSelectedMihomo(ctx context.Context, state appinit.RuntimeState, valid
 		return status, err
 	}
 	status.Changed = changed
+	if stageDir != "" && changed {
+		// The caller owns the staging directory until restart or task failure.
+		status.StagedCore = selectedCandidate
+		return status, nil
+	}
 	if changed {
 		promoted, promoteErr := promoteMihomoCandidates(candidates, targetDir)
 		status.Promoted = promoted
@@ -131,7 +155,7 @@ func updateSelectedMihomo(ctx context.Context, state appinit.RuntimeState, valid
 	for index := range status.Downloads {
 		status.Downloads[index].OutputPath = filepath.Join(targetDir, filepath.Base(status.Downloads[index].OutputPath))
 	}
-	if status.ValidationRequired {
+	if stageDir == "" && status.ValidationRequired {
 		removed, cleanupErr := corerun.PruneUnusedCores(runtimeStatusOptions(state))
 		status.Removed = removed
 		status.Changed = status.Changed || len(removed) > 0

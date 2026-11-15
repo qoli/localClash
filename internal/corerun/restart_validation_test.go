@@ -68,6 +68,73 @@ func TestRestartReusesPreStopValidationProof(t *testing.T) {
 	}
 }
 
+func TestRestartWithStagedMihomo(t *testing.T) {
+	for _, scenario := range []string{"success", "invalid_config", "install_error"} {
+		t.Run(scenario, func(t *testing.T) {
+			fixture := newSupervisedFixture(t)
+			before := readSupervisionState(t, fixture.workDir)
+			staged := filepath.Join(t.TempDir(), filepath.Base(fixture.core))
+			oldCore, err := os.ReadFile(fixture.core)
+			if err != nil {
+				t.Fatal(err)
+			}
+			candidate := string(oldCore) + "\n# candidate generation\n"
+			if scenario == "invalid_config" {
+				candidate = "#!/bin/sh\nif [ \"$1\" = -v ]; then echo Mihomo Smart candidate; exit 0; fi\nexit 1\n"
+			}
+			writeStartExecutable(t, staged, candidate)
+			target := fixture.core
+			if scenario == "install_error" {
+				target = filepath.Join(t.TempDir(), "missing", filepath.Base(fixture.core))
+			}
+			checkedAtStop := false
+			result, err := Restart(context.Background(), RestartOptions{
+				CorePath: target, StagedCore: staged, ConfigPath: fixture.config, WorkDir: fixture.workDir,
+				OnStage: func(event RestartStageEvent) {
+					if event.Stage != "stop" || event.Event != "started" {
+						return
+					}
+					checkedAtStop = true
+					state := readSupervisionState(t, fixture.workDir)
+					if state.State != runtimesupervision.StateRestarting || state.PID != before.PID {
+						t.Errorf("supervision at swap = %+v", state)
+					}
+					if data, err := os.ReadFile(target); err != nil || string(data) != candidate {
+						t.Errorf("candidate not installed at stop boundary: %v", err)
+					}
+				},
+			})
+			defer fixture.crash(result.Start.PID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			after := readSupervisionState(t, fixture.workDir)
+			watchdog := checkSupervisionAt(t, fixture.workDir, time.Now())
+			if watchdog.Action != "healthy" || watchdog.PID != after.PID {
+				t.Fatalf("watchdog=%+v supervision=%+v", watchdog, after)
+			}
+			if scenario == "success" {
+				if !checkedAtStop || !result.Restarted || result.Error != "" || after.PID == before.PID || after.CoreSHA256 == before.CoreSHA256 || after.CoreSHA256 != result.ConfigValidation.CoreSHA256 {
+					t.Fatalf("restart=%+v before=%+v after=%+v", result, before, after)
+				}
+				if _, err := os.Stat(staged); !os.IsNotExist(err) {
+					t.Fatalf("staged executable not consumed: %v", err)
+				}
+				return
+			}
+			if checkedAtStop || result.Restarted || result.Error == "" || before != after {
+				t.Fatalf("failed staged restart disturbed runtime: %+v, before=%+v after=%+v", result, before, after)
+			}
+			if scenario == "install_error" && (!result.ConfigValidation.Passed || !strings.Contains(result.Error, "cannot install staged Mihomo core")) {
+				t.Fatalf("did not reach install failure: %+v", result)
+			}
+			if data, err := os.ReadFile(fixture.core); err != nil || string(data) != string(oldCore) {
+				t.Fatalf("failed staged restart changed original core: %v", err)
+			}
+		})
+	}
+}
+
 func TestRestartRejectsValidationHashDrift(t *testing.T) {
 	for _, boundary := range []string{"before_stop", "after_stop"} {
 		for _, input := range []string{"core", "config"} {

@@ -37,7 +37,7 @@ func TestUpdateMihomoDownloadsAndKeepsOnlySelectedFlavor(t *testing.T) {
 				return []coredownload.Result{{OutputPath: path, Flavor: flavor}}, nil
 			}
 			t.Cleanup(func() { downloadCore = oldDownload })
-			result, err := updateMihomoComponents(context.Background(), state)
+			result, err := updateMihomoComponents(context.Background(), state, "")
 			if err != nil || !result.Changed || !result.ValidationRequired || calls != 1 || len(result.Downloads) != 1 || len(result.Promoted) != 1 || len(result.Removed) != 2 {
 				t.Fatalf("result=%+v calls=%d err=%v", result, calls, err)
 			}
@@ -49,7 +49,7 @@ func TestUpdateMihomoDownloadsAndKeepsOnlySelectedFlavor(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			result, err = updateMihomoComponents(context.Background(), state)
+			result, err = updateMihomoComponents(context.Background(), state, "")
 			if err != nil || result.Changed || len(result.Promoted) != 0 || len(result.Removed) != 0 {
 				t.Fatalf("repeat update should be unchanged: %+v err=%v", result, err)
 			}
@@ -88,13 +88,62 @@ func TestUpdateMihomoFailureKeepsBothExistingCoresAndBackups(t *testing.T) {
 				return []coredownload.Result{{OutputPath: path, Flavor: coredownload.FlavorMeta}}, nil
 			}
 			t.Cleanup(func() { downloadCore = oldDownload })
-			if _, err := updateMihomoComponents(context.Background(), state); err == nil {
+			if _, err := updateMihomoComponents(context.Background(), state, ""); err == nil {
 				t.Fatal("failed acquisition or validation must report failure")
 			}
 			for path, want := range old {
 				if data, err := os.ReadFile(path); err != nil || string(data) != want {
 					t.Errorf("%s changed on failed update: %q, %v", path, data, err)
 				}
+			}
+		})
+	}
+}
+
+func TestStageMihomoUpdateLeavesManagedCoreIntact(t *testing.T) {
+	for _, scenario := range []struct {
+		name          string
+		version       string
+		rejectConfig  bool
+		wantCandidate bool
+	}{
+		{name: "changed", version: "candidate", wantCandidate: true},
+		{name: "unchanged", version: "old"},
+		{name: "invalid", version: "candidate", rejectConfig: true},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			state := updateTestState(t, coredownload.FlavorSmart)
+			stageDir := t.TempDir()
+			oldCore := updateTestCore("old", false)
+			writeUpdateTestFile(t, state.Paths.CorePath, oldCore)
+			other := filepath.Join(filepath.Dir(state.Paths.CorePath), "lc-mihomo-meta")
+			writeUpdateTestFile(t, other, "unused")
+			candidate := updateTestCore(scenario.version, scenario.rejectConfig)
+			oldDownload := downloadCore
+			downloadCore = func(_ context.Context, opts coredownload.Options) ([]coredownload.Result, error) {
+				path := filepath.Join(opts.OutputDir, "lc-mihomo-smart")
+				writeUpdateTestFile(t, path, candidate)
+				return []coredownload.Result{{OutputPath: path, Flavor: opts.Flavor}}, nil
+			}
+			t.Cleanup(func() { downloadCore = oldDownload })
+
+			result, err := updateMihomoComponents(context.Background(), state, stageDir)
+			if (err != nil) != scenario.rejectConfig || result.Changed != scenario.wantCandidate || len(result.Promoted) != 0 || len(result.Removed) != 0 {
+				t.Fatalf("result=%+v err=%v", result, err)
+			}
+			if installed, err := os.ReadFile(state.Paths.CorePath); err != nil || string(installed) != oldCore {
+				t.Fatalf("staging changed the managed executable: %v", err)
+			}
+			if _, err := os.Stat(other); err != nil {
+				t.Fatalf("staging removed the inactive flavor: %v", err)
+			}
+			if scenario.wantCandidate {
+				staged, err := os.ReadFile(result.StagedCore)
+				if err != nil || string(staged) != candidate || !result.ConfigValidation.Passed {
+					t.Fatalf("staged candidate=%+v, read error=%v", result, err)
+				}
+			} else if entries, err := os.ReadDir(stageDir); err != nil || len(entries) != 0 || result.StagedCore != "" {
+				t.Fatalf("unusable candidate remained in %s: %v, err=%v, result=%+v", stageDir, entries, err, result)
 			}
 		})
 	}

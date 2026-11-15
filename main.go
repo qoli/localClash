@@ -35,7 +35,7 @@ Usage:
   localclash subscription refresh --json
   localclash component status --json
   localclash component update assets --json
-  localclash component update mihomo --json
+  localclash component update mihomo [--stage-dir <dir>] --json
   localclash component update dashboard --json
   localclash config status --json
   localclash config apply-template --input config-request.json --json
@@ -426,7 +426,7 @@ func runMihomoConfigTest(args []string, state appinit.RuntimeState) error {
 	var record bool
 	var timeout time.Duration
 	opts := mihomotest.TestOptions{}
-	fs.StringVar(&opts.CorePath, "core", state.Paths.CorePath, "Mihomo core binary path")
+	fs.StringVar(&opts.CorePath, "core", mihomoMaterialCore(state.Paths.CorePath), "Mihomo core binary path")
 	fs.StringVar(&opts.ConfigPath, "config", state.Paths.GeneratedConfig, "Mihomo config path")
 	fs.StringVar(&opts.WorkDir, "workdir", state.Paths.MihomoRuntimeDir, "Mihomo runtime data directory")
 	fs.StringVar(&opts.AttestationPath, "attestation", "", "passing config test attestation path")

@@ -53,6 +53,7 @@ type StopOptions struct {
 
 type RestartOptions struct {
 	CorePath            string
+	StagedCore          string
 	ConfigPath          string
 	WorkDir             string
 	LogPath             string
@@ -192,12 +193,22 @@ func Restart(ctx context.Context, opts RestartOptions) (RestartResult, error) {
 		},
 	}
 	if opts.Strategy == RestartStrategyHotReload {
+		if opts.StagedCore != "" {
+			return result, errors.New("a staged Mihomo core requires a process restart")
+		}
 		return hotReload(ctx, opts, runOpts, result, stage, totalStarted)
 	}
 	if err := validateManagedCorePath(runOpts.CorePath); err != nil {
 		return result, err
 	}
-	if err := runOpts.validate(); err != nil {
+	validateOpts := runOpts
+	if opts.StagedCore != "" {
+		if filepath.Base(opts.StagedCore) != filepath.Base(runOpts.CorePath) || filepath.Clean(opts.StagedCore) == filepath.Clean(runOpts.CorePath) {
+			return result, fmt.Errorf("staged Mihomo core %q must be a separate file with the selected core name", opts.StagedCore)
+		}
+		validateOpts.CorePath = opts.StagedCore
+	}
+	if err := validateOpts.validate(); err != nil {
 		return result, err
 	}
 	if err := os.MkdirAll(runOpts.WorkDir, 0o755); err != nil {
@@ -208,7 +219,7 @@ func Restart(ctx context.Context, opts RestartOptions) (RestartResult, error) {
 	}
 	validateStarted := time.Now()
 	stage(RestartStageEvent{Stage: "config_test", Event: "started"})
-	validation, err := validateConfig(ctx, runOpts, opts.ValidationCachePath, opts.ForceConfigTest)
+	validation, err := validateConfig(ctx, validateOpts, opts.ValidationCachePath, opts.ForceConfigTest)
 	result.ConfigValidation = validation
 	result.Timings.ValidateMS = elapsedMS(validateStarted)
 	if err != nil {
@@ -224,6 +235,12 @@ func Restart(ctx context.Context, opts RestartOptions) (RestartResult, error) {
 	}
 	stage(RestartStageEvent{Stage: "config_test", Event: "done", DurationMS: result.Timings.ValidateMS})
 	err = runtimesupervision.WithLock(runOpts.WorkDir, func() error {
+		if err := verifyRestartValidationProof(validateOpts, validation); err != nil {
+			result.Error = "cannot restart with the validated inputs: " + err.Error()
+			result.Timings.TotalMS = elapsedMS(totalStarted)
+			stage(RestartStageEvent{Stage: "config_test", Event: "error", Error: result.Error})
+			return nil
+		}
 		var restartErr error
 		result, restartErr = restartValidatedLocked(ctx, opts, startOpts, runOpts, result, validation, stage, totalStarted)
 		return restartErr
@@ -232,16 +249,25 @@ func Restart(ctx context.Context, opts RestartOptions) (RestartResult, error) {
 }
 
 func restartValidatedLocked(ctx context.Context, opts RestartOptions, startOpts StartOptions, runOpts Options, result RestartResult, validation mihomotest.ValidationResult, stage func(RestartStageEvent), totalStarted time.Time) (RestartResult, error) {
-	if err := verifyRestartValidationProof(runOpts, validation); err != nil {
-		result.Error = "cannot restart with the validated inputs: " + err.Error()
-		result.Timings.TotalMS = elapsedMS(totalStarted)
-		stage(RestartStageEvent{Stage: "config_test", Event: "error", Error: result.Error})
-		return result, nil
-	}
-	if err := markSupervisionRestartingLocked(runOpts, time.Now()); err != nil {
+	previousSupervision, err := markSupervisionRestartingLocked(runOpts, time.Now())
+	if err != nil {
 		result.Error = "cannot mark runtime supervision as restarting: " + err.Error()
 		result.Timings.TotalMS = elapsedMS(totalStarted)
 		return result, nil
+	}
+	if opts.StagedCore != "" {
+		// A failed atomic replacement leaves the old executable and PID intact.
+		// Replace under the lifecycle lock before signalling the old process.
+		if err := os.Rename(opts.StagedCore, runOpts.CorePath); err != nil {
+			result.Error = "cannot install staged Mihomo core: " + err.Error()
+			if previousSupervision != nil {
+				if restoreErr := runtimesupervision.Write(runOpts.WorkDir, *previousSupervision); restoreErr != nil {
+					result.Error += "; cannot restore runtime supervision: " + restoreErr.Error()
+				}
+			}
+			result.Timings.TotalMS = elapsedMS(totalStarted)
+			return result, nil
+		}
 	}
 
 	stopStarted := time.Now()

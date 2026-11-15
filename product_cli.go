@@ -293,7 +293,7 @@ func refreshProductCapabilities(ctx context.Context, state appinit.RuntimeState,
 	writeProductCapabilityStage(logOutput, "started", started, nil, nil)
 	results, err := preparePoolWorker(ctx, poollaunch.Options{
 		Workspace: productWorkspaceRoot(state),
-		Core:      normalizeCorePathForState(state, state.Paths.CorePath),
+		Core:      mihomoMaterialCore(normalizeCorePathForState(state, state.Paths.CorePath)),
 		Runtime:   state.Paths.MihomoRuntimeDir,
 	}, config, subscriptionDoc)
 	profiles := make([]map[string]any, 0, len(results))
@@ -381,7 +381,18 @@ func runProductComponentUpdate(args []string, state appinit.RuntimeState) error 
 		return fmt.Errorf("component update requires component name")
 	}
 	component := args[0]
-	if err := parseJSONOnly("component update "+component, args[1:]); err != nil {
+	var stageDir string
+	if component == "mihomo" {
+		fs := flag.NewFlagSet("component update mihomo", flag.ContinueOnError)
+		fs.StringVar(&stageDir, "stage-dir", "", "prepare the candidate under this directory for runtime restart")
+		asJSON := fs.Bool("json", false, "print product JSON response")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if !*asJSON || fs.NArg() != 0 {
+			return fmt.Errorf("usage: localclash component update mihomo [--stage-dir <dir>] --json")
+		}
+	} else if err := parseJSONOnly("component update "+component, args[1:]); err != nil {
 		return err
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
@@ -407,9 +418,12 @@ func runProductComponentUpdate(args []string, state appinit.RuntimeState) error 
 		}
 		return printProductOK(productEnvelope{OK: true, Changed: true, Summary: "Base assets updated.", Status: result, Changes: []string{"base_assets_updated"}, Warnings: []string{}})
 	case "mihomo":
-		result, err := updateMihomoComponents(ctx, state)
+		result, err := updateMihomoComponents(ctx, state, stageDir)
 		if err != nil {
 			return err
+		}
+		if result.StagedCore != "" {
+			return printProductOK(productEnvelope{OK: true, Changed: true, Summary: "Mihomo candidate staged for runtime restart.", Status: result, Changes: []string{"mihomo_staged"}, Warnings: []string{}})
 		}
 		warnings := refreshCoreVersionCacheWarnings(ctx, state, "")
 		if !result.Changed {
@@ -590,6 +604,7 @@ func runProductRuntime(args []string, state appinit.RuntimeState) error {
 		opts.Strategy = input.Strategy
 		opts.ConfigSHA256 = input.ConfigSHA256
 		opts.AttestationPath = input.AttestationPath
+		opts.StagedCore = os.Getenv(stagedMihomoEnv)
 		result, err := corerun.Restart(ctx, opts)
 		if err != nil || result.Error != "" {
 			message := result.Error
@@ -824,7 +839,7 @@ func executeDesiredState(input desiredStateInput, state appinit.RuntimeState) ([
 					targetMode = file.Mode
 				}
 			}
-			if _, err := updateSelectedMihomo(ctx, targetState, targetState.Paths.CorePath == state.Paths.CorePath, targetMode); err != nil {
+			if _, err := updateSelectedMihomo(ctx, targetState, targetState.Paths.CorePath == state.Paths.CorePath, targetMode, ""); err != nil {
 				return changes, warnings, err
 			}
 			if targetState.Paths.CorePath == state.Paths.CorePath {
@@ -1451,7 +1466,7 @@ func applyTemplateTransaction(ctx context.Context, input configInput, state appi
 		}
 		validation, err = mihomotest.Test(ctx, mihomotest.TestOptions{
 			ValidationOptions: mihomotest.ValidationOptions{
-				CorePath:   normalizeCorePathForState(state, profile.CorePath),
+				CorePath:   mihomoMaterialCore(normalizeCorePathForState(state, profile.CorePath)),
 				ConfigPath: state.Paths.GeneratedConfig,
 				WorkDir:    state.Paths.MihomoRuntimeDir,
 				CachePath:  cachePath,
