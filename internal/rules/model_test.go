@@ -160,7 +160,7 @@ func TestRenderFragmentRendersV2FlyDLCGeoSiteAttribute(t *testing.T) {
 	}
 }
 
-func TestRenderFragmentRendersTransportRulesAfterBusinessRules(t *testing.T) {
+func TestRenderFragmentRendersTransportAndDefaultCloudflareRulesAfterBusinessRules(t *testing.T) {
 	selection := Selection{
 		ProxyGroups: map[string]ProxyGroup{
 			"🎯 手动选择":  {Nodes: []string{"HK 01"}, Manual: true},
@@ -174,7 +174,8 @@ func TestRenderFragmentRendersTransportRulesAfterBusinessRules(t *testing.T) {
 				Exits:  []string{"REJECT", "🎯 手动选择", "⚡ 自动选择", "🇭🇰 香港节点", "🇯🇵 日本节点", "🇺🇸 美国节点", "DIRECT"},
 				Manual: true,
 			},
-			"📺 YouTube": {Exits: []string{"🎯 手动选择"}, Manual: true},
+			"📺 YouTube":     {Exits: []string{"🎯 手动选择"}, Manual: true},
+			"☁️ Cloudflare": {Exits: []string{"⚡ 自动选择"}, Manual: true},
 		},
 		TransportRules: []TransportRule{
 			{ID: "quic-udp-443-main", Network: "udp", DstPort: 443, Target: "🚦 QUIC"},
@@ -184,6 +185,16 @@ func TestRenderFragmentRendersTransportRulesAfterBusinessRules(t *testing.T) {
 				ID:     "example",
 				Target: "🎯 手动选择",
 				Rules:  []CustomRuleLine{{Type: "domain_suffix", Value: "example.com"}},
+			},
+			{
+				ID:     "cloudflare-geoip",
+				Target: "☁️ Cloudflare",
+				Rules:  []CustomRuleLine{{Type: "geoip", Value: "cloudflare", NoResolve: true}},
+			},
+			{
+				ID:     "user-cloudflare-geoip",
+				Target: "☁️ Cloudflare",
+				Rules:  []CustomRuleLine{{Type: "geoip", Value: "cloudflare"}},
 			},
 		},
 		RuleProviders: []ExternalRuleProvider{{
@@ -222,9 +233,11 @@ func TestRenderFragmentRendersTransportRulesAfterBusinessRules(t *testing.T) {
 	}
 	want := []string{
 		"DOMAIN-SUFFIX,example.com,🎯 手动选择",
+		"GEOIP,cloudflare,☁️ Cloudflare",
 		"RULE-SET,business-provider,🎯 手动选择",
 		"GEOSITE,youtube,📺 YouTube",
 		"AND,((NETWORK,UDP),(DST-PORT,443)),🚦 QUIC",
+		"GEOIP,cloudflare,☁️ Cloudflare,no-resolve",
 	}
 	if !reflect.DeepEqual(fragment.Rules, want) {
 		t.Fatalf("rules = %#v, want %#v", fragment.Rules, want)

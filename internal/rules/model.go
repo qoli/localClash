@@ -463,6 +463,7 @@ func RenderFragment(selection Selection, caches map[string]PackCache, proxyNames
 	}
 	usedProxyGroups := map[string]bool{}
 	usedPolicyGroups := map[string]bool{}
+	var cloudflareFallback []string
 	for _, custom := range selection.PriorityCustomRules {
 		target, kind, err := renderTarget(custom.Target, targets)
 		if err != nil {
@@ -484,6 +485,10 @@ func RenderFragment(selection Selection, caches map[string]PackCache, proxyNames
 		lines, err := renderCustomRuleLines(custom, target)
 		if err != nil {
 			return Fragment{}, err
+		}
+		if isDefaultCloudflareFallback(custom) {
+			cloudflareFallback = append(cloudflareFallback, lines...)
+			continue
 		}
 		fragment.Rules = append(fragment.Rules, lines...)
 	}
@@ -545,6 +550,8 @@ func RenderFragment(selection Selection, caches map[string]PackCache, proxyNames
 		}
 		fragment.Rules = append(fragment.Rules, line)
 	}
+	// The shared Cloudflare IP space is a fallback for traffic left unmatched by service rules.
+	fragment.Rules = append(fragment.Rules, cloudflareFallback...)
 	for _, required := range selection.RequiredTargets {
 		target, kind, err := renderTarget(required, targets)
 		if err != nil {
@@ -566,6 +573,11 @@ func RenderFragment(selection Selection, caches map[string]PackCache, proxyNames
 	fragment.ProxyGroups = append(policyGroups, proxyGroups...)
 	fragment.BaseManualChoices = baseManualChoices
 	return fragment, nil
+}
+
+func isDefaultCloudflareFallback(rule CustomRule) bool {
+	return rule.ID == "cloudflare-geoip" && rule.Target == "☁️ Cloudflare" &&
+		len(rule.Rules) == 1 && rule.Rules[0] == (CustomRuleLine{Type: "geoip", Value: "cloudflare", NoResolve: true})
 }
 
 func renderExternalRuleProvider(provider ExternalRuleProvider) (map[string]any, error) {
