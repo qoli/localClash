@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"localclash/internal/mihomoapi"
 	"localclash/internal/mihomotest"
 	"localclash/internal/runtimesupervision"
 )
@@ -334,7 +333,7 @@ func CheckSupervision(ctx context.Context, opts SupervisionCheckOptions) (Superv
 				result.Reason = "process_identity_mismatch"
 				return recordSupervisionNoticeLocked(opts.WorkDir, &state, now, result.Reason, map[string]any{"pid": process.PID, "error": err.Error()})
 			}
-			if err := probeRuntimeHealth(ctx, state.ConfigPath, process.PID, opts.ProbeTimeout); err != nil {
+			if err := probeRuntimeHealth(ctx, state.ConfigPath, process.PID, opts.ProbeTimeout, false); err != nil {
 				result.Action = "observed"
 				result.Reason = "runtime_unhealthy"
 				return recordSupervisionNoticeLocked(opts.WorkDir, &state, now, result.Reason, map[string]any{"pid": process.PID, "error": err.Error()})
@@ -470,7 +469,7 @@ func recoverMissingRuntimeLocked(ctx context.Context, opts SupervisionCheckOptio
 		return recordRecoveryFailureLocked(opts.WorkDir, state, now, attempt, pid, err)
 	}
 	result.PID = cmd.Process.Pid
-	if err := probeRuntimeHealth(ctx, state.ConfigPath, cmd.Process.Pid, opts.HealthTimeout); err != nil {
+	if err := probeRuntimeHealth(ctx, state.ConfigPath, cmd.Process.Pid, opts.HealthTimeout, true); err != nil {
 		launcherPath, identityErr := InspectManagedRuntimeProcess(cmd.Process.Pid, state.CorePath, state.ConfigPath, state.WorkDir)
 		if identityErr != nil {
 			result.Action = "restart_failed"
@@ -666,45 +665,6 @@ func absoluteCleanPath(path string) (string, error) {
 		return "", err
 	}
 	return filepath.Clean(absolute), nil
-}
-
-func defaultProbeRuntimeHealth(ctx context.Context, configPath string, pid int, timeout time.Duration) error {
-	if timeout <= 0 {
-		timeout = defaultRuntimeHealthTimeout
-	}
-	client, err := mihomoapi.NewFromConfig(configPath)
-	if err != nil {
-		return err
-	}
-	deadline := time.Now().Add(timeout)
-	var lastErr error
-	for {
-		if !processRunning(pid) || processZombie(pid) {
-			return fmt.Errorf("runtime pid %d exited before controller became healthy", pid)
-		}
-		remaining := time.Until(deadline)
-		if remaining <= 0 {
-			if lastErr == nil {
-				lastErr = errors.New("controller did not become healthy")
-			}
-			return fmt.Errorf("mihomo controller /version did not become healthy within %s: %w", timeout, lastErr)
-		}
-		requestTimeout := time.Second
-		if remaining < requestTimeout {
-			requestTimeout = remaining
-		}
-		_, lastErr = client.Request(ctx, mihomoapi.RequestOptions{Method: "GET", Path: "/version", Timeout: requestTimeout, MaxBytes: 64 * 1024})
-		if lastErr == nil {
-			return nil
-		}
-		timer := time.NewTimer(200 * time.Millisecond)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			return ctx.Err()
-		case <-timer.C:
-		}
-	}
 }
 
 func appendRuntimeSupervisionEvent(workDir string, now time.Time, fields map[string]any) {

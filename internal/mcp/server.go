@@ -45,9 +45,12 @@ import (
 	"localclash/internal/workspace"
 )
 
+const latestSupportedProtocolVersion = "2025-11-25"
+
 type Server struct {
 	downloadCore          coredownload.DownloadFunc
 	state                 *appinit.RuntimeState
+	version               string
 	startedAt             time.Time
 	taskCtx               context.Context
 	taskCancel            context.CancelFunc
@@ -75,17 +78,21 @@ type configPatchDraftSlot struct {
 }
 
 func NewServer() *Server {
-	return newServer(nil)
+	return newServer(nil, "")
 }
 
 func NewServerWithState(state appinit.RuntimeState) *Server {
-	return newServer(&state)
+	return newServer(&state, "")
 }
 
-func newServer(state *appinit.RuntimeState) *Server {
+func newServer(state *appinit.RuntimeState, version string) *Server {
+	if version == "" {
+		version = "dev"
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Server{
 		state:               state,
+		version:             version,
 		startedAt:           time.Now().UTC(),
 		taskCtx:             ctx,
 		taskCancel:          cancel,
@@ -203,8 +210,9 @@ type toolContent struct {
 }
 
 type HTTPOptions struct {
-	Addr string
-	Path string
+	Addr          string
+	Path          string
+	ServerVersion string
 }
 
 func NormalizeHTTPOptions(opts HTTPOptions) HTTPOptions {
@@ -227,7 +235,7 @@ func HTTPURL(opts HTTPOptions) string {
 
 func ListenAndServeHTTPWithState(ctx context.Context, state appinit.RuntimeState, opts HTTPOptions) error {
 	opts = NormalizeHTTPOptions(opts)
-	mcpServer := NewServerWithState(state)
+	mcpServer := newServer(&state, opts.ServerVersion)
 	srv := &http.Server{
 		Addr:              opts.Addr,
 		Handler:           mcpServer.HTTPHandler(opts.Path),
@@ -286,6 +294,11 @@ func (s *Server) HTTPHandler(path string) http.Handler {
 		writeCORSHeaders(w)
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		versions := r.Header.Values("MCP-Protocol-Version")
+		if len(versions) > 0 && (len(versions) != 1 || !supportsProtocolVersion(versions[0])) {
+			http.Error(w, "invalid or unsupported MCP-Protocol-Version", http.StatusBadRequest)
 			return
 		}
 		if r.Method != http.MethodPost {
@@ -473,6 +486,15 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 	_ = json.NewEncoder(w).Encode(value)
 }
 
+func supportsProtocolVersion(version string) bool {
+	switch version {
+	case latestSupportedProtocolVersion, "2025-06-18", "2025-03-26":
+		return true
+	default:
+		return false
+	}
+}
+
 func (s *Server) Handle(ctx context.Context, data []byte) *rpcResponse {
 	var req rpcRequest
 	if err := json.Unmarshal(data, &req); err != nil {
@@ -483,11 +505,11 @@ func (s *Server) Handle(ctx context.Context, data []byte) *rpcResponse {
 	}
 	switch req.Method {
 	case "initialize":
-		protocolVersion := "2025-06-18"
+		protocolVersion := latestSupportedProtocolVersion
 		var params struct {
 			ProtocolVersion string `json:"protocolVersion"`
 		}
-		if len(req.Params) != 0 && json.Unmarshal(req.Params, &params) == nil && params.ProtocolVersion != "" {
+		if json.Unmarshal(req.Params, &params) == nil && supportsProtocolVersion(params.ProtocolVersion) {
 			protocolVersion = params.ProtocolVersion
 		}
 		return resultResponse(req.ID, map[string]any{
@@ -499,9 +521,11 @@ func (s *Server) Handle(ctx context.Context, data []byte) *rpcResponse {
 			},
 			"serverInfo": map[string]any{
 				"name":    "localclash",
-				"version": "dev",
+				"version": s.version,
 			},
 		})
+	case "ping":
+		return resultResponse(req.ID, struct{}{})
 	case "tools/list":
 		return resultResponse(req.ID, map[string]any{"tools": ListedTools()})
 	case "tools/call":

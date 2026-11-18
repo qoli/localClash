@@ -491,7 +491,7 @@ func stubSupervisionRuntime(t *testing.T) {
 	originalBootID := currentBootID
 	originalHealth := probeRuntimeHealth
 	currentBootID = func() (string, error) { return "test-boot-id", nil }
-	probeRuntimeHealth = func(context.Context, string, int, time.Duration) error { return nil }
+	probeRuntimeHealth = func(context.Context, string, int, time.Duration, bool) error { return nil }
 	t.Cleanup(func() {
 		currentBootID = originalBootID
 		probeRuntimeHealth = originalHealth

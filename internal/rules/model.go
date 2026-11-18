@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/netip"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -669,6 +670,11 @@ func renderCustomRuleLine(id string, rule CustomRuleLine, target string) (string
 		kind = "GEOIP"
 	default:
 		return "", fmt.Errorf("custom rule %q type %q is unsupported", id, rule.Type)
+	}
+	if kind == "IP-CIDR" || kind == "IP-CIDR6" {
+		if _, err := netip.ParsePrefix(value); err != nil {
+			return "", fmt.Errorf("custom rule %q contains invalid CIDR %q", id, value)
+		}
 	}
 	line := fmt.Sprintf("%s,%s,%s", kind, value, target)
 	if rule.NoResolve {

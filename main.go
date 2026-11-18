@@ -772,7 +772,7 @@ func runMCP(args []string, state appinit.RuntimeState) error {
 	fs := flag.NewFlagSet("mcp", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 
-	opts := mcp.HTTPOptions{}
+	opts := mcp.HTTPOptions{ServerVersion: version}
 	fs.StringVar(&opts.Addr, "addr", "127.0.0.1:8765", "HTTP listen address")
 	fs.StringVar(&opts.Path, "path", "/mcp", "MCP HTTP JSON-RPC path")
 

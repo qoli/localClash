@@ -31,13 +31,43 @@ import (
 )
 
 func TestHandleInitialize(t *testing.T) {
-	resp := NewServer().Handle(context.Background(), []byte(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`))
-	if resp == nil || resp.Error != nil {
-		t.Fatalf("response error = %+v", resp)
+	server := newServer(nil, "v0.117")
+	tests := []struct {
+		requested string
+		want      string
+	}{
+		{requested: "2025-03-26", want: "2025-03-26"},
+		{requested: "2025-06-18", want: "2025-06-18"},
+		{requested: "2025-11-25", want: "2025-11-25"},
+		{requested: "2099-01-01", want: "2025-11-25"},
+		{want: "2025-11-25"},
 	}
-	result := resp.Result.(map[string]any)
-	if result["protocolVersion"] == "" {
-		t.Fatalf("initialize result = %+v, want protocolVersion", result)
+	for _, tt := range tests {
+		t.Run(tt.requested, func(t *testing.T) {
+			request := fmt.Sprintf(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":%q}}`, tt.requested)
+			resp := server.Handle(context.Background(), []byte(request))
+			if resp == nil || resp.Error != nil {
+				t.Fatalf("response = %+v, want initialize result", resp)
+			}
+			result := resp.Result.(map[string]any)
+			if got := result["protocolVersion"]; got != tt.want {
+				t.Fatalf("protocolVersion = %v, want %q", got, tt.want)
+			}
+			if got := result["serverInfo"].(map[string]any)["version"]; got != "v0.117" {
+				t.Fatalf("serverInfo.version = %v, want v0.117", got)
+			}
+		})
+	}
+}
+
+func TestHandlePing(t *testing.T) {
+	resp := NewServer().Handle(context.Background(), []byte(`{"jsonrpc":"2.0","id":"ping-1","method":"ping"}`))
+	if resp == nil || resp.Error != nil {
+		t.Fatalf("response = %+v, want ping result", resp)
+	}
+	result, err := json.Marshal(resp.Result)
+	if err != nil || string(result) != `{}` || string(resp.ID) != `"ping-1"` {
+		t.Fatalf("response ID = %s, result = %s, error = %v", resp.ID, result, err)
 	}
 }
 
@@ -59,6 +89,35 @@ func TestHTTPHandlerServesJSONRPC(t *testing.T) {
 	}
 	if w.Header().Get("Access-Control-Allow-Origin") != "*" {
 		t.Fatalf("missing CORS header: %+v", w.Header())
+	}
+}
+
+func TestHTTPHandlerValidatesProtocolVersionHeader(t *testing.T) {
+	tests := []struct {
+		name   string
+		header []string
+		status int
+	}{
+		{name: "absent", status: http.StatusOK},
+		{name: "supported", header: []string{"2025-11-25"}, status: http.StatusOK},
+		{name: "older supported", header: []string{"2025-03-26"}, status: http.StatusOK},
+		{name: "future", header: []string{"2099-01-01"}, status: http.StatusBadRequest},
+		{name: "invalid", header: []string{"invalid"}, status: http.StatusBadRequest},
+		{name: "empty", header: []string{""}, status: http.StatusBadRequest},
+	}
+	handler := NewServer().HTTPHandler("/mcp")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`))
+			for _, version := range tt.header {
+				req.Header.Add("MCP-Protocol-Version", version)
+			}
+			w := httptest.NewRecorder()
+			handler.ServeHTTP(w, req)
+			if w.Code != tt.status {
+				t.Fatalf("status = %d, want %d", w.Code, tt.status)
+			}
+		})
 	}
 }
 
@@ -1900,6 +1959,8 @@ func TestToolsCallCustomRulesBuildReturnsReusableIntent(t *testing.T) {
 					{"type": "domain_suffix", "value": "huggingface.co"},
 					{"type": "domain_regex", "value": `^a[0-9]+vod-hls-pv-ta-amazon\.akamaized\.net$`},
 					{"type": "geoip", "value": "telegram", "no_resolve": true},
+					{"type": "ip_cidr", "value": "192.0.2.5/24", "no_resolve": true},
+					{"type": "ip_cidr6", "value": "2001:db8::/32"},
 				},
 				"reason": "User asked huggingface.co to use the temporary line.",
 			},
@@ -1910,8 +1971,35 @@ func TestToolsCallCustomRulesBuildReturnsReusableIntent(t *testing.T) {
 	}
 	result := marshalToolResult(t, resp.Result)
 	content := result.StructuredContent.(map[string]any)
-	if content["target"] != "TempLine" || content["rule_count"] != float64(4) {
-		t.Fatalf("custom rule content = %+v, want TempLine with four rules", content)
+	if content["target"] != "TempLine" || content["rule_count"] != float64(6) {
+		t.Fatalf("custom rule content = %+v, want TempLine with six rules", content)
+	}
+}
+
+func TestToolsCallCustomRulesBuildRejectsInvalidCIDRs(t *testing.T) {
+	tests := []struct{ kind, value string }{
+		{kind: "ip_cidr", value: "not-a-cidr"},
+		{kind: "ip_cidr6", value: "2001:db8::/129"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.kind, func(t *testing.T) {
+			resp := callHandle(t, map[string]any{
+				"jsonrpc": "2.0",
+				"id":      1,
+				"method":  "tools/call",
+				"params": map[string]any{
+					"name": "custom_rules_build",
+					"arguments": map[string]any{
+						"id":     "test_cidr",
+						"target": "DIRECT",
+						"rules":  []map[string]any{{"type": tt.kind, "value": tt.value}},
+					},
+				},
+			})
+			if resp.Error == nil || resp.Error.Code != -32602 || !strings.Contains(resp.Error.Message, "invalid CIDR") {
+				t.Fatalf("error = %+v, want invalid CIDR input error", resp.Error)
+			}
+		})
 	}
 }
 

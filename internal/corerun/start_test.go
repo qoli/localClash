@@ -218,7 +218,7 @@ exec sleep 30
 	workDir := filepath.Join(dir, "runtime")
 	table := stubProcessTable(t)
 	originalHealth := probeRuntimeHealth
-	probeRuntimeHealth = func(context.Context, string, int, time.Duration) error {
+	probeRuntimeHealth = func(context.Context, string, int, time.Duration, bool) error {
 		return errors.New("controller unavailable")
 	}
 	t.Cleanup(func() { probeRuntimeHealth = originalHealth })

@@ -169,7 +169,7 @@ func startValidatedLocked(ctx context.Context, opts StartOptions, runOpts Option
 		}
 		finish(nil, process.PID)
 		finish = stage("controller_health", map[string]any{"pid": process.PID, "path": "/version"})
-		if err := probeRuntimeHealth(ctx, runOpts.ConfigPath, process.PID, opts.RuntimeHealthTimeout); err != nil {
+		if err := probeRuntimeHealth(ctx, runOpts.ConfigPath, process.PID, opts.RuntimeHealthTimeout, false); err != nil {
 			finish(err, process.PID)
 			markRuntimeStartFailure(runOpts.WorkDir, "controller_health_failed", err, time.Now())
 			return result, err
@@ -228,14 +228,14 @@ func startValidatedLocked(ctx context.Context, opts StartOptions, runOpts Option
 	result.Started = true
 	result.PID = cmd.Process.Pid
 
-	finish = stage("controller_health", map[string]any{"pid": cmd.Process.Pid, "path": "/version"})
-	if healthErr := probeRuntimeHealth(ctx, runOpts.ConfigPath, cmd.Process.Pid, opts.RuntimeHealthTimeout); healthErr != nil {
+	finish = stage("startup_health", map[string]any{"pid": cmd.Process.Pid, "path": "/version"})
+	if healthErr := probeRuntimeHealth(ctx, runOpts.ConfigPath, cmd.Process.Pid, opts.RuntimeHealthTimeout, true); healthErr != nil {
 		failureErr := healthErr
 		if cleanupErr := cleanupFailedStartLocked(runOpts.WorkDir, cmd.Process.Pid, time.Now()); cleanupErr != nil {
 			failureErr = fmt.Errorf("%w; cleanup newly started runtime: %v", healthErr, cleanupErr)
 		}
 		finish(failureErr, cmd.Process.Pid)
-		markRuntimeStartFailure(runOpts.WorkDir, "controller_health_failed", failureErr, time.Now())
+		markRuntimeStartFailure(runOpts.WorkDir, "startup_health_failed", failureErr, time.Now())
 		return result, failureErr
 	}
 	finish(nil, cmd.Process.Pid)

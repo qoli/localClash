@@ -58,7 +58,7 @@ func TestCheckSupervisionDoesNotInferMissingState(t *testing.T) {
 func TestCheckSupervisionBackoffAndLatchAfterThreeFailedRecoveries(t *testing.T) {
 	fixture := newSupervisedFixture(t)
 	fixture.crash(fixture.pid)
-	overrideRuntimeHealth(t, func(context.Context, string, int, time.Duration) error {
+	overrideRuntimeHealth(t, func(context.Context, string, int, time.Duration, bool) error {
 		return errors.New("controller unavailable")
 	})
 	base := time.Now().UTC().Add(time.Minute)
@@ -224,7 +224,7 @@ func TestCheckSupervisionFailsClosedOnBootConfigValidationAndProcessInvariants(t
 
 func TestCheckSupervisionObservesUnhealthyProcessWithoutKillingIt(t *testing.T) {
 	fixture := newSupervisedFixture(t)
-	overrideRuntimeHealth(t, func(context.Context, string, int, time.Duration) error {
+	overrideRuntimeHealth(t, func(context.Context, string, int, time.Duration, bool) error {
 		return errors.New("controller timeout")
 	})
 	result := checkSupervisionAt(t, fixture.workDir, time.Now().UTC())
@@ -312,7 +312,7 @@ func TestStopWaitsForInFlightRecoveryThenDisarmsIt(t *testing.T) {
 	fixture.crash(fixture.pid)
 	probeStarted := make(chan struct{})
 	releaseProbe := make(chan struct{})
-	overrideRuntimeHealth(t, func(context.Context, string, int, time.Duration) error {
+	overrideRuntimeHealth(t, func(context.Context, string, int, time.Duration, bool) error {
 		select {
 		case <-probeStarted:
 		default:
@@ -646,7 +646,7 @@ func readSupervisionEvents(t *testing.T, workDir string) string {
 	return string(data)
 }
 
-func overrideRuntimeHealth(t *testing.T, probe func(context.Context, string, int, time.Duration) error) {
+func overrideRuntimeHealth(t *testing.T, probe func(context.Context, string, int, time.Duration, bool) error) {
 	t.Helper()
 	original := probeRuntimeHealth
 	probeRuntimeHealth = probe
