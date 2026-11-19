@@ -95,6 +95,12 @@ func TestChatGPTProviderPublishesOnlyMeasuredCountries(t *testing.T) {
 	if ready, err := PreparedProvider(pool, path); err != nil || ready {
 		t.Fatalf("legacy provider ready = %t, error = %v", ready, err)
 	}
+	if err := WriteFile(path, []byte(`{"x-localclash-qualification-version":1,"proxies":[{"name":"US label","type":"ss","x-localclash-statsig-country":"US"}]}`)); err != nil {
+		t.Fatal(err)
+	}
+	if ready, err := PreparedProvider(pool, path); err != nil || ready {
+		t.Fatalf("provider qualified with the old Statsig gate was reused: ready=%t, error=%v", ready, err)
+	}
 	if err := WriteFile(path, data); err != nil {
 		t.Fatal(err)
 	}

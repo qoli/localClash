@@ -2,6 +2,7 @@ package chatgptavailable
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -112,6 +113,36 @@ func TestRebuildAssignsMeasuredCountryToAliasesOfTheSameChain(t *testing.T) {
 	want := map[string]string{"🇺🇸 alias": "DE", "🇯🇵 alias": "DE"}
 	if result.QualifiedCount != 3 || result.Probed != 2 || !reflect.DeepEqual(result.StatsigCountries, want) {
 		t.Fatalf("result = %+v, want three qualified names and measured countries %v", result, want)
+	}
+}
+
+func TestRebuildKeepsQualifiedNodeAndClearsCountryAfterStatsigFailure(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "snapshot.json")
+	proxies := []map[string]any{{"name": "US label", "type": "ss", "server": "exit.example"}}
+	for _, statsig := range []Observation{
+		{Available: true, OAuthAdmissionStatus: oauthRegionSupported, StatsigStatus: statsigReachable, StatsigCountry: "US"},
+		{Available: true, OAuthAdmissionStatus: oauthRegionSupported, StatsigStatus: statsigReadLimitExceeded, StatsigError: "local Statsig response read limit"},
+	} {
+		result, err := Rebuild(t.Context(), proxies, fakeProber{observations: map[string]Observation{"US label": statsig}}, Options{SnapshotPath: path})
+		if err != nil || !reflect.DeepEqual(result.Qualified, []string{"US label"}) || result.RetainedCount != 0 {
+			t.Fatalf("Statsig metadata affected current qualification: %+v, %v", result, err)
+		}
+		if statsig.StatsigCountry == "" && len(result.StatsigCountries) != 0 {
+			t.Fatalf("failed measurement reused a prior country: %v", result.StatsigCountries)
+		}
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var snapshot Snapshot
+	if err := json.Unmarshal(data, &snapshot); err != nil {
+		t.Fatal(err)
+	}
+	for _, node := range snapshot.Nodes {
+		if !node.Available || node.StatsigCountry != "" || node.StatsigError != "local Statsig response read limit" {
+			t.Fatalf("neutral country or original diagnostics lost: %+v", node)
+		}
 	}
 }
 

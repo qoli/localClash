@@ -30,11 +30,15 @@ const (
 
 	statsigInitializeURL = "https://ab.chatgpt.com/v1/initialize"
 	// Statsig client SDK keys are public application identifiers, not OpenAI account credentials.
-	statsigClientKey            = "client-zUdXdSTygXJdzoE0sWTkP8GKTVsUMF2IRM7ShVO2JAG"
-	statsigMaxCompressedBytes   = 1024 * 1024
-	statsigMaxDecompressedBytes = 4 * 1024 * 1024
+	statsigClientKey = "client-zUdXdSTygXJdzoE0sWTkP8GKTVsUMF2IRM7ShVO2JAG"
+	// The observed response is about 0.4 MiB compressed and just over 4 MiB
+	// decoded. Leave at least 2 MiB of growth room in each stream. Reaching a
+	// limit loses the country flag, not the candidate's admission.
+	statsigMaxCompressedBytes   = 4 * 1024 * 1024
+	statsigMaxDecompressedBytes = 8 * 1024 * 1024
 	statsigReachable            = "reachable"
 	statsigRejected             = "rejected"
+	statsigReadLimitExceeded    = "read_limit_exceeded"
 	statsigUnexpectedResponse   = "unexpected_response"
 	statsigTransportFailure     = "transport_failure"
 )
@@ -269,17 +273,14 @@ func (p *MihomoProber) probeCandidate(ctx context.Context, candidate Candidate, 
 			}
 		case statsigResult = <-statsigDone:
 			statsigDone = nil
-			if statsigResult.result.decision != statsigReachable && oauthDone != nil {
-				stopSibling("statsig", statsigResult.result.decision)
-			}
 		}
 	}
 	p.recordTiming(ctx, started, probeTiming{Phase: "domain_pair"}, nil)
 
 	observation := Observation{
 		Fingerprint:          candidate.Fingerprint,
-		Available:            oauthResult.result.decision == oauthRegionSupported && statsigResult.result.decision == statsigReachable,
-		ServiceRejected:      oauthResult.result.explicitReject || statsigResult.result.explicitReject,
+		Available:            oauthResult.result.decision == oauthRegionSupported,
+		ServiceRejected:      oauthResult.result.explicitReject,
 		OAuthAttempts:        oauthResult.attempts,
 		OAuthAdmissionStatus: oauthResult.result.decision,
 		OAuthHTTPStatus:      oauthResult.result.httpStatus,
@@ -295,6 +296,11 @@ func (p *MihomoProber) probeCandidate(ctx context.Context, candidate Candidate, 
 		CompressedBytes:      statsigResult.compressedBytes,
 		DecompressedBytes:    statsigResult.decompressedBytes,
 		StatsigError:         errorString(statsigResult.result.err),
+	}
+	// A failed measurement must not publish partial country data or inherit a
+	// country from an earlier refresh. An empty country has neutral Smart weight.
+	if statsigResult.result.decision != statsigReachable {
+		observation.StatsigCountry = ""
 	}
 	if observation.Available {
 		ipStarted := time.Now()
@@ -581,12 +587,12 @@ func requestStatsig(parent context.Context, client *http.Client, endpoint, clien
 	result.compressedBytes = compressed.count
 	result.decompressedBytes = decompressed.count
 	if compressed.count > statsigMaxCompressedBytes {
-		result.decision = statsigUnexpectedResponse
+		result.decision = statsigReadLimitExceeded
 		result.err = fmt.Errorf("Statsig initialize compressed response exceeds %d bytes", statsigMaxCompressedBytes)
 		return result
 	}
 	if decompressed.count > statsigMaxDecompressedBytes {
-		result.decision = statsigUnexpectedResponse
+		result.decision = statsigReadLimitExceeded
 		result.err = fmt.Errorf("Statsig initialize decompressed response exceeds %d bytes", statsigMaxDecompressedBytes)
 		return result
 	}

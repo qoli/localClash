@@ -23,6 +23,7 @@ func ChatGPTSmartName(name, country string) string {
 
 // ChatGPTSmartPriority preserves the configured tier order and weights. The
 // label of each country tier is its ISO code, including in older patches.
+// Missing country flags match no tier and retain Smart's neutral factor of 1.
 func ChatGPTSmartPriority(rules []smartpolicy.Rule) []smartpolicy.Rule {
 	priority := smartpolicy.Clone(rules)
 	for i, rule := range priority {
@@ -30,7 +31,7 @@ func ChatGPTSmartPriority(rules []smartpolicy.Rule) []smartpolicy.Rule {
 			// The policy parser trims leading whitespace from each rule.
 			priority[i].Pattern = `\x20` + regexp.QuoteMeta(strings.TrimPrefix(ChatGPTSmartName("", country), " ")) + `\z`
 		} else {
-			priority[i].Pattern = `.*`
+			priority[i].Pattern = `\x20\[Statsig [A-Z]{2}\]\z`
 		}
 	}
 	return priority

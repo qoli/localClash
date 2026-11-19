@@ -14,8 +14,9 @@ import (
 
 const dnsOverHTTPSEndpoint = "https://cloudflare-dns.com/dns-query"
 
-// IPVerification requires positive admission through an IP target, in addition
-// to the domain probes. Any explicit region rejection vetoes every positive.
+// IPVerification requires OAuth admission through an IP target, in addition to
+// the domain probe. Explicit OAuth region rejection vetoes every positive;
+// Statsig paths provide country diagnostics only.
 type IPVerification struct {
 	Available      bool                `json:"available"`
 	RegionRejected bool                `json:"region_rejected"`
@@ -184,19 +185,19 @@ func (p *MihomoProber) probeResolvedIP(ctx context.Context, client *http.Client,
 }
 
 func admitIPPaths(paths []IPPathObservation) (bool, bool) {
-	oauth, statsig := map[string]bool{}, map[string]bool{}
+	oauth := map[string]bool{}
 	for _, path := range paths {
+		if path.Endpoint != "oauth" {
+			continue
+		}
 		if path.HTTPStatus == http.StatusForbidden && path.ErrorCode == oauthRegionUnsupported {
 			return false, true
 		}
-		if path.Endpoint == "oauth" && path.Status == oauthRegionSupported {
+		if path.Status == oauthRegionSupported {
 			oauth[path.Family] = true
 		}
-		if path.Endpoint == "statsig" && path.Status == statsigReachable {
-			statsig[path.Family] = true
-		}
 	}
-	return (oauth["ipv4"] && statsig["ipv4"]) || (oauth["ipv6"] && statsig["ipv6"]), false
+	return oauth["ipv4"] || oauth["ipv6"], false
 }
 
 func (p *MihomoProber) resolveIPs(parent context.Context, client *http.Client, host, family string) ([]netip.Addr, error) {

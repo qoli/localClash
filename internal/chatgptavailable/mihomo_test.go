@@ -3,8 +3,11 @@ package chatgptavailable
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"io"
+	"math/rand"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -113,6 +116,75 @@ func TestRequestStatsigRejectsUncompressedResponse(t *testing.T) {
 	}
 }
 
+func TestRequestStatsigAllowsObservedResponseWithTwoMiBHeadroom(t *testing.T) {
+	// The response captured on 2026-11-19 had these complete stream sizes.
+	const observedCompressed = 383152
+	const observedDecoded = 4198653
+	const headroom = 2 * 1024 * 1024
+	if statsigMaxCompressedBytes < observedCompressed+headroom {
+		t.Fatal("compressed limit leaves less than 2 MiB of growth room")
+	}
+	for _, tt := range []struct {
+		name  string
+		bytes int
+		want  string
+	}{
+		{"observed", observedDecoded, statsigReachable},
+		{"two-MiB-growth", observedDecoded + headroom, statsigReachable},
+		{"decoded-limit", statsigMaxDecompressedBytes + 1, statsigReadLimitExceeded},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			prefix := `{"layer_configs":{"padding":"`
+			suffix := `"},"derived_fields":{"country":"TW"}}`
+			body := []byte(prefix + strings.Repeat("x", tt.bytes-len(prefix)-len(suffix)) + suffix)
+			result := requestStatsigTestBody(t, body)
+			if result.decision != tt.want {
+				t.Fatalf("result = %+v, want %s", result, tt.want)
+			}
+			if tt.want == statsigReachable {
+				if result.err != nil || result.country != "TW" || result.decompressedBytes != int64(tt.bytes) {
+					t.Fatalf("valid response lost its country: %+v", result)
+				}
+			} else if result.country != "" || result.decompressedBytes != statsigMaxDecompressedBytes+1 ||
+				result.err == nil || !strings.Contains(result.err.Error(), "decompressed response exceeds") {
+				t.Fatalf("local read limit was not reported accurately: %+v", result)
+			}
+		})
+	}
+}
+
+func TestRequestStatsigReportsCompressedReadLimit(t *testing.T) {
+	// Incompressible JSON keeps the compressed boundary independent of the
+	// decoded boundary instead of exercising only a highly compressible fixture.
+	payload := make([]byte, statsigMaxCompressedBytes+1024*1024/2)
+	_, _ = rand.New(rand.NewSource(1)).Read(payload)
+	body := []byte(`{"layer_configs":{"padding":"` + base64.RawStdEncoding.EncodeToString(payload) + `"},"derived_fields":{"country":"US"}}`)
+	result := requestStatsigTestBody(t, body)
+	if result.decision != statsigReadLimitExceeded || result.country != "" ||
+		result.compressedBytes != statsigMaxCompressedBytes+1 || result.decompressedBytes > statsigMaxDecompressedBytes ||
+		result.err == nil || !strings.Contains(result.err.Error(), "compressed response exceeds") {
+		t.Fatalf("compressed read limit = %+v", result)
+	}
+}
+
+func requestStatsigTestBody(t *testing.T, body []byte) statsigProbeResult {
+	t.Helper()
+	var compressed bytes.Buffer
+	writer := brotli.NewWriterOptions(&compressed, brotli.WriterOptions{Quality: 0})
+	if _, err := writer.Write(body); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Encoding", "br")
+		_, _ = w.Write(compressed.Bytes())
+	}))
+	defer server.Close()
+	return requestStatsig(t.Context(), server.Client(), server.URL, "test-key", 5*time.Second)
+}
+
 func TestReadStatsigCountryRejectsMissingMalformedOrTrailingData(t *testing.T) {
 	for _, input := range []string{
 		`{"feature_gates":{}}`,
@@ -148,17 +220,22 @@ func TestNewMihomoProberDefaultsIncludeOAuthAndStatsig(t *testing.T) {
 	}
 }
 
-func TestProbeCandidateRequiresOAuthAndStatsigIntersection(t *testing.T) {
+func TestProbeCandidateUsesStatsigOnlyForCountryFlag(t *testing.T) {
 	tests := []struct {
 		name       string
 		oauth      oauthProbeResult
 		statsig    statsigProbeResult
 		want       bool
 		wantReject bool
+		country    string
 	}{
-		{name: "both-pass", oauth: oauthProbeResult{decision: oauthRegionSupported, httpStatus: 401, errorCode: "token_expired"}, statsig: statsigProbeResult{decision: statsigReachable, httpStatus: 200, country: "US", contentEncoding: "br"}, want: true},
-		{name: "oauth-only", oauth: oauthProbeResult{decision: oauthRegionSupported, httpStatus: 401, errorCode: "token_expired"}, statsig: statsigProbeResult{decision: statsigTransportFailure, err: errors.New("statsig timeout")}},
+		{name: "both-pass", oauth: oauthProbeResult{decision: oauthRegionSupported, httpStatus: 401, errorCode: "token_expired"}, statsig: statsigProbeResult{decision: statsigReachable, httpStatus: 200, country: "US", contentEncoding: "br"}, want: true, country: "US"},
+		{name: "statsig-timeout", oauth: oauthProbeResult{decision: oauthRegionSupported}, statsig: statsigProbeResult{decision: statsigTransportFailure, err: errors.New("statsig timeout")}, want: true},
+		{name: "statsig-local-limit", oauth: oauthProbeResult{decision: oauthRegionSupported}, statsig: statsigProbeResult{decision: statsigReadLimitExceeded, err: errors.New("local response limit")}, want: true},
+		{name: "statsig-malformed-with-partial-country", oauth: oauthProbeResult{decision: oauthRegionSupported}, statsig: statsigProbeResult{decision: statsigUnexpectedResponse, country: "US", err: errors.New("unexpected EOF")}, want: true},
+		{name: "statsig-service-rejection", oauth: oauthProbeResult{decision: oauthRegionSupported}, statsig: statsigProbeResult{decision: statsigRejected, httpStatus: 403, explicitReject: true, errorCode: oauthRegionUnsupported, err: errors.New("Statsig rejected")}, want: true},
 		{name: "statsig-only", oauth: oauthProbeResult{decision: oauthRegionUnsupported, httpStatus: 403, errorCode: oauthRegionUnsupported, explicitReject: true, err: errors.New("unsupported")}, statsig: statsigProbeResult{decision: statsigReachable, httpStatus: 200, country: "SG", contentEncoding: "br"}, wantReject: true},
+		{name: "oauth-timeout", oauth: oauthProbeResult{decision: oauthTransportFailure, err: errors.New("OAuth timeout")}, statsig: statsigProbeResult{decision: statsigReachable}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -177,10 +254,41 @@ func TestProbeCandidateRequiresOAuthAndStatsigIntersection(t *testing.T) {
 				},
 			}
 			observation := prober.probeCandidate(context.Background(), Candidate{Fingerprint: "node"}, &http.Client{})
-			if observation.Available != test.want || observation.ServiceRejected != test.wantReject || oauthCalls != 1 || statsigCalls != 1 {
+			if observation.Available != test.want || observation.ServiceRejected != test.wantReject ||
+				(test.want && observation.StatsigCountry != test.country) ||
+				observation.StatsigStatus != test.statsig.decision || oauthCalls != 1 || statsigCalls != 1 {
 				t.Fatalf("observation = %+v OAuth calls=%d Statsig calls=%d", observation, oauthCalls, statsigCalls)
 			}
 		})
+	}
+}
+
+func TestStatsigFailureDoesNotCancelOAuthOrSkipIPAndStreamingChecks(t *testing.T) {
+	statsigStarted := make(chan struct{})
+	prober := &MihomoProber{
+		options: MihomoOptions{Attempts: 1},
+		probeOAuth: func(ctx context.Context, _ *http.Client, _, _ string, _ time.Duration) oauthProbeResult {
+			<-statsigStarted
+			select {
+			case <-ctx.Done():
+				return oauthTransportError(ctx.Err())
+			case <-time.After(20 * time.Millisecond):
+				return oauthProbeResult{decision: oauthRegionSupported}
+			}
+		},
+		probeStatsig: func(context.Context, *http.Client, string, string, time.Duration) statsigProbeResult {
+			close(statsigStarted)
+			return statsigTransportError(io.ErrUnexpectedEOF)
+		},
+		probeIPPaths: func(context.Context, *http.Client) IPVerification { return IPVerification{Available: true} },
+		probeStreams: func(context.Context, *http.Client) *streamVerification {
+			return &streamVerification{SuccessfulPairs: 2}
+		},
+	}
+	observed := prober.probeCandidate(t.Context(), Candidate{Fingerprint: "node"}, &http.Client{})
+	if !observed.Available || observed.ServiceRejected || observed.StatsigCountry != "" || observed.IPVerification == nil ||
+		observed.Streaming == nil || !observed.Streaming.passed() || observed.StatsigError != io.ErrUnexpectedEOF.Error() {
+		t.Fatalf("Statsig failure interrupted qualification or lost diagnostics: %+v", observed)
 	}
 }
 

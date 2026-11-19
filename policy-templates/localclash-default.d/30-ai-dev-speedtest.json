@@ -35,7 +35,7 @@
           }
         ],
         "optional": true,
-        "reason": "由独立探测进程验证 OAuth 地区准入和 Statsig 初始化，Smart 按 Statsig 实测出口国家加权。",
+        "reason": "由独立探测进程验证 OAuth 地区准入；Statsig 只提供出口国家加权，读取失败时使用中性权重 1，不影响节点资格。",
         "boundary": "chatgpt_service_qualified_subscription_nodes"
       }
     },

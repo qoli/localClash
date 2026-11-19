@@ -12,6 +12,7 @@ import (
 	"localclash/internal/customsites"
 	"localclash/internal/localconfig"
 	"localclash/internal/policytemplate"
+	"localclash/internal/runtimeprofile"
 )
 
 func TestRunProductDefaultTemplateAddsViuTVWithoutOrderCollision(t *testing.T) {
@@ -24,6 +25,7 @@ func TestRunProductDefaultTemplateAddsViuTVWithoutOrderCollision(t *testing.T) {
 			dir := t.TempDir()
 			t.Setenv("LOCALCLASH_WORKDIR", dir)
 			t.Chdir(dir)
+			writeMainExecutableCore(t, filepath.Join(dir, runtimeprofile.MetaCorePath), "Mihomo template fixture")
 			templatesDir := filepath.Join(dir, policytemplate.DefaultDir)
 			if err := os.CopyFS(templatesDir, os.DirFS(templates)); err != nil {
 				t.Fatal(err)

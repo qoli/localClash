@@ -818,6 +818,7 @@ func TestRunProductConfigApplyTemplateWritesV2RuntimeWithoutUserProfile(t *testi
 	wrongDir := t.TempDir()
 	t.Setenv("LOCALCLASH_WORKDIR", dir)
 	t.Chdir(wrongDir)
+	writeMainExecutableCore(t, filepath.Join(dir, runtimeprofile.MetaCorePath), "Mihomo template fixture")
 	writeMainTestFile(t, filepath.Join(dir, "policy-templates", "localclash-default.json"), `{
   "id": "localclash-default",
   "name": "Test Default",
@@ -895,6 +896,7 @@ func TestApplyTemplateTransactionRestoresPriorIntentAndRegistryWhenCapabilityRef
 		PacksSelectionPath:  filepath.Join(dir, "localclash-packs.gob"),
 		RuntimeProfilePath:  filepath.Join(dir, "localclash-runtime.json"),
 	}}
+	writeMainExecutableCore(t, filepath.Join(dir, runtimeprofile.MetaCorePath), "Mihomo template fixture")
 	if err := runtimeprofile.SetPoolsEnabled(state.Paths.RuntimeProfilePath, true); err != nil {
 		t.Fatal(err)
 	}

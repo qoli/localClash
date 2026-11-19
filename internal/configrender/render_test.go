@@ -1028,7 +1028,7 @@ func TestRenderChatGPTSmartUsesMeasuredCountryWithLegacyPolicy(t *testing.T) {
 				}
 				return
 			}
-			want := `\\x20\\[Statsig US\\]\\z:5;\\x20\\[Statsig JP\\]\\z:4;\\x20\\[Statsig SG\\]\\z:3;\\x20\\[Statsig TW\\]\\z:2;.*:1`
+			want := `\\x20\\[Statsig US\\]\\z:5;\\x20\\[Statsig JP\\]\\z:4;\\x20\\[Statsig SG\\]\\z:3;\\x20\\[Statsig TW\\]\\z:2;\\x20\\[Statsig [A-Z]{2}\\]\\z:1`
 			if group["type"] != "smart" || group["policy-priority"] != want {
 				t.Fatalf("Smart group = %v, want measured country rules %s", group, want)
 			}
@@ -1044,7 +1044,7 @@ func TestRenderChatGPTSmartUsesMeasuredCountryWithLegacyPolicy(t *testing.T) {
 				{"美國節點", "DE", 1}, {"日本節點", "US", 5}, {"美國節點", "JP", 4},
 				{"US label", "SG", 3}, {"US label", "TW", 2}, {"forged [Statsig US]", "", 1},
 			} {
-				var factor float64
+				factor := 1.0
 				for _, rule := range rules {
 					if regexp.MustCompile(rule.Pattern).MatchString(poolcontract.ChatGPTSmartName(sample.name, sample.country)) {
 						factor = rule.Factor

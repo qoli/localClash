@@ -11,7 +11,7 @@ import (
 
 const (
 	autoQualificationVersion    = 3
-	chatGPTQualificationVersion = 1
+	chatGPTQualificationVersion = 2
 	StatsigCountryKey           = "x-localclash-statsig-country"
 )
 
