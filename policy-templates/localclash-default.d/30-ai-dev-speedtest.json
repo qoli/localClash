@@ -4,7 +4,7 @@
   "config": {
     "version": 3,
     "proxy_groups": {
-      "ChatGPT-available": {
+      "ChatGPT 美國優先": {
         "mode": "auto",
         "capability": "openai.chatgpt.oauth_statsig.v1",
         "smart_priority": [
@@ -37,6 +37,40 @@
         "optional": true,
         "reason": "由独立探测进程验证 OAuth 地区准入；Statsig 只提供出口国家加权，读取失败时使用中性权重 1，不影响节点资格。",
         "boundary": "chatgpt_service_qualified_subscription_nodes"
+      },
+      "ChatGPT 台灣優先": {
+        "mode": "auto",
+        "capability": "openai.chatgpt.oauth_statsig.v1",
+        "smart_priority": [
+          {
+            "label": "TW",
+            "pattern": "^TW$",
+            "factor": 5
+          },
+          {
+            "label": "SG",
+            "pattern": "^SG$",
+            "factor": 4
+          },
+          {
+            "label": "JP",
+            "pattern": "^JP$",
+            "factor": 3
+          },
+          {
+            "label": "US",
+            "pattern": "^US$",
+            "factor": 2
+          },
+          {
+            "label": "Other",
+            "pattern": ".*",
+            "factor": 1
+          }
+        ],
+        "optional": true,
+        "reason": "由独立探测进程验证 OAuth 地区准入；Statsig 只提供出口国家加权，读取失败时使用中性权重 1，不影响节点资格。",
+        "boundary": "chatgpt_service_qualified_subscription_nodes"
       }
     },
     "policy_groups": {
@@ -50,7 +84,8 @@
           "⚡ 自动选择",
           "🇹🇼 台湾节点",
           "🇰🇷 韩国节点",
-          "ChatGPT-available"
+          "ChatGPT 美國優先",
+          "ChatGPT 台灣優先"
         ],
         "reason": "OpenAI/ChatGPT 專屬業務組；預設使用美國地區出口，將服務能力篩選出口放在最後供有需要的用戶手動選擇。",
         "boundary": "business_to_exit_layer"

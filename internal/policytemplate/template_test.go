@@ -211,8 +211,8 @@ func TestRealLocalClashDefaultTemplateIsLayered(t *testing.T) {
 	if summary.ID != TemplateLocalClashDefault || config.Version != localconfig.ConfigSchemaVersion {
 		t.Fatalf("template = %+v config version = %d, want current localclash default", summary, config.Version)
 	}
-	if len(config.ProxyGroups) != 9 || len(config.PolicyGroups) != 33 || len(config.Packs) != 37 || len(config.TransportRules) != 1 || len(config.CustomRules) != 7 {
-		t.Fatalf("default template counts: proxy_groups=%d policy_groups=%d packs=%d transport_rules=%d custom_rules=%d, want 9/33/37/1/7", len(config.ProxyGroups), len(config.PolicyGroups), len(config.Packs), len(config.TransportRules), len(config.CustomRules))
+	if len(config.ProxyGroups) != 10 || len(config.PolicyGroups) != 33 || len(config.Packs) != 37 || len(config.TransportRules) != 1 || len(config.CustomRules) != 7 {
+		t.Fatalf("default template counts: proxy_groups=%d policy_groups=%d packs=%d transport_rules=%d custom_rules=%d, want 10/33/37/1/7", len(config.ProxyGroups), len(config.PolicyGroups), len(config.Packs), len(config.TransportRules), len(config.CustomRules))
 	}
 	if hasPack(config.Packs, "blackmatrix7", "Crypto") {
 		t.Fatal("default template must not include the broad Crypto pack")
@@ -263,9 +263,9 @@ func TestRealLocalClashDefaultTemplateIsLayered(t *testing.T) {
 	if !config.ProxyGroups["🇭🇰 香港节点"].Optional {
 		t.Fatalf("香港节点 group = %+v, want optional region selector", config.ProxyGroups["🇭🇰 香港节点"])
 	}
-	chatGPTAvailable := config.ProxyGroups["ChatGPT-available"]
-	if chatGPTAvailable.Mode != "auto" || chatGPTAvailable.Capability != "openai.chatgpt.oauth_statsig.v1" || !chatGPTAvailable.Optional {
-		t.Fatalf("ChatGPT-available group = %+v, want optional ChatGPT capability auto group", chatGPTAvailable)
+	chatGPTUSPriority := config.ProxyGroups["ChatGPT 美國優先"]
+	if chatGPTUSPriority.Mode != "auto" || chatGPTUSPriority.Capability != "openai.chatgpt.oauth_statsig.v1" || !chatGPTUSPriority.Optional {
+		t.Fatalf("ChatGPT 美國優先 group = %+v, want optional ChatGPT capability auto group", chatGPTUSPriority)
 	}
 	wantPriority := []smartpolicy.Rule{
 		{Label: "US", Pattern: `^US$`, Factor: 5},
@@ -274,12 +274,27 @@ func TestRealLocalClashDefaultTemplateIsLayered(t *testing.T) {
 		{Label: "TW", Pattern: `^TW$`, Factor: 2},
 		{Label: "Other", Pattern: `.*`, Factor: 1},
 	}
-	if !reflect.DeepEqual(chatGPTAvailable.SmartPriority, wantPriority) {
-		t.Fatalf("ChatGPT-available smart priority = %#v, want %#v", chatGPTAvailable.SmartPriority, wantPriority)
+	if !reflect.DeepEqual(chatGPTUSPriority.SmartPriority, wantPriority) {
+		t.Fatalf("ChatGPT 美國優先 smart priority = %#v, want %#v", chatGPTUSPriority.SmartPriority, wantPriority)
+	}
+	chatGPTTWPriority := config.ProxyGroups["ChatGPT 台灣優先"]
+	wantTWPriority := []smartpolicy.Rule{
+		{Label: "TW", Pattern: `^TW$`, Factor: 5},
+		{Label: "SG", Pattern: `^SG$`, Factor: 4},
+		{Label: "JP", Pattern: `^JP$`, Factor: 3},
+		{Label: "US", Pattern: `^US$`, Factor: 2},
+		{Label: "Other", Pattern: `.*`, Factor: 1},
+	}
+	if !reflect.DeepEqual(chatGPTTWPriority.SmartPriority, wantTWPriority) {
+		t.Fatalf("ChatGPT 台灣優先 smart priority = %#v, want %#v", chatGPTTWPriority.SmartPriority, wantTWPriority)
+	}
+	chatGPTTWPriority.SmartPriority = chatGPTUSPriority.SmartPriority
+	if !reflect.DeepEqual(chatGPTTWPriority, chatGPTUSPriority) {
+		t.Fatal("ChatGPT 台灣優先 differs from its US mirror beyond country priorities")
 	}
 	chatGPT := config.PolicyGroups["🤖 ChatGPT"]
-	if len(chatGPT.Exits) == 0 || chatGPT.Exits[len(chatGPT.Exits)-1] != "ChatGPT-available" {
-		t.Fatalf("ChatGPT policy exits = %+v, want ChatGPT-available last", chatGPT.Exits)
+	if len(chatGPT.Exits) < 2 || !reflect.DeepEqual(chatGPT.Exits[len(chatGPT.Exits)-2:], []string{"ChatGPT 美國優先", "ChatGPT 台灣優先"}) {
+		t.Fatalf("ChatGPT policy exits = %+v, want both country-priority groups last", chatGPT.Exits)
 	}
 	globalDirect := config.PolicyGroups["🌐 全球直连"]
 	wantGlobalDirectExits := []string{"DIRECT", "⚡ 自动选择", "🇭🇰 香港节点", "🇺🇸 美国节点", "🇯🇵 日本节点", "🇸🇬 新加坡节点", "🇹🇼 台湾节点", "🇰🇷 韩国节点"}
@@ -316,7 +331,7 @@ func TestRealLocalClashDefaultTemplateIsLayered(t *testing.T) {
 		"🎮 Steam":    {"⚡ 自动选择", "🎯 手动选择", "🌐 全球直连", "🇭🇰 香港节点", "🇺🇸 美国节点", "🇯🇵 日本节点", "🇸🇬 新加坡节点", "🇹🇼 台湾节点", "🇰🇷 韩国节点"},
 		"🎮 游戏平台":     {"🌐 全球直连", "🎯 手动选择", "⚡ 自动选择", "🇭🇰 香港节点", "🇺🇸 美国节点", "🇯🇵 日本节点", "🇸🇬 新加坡节点", "🇹🇼 台湾节点", "🇰🇷 韩国节点"},
 		"🕹 Bahamut":  {"🇹🇼 台湾节点", "🎯 手动选择", "🌐 全球直连"},
-		"🤖 ChatGPT":  {"🇺🇸 美国节点", "🇯🇵 日本节点", "🇸🇬 新加坡节点", "🎯 手动选择", "⚡ 自动选择", "🇹🇼 台湾节点", "🇰🇷 韩国节点", "ChatGPT-available"},
+		"🤖 ChatGPT":  {"🇺🇸 美国节点", "🇯🇵 日本节点", "🇸🇬 新加坡节点", "🎯 手动选择", "⚡ 自动选择", "🇹🇼 台湾节点", "🇰🇷 韩国节点", "ChatGPT 美國優先", "ChatGPT 台灣優先"},
 		"🧠 AI":       {"⚡ 自动选择", "🎯 手动选择", "🇸🇬 新加坡节点", "🇭🇰 香港节点", "🇺🇸 美国节点", "🇯🇵 日本节点", "🇹🇼 台湾节点", "🇰🇷 韩国节点", "🌐 全球直连"},
 		"📥 大模型下载":    {"🌐 全球直连", "⚡ 自动选择", "🇺🇸 美国节点", "🇭🇰 香港节点", "🇯🇵 日本节点", "🇸🇬 新加坡节点", "🇹🇼 台湾节点", "🇰🇷 韩国节点"},
 		"🍎 Apple":    {"🌐 全球直连", "🎯 手动选择", "⚡ 自动选择", "🇭🇰 香港节点", "🇺🇸 美国节点", "🇯🇵 日本节点", "🇸🇬 新加坡节点", "🇹🇼 台湾节点", "🇰🇷 韩国节点"},
