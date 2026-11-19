@@ -3808,6 +3808,7 @@ func writeMCPValidationCache(t *testing.T, cachePath, corePath, configPath strin
 func killMCPProcess(pid int) {
 	process, err := os.FindProcess(pid)
 	if err == nil {
+		defer process.Release()
 		_ = process.Kill()
 	}
 }

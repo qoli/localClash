@@ -1339,6 +1339,7 @@ func TestRunProductRuntimeStartRefreshesCoreVersionCache(t *testing.T) {
 	if result.Status.PID > 0 {
 		t.Cleanup(func() {
 			if process, err := os.FindProcess(result.Status.PID); err == nil {
+				defer process.Release()
 				_ = process.Kill()
 				_, _ = process.Wait()
 			}
@@ -1389,6 +1390,7 @@ func TestRunProductRuntimeRestartAcceptsStrategy(t *testing.T) {
 	if result.Status.Start.PID > 0 {
 		t.Cleanup(func() {
 			if process, err := os.FindProcess(result.Status.Start.PID); err == nil {
+				defer process.Release()
 				_ = process.Kill()
 				_, _ = process.Wait()
 			}

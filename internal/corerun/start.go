@@ -413,6 +413,7 @@ func processRunning(pid int) bool {
 	if err != nil {
 		return false
 	}
+	defer process.Release()
 	if runtime.GOOS == "windows" {
 		return true
 	}

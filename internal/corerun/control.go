@@ -555,7 +555,9 @@ func stopRuntimePIDs(pids []int, result StopResult, timeout time.Duration, force
 		if err != nil {
 			return result, err
 		}
-		if err := process.Signal(syscall.SIGTERM); err != nil {
+		err = process.Signal(syscall.SIGTERM)
+		_ = process.Release()
+		if err != nil {
 			if errors.Is(err, os.ErrProcessDone) || !processRunning(pid) || processZombie(pid) {
 				continue
 			}
@@ -581,7 +583,9 @@ func stopRuntimePIDs(pids []int, result StopResult, timeout time.Duration, force
 		if err != nil {
 			return result, err
 		}
-		if err := process.Kill(); err != nil {
+		err = process.Kill()
+		_ = process.Release()
+		if err != nil {
 			if errors.Is(err, os.ErrProcessDone) || !processRunning(pid) || processZombie(pid) {
 				continue
 			}

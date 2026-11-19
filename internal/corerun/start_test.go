@@ -305,6 +305,7 @@ func writeStartExecutable(t *testing.T, path, content string) {
 func killProcess(pid int) {
 	process, err := os.FindProcess(pid)
 	if err == nil {
+		defer process.Release()
 		_ = process.Kill()
 	}
 }
