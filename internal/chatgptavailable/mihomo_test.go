@@ -213,14 +213,14 @@ func TestNewMihomoProberDefaultsIncludeOAuthAndStatsig(t *testing.T) {
 	if prober.probeStreams != nil {
 		t.Fatal("basic qualification enabled the streaming probes")
 	}
-	options.VerifyStreaming = true
+	options.EnhancedFilter = true
 	prober, err = NewMihomoProber(options)
 	if err != nil || prober.probeStreams == nil {
 		t.Fatalf("enhanced qualification has no streaming probes: %v", err)
 	}
 }
 
-func TestProbeCandidateUsesStatsigOnlyForCountryFlag(t *testing.T) {
+func TestBasicProbeUsesStatsigOnlyForCountryFlag(t *testing.T) {
 	tests := []struct {
 		name       string
 		oauth      oauthProbeResult
@@ -258,6 +258,55 @@ func TestProbeCandidateUsesStatsigOnlyForCountryFlag(t *testing.T) {
 				(test.want && observation.StatsigCountry != test.country) ||
 				observation.StatsigStatus != test.statsig.decision || oauthCalls != 1 || statsigCalls != 1 {
 				t.Fatalf("observation = %+v OAuth calls=%d Statsig calls=%d", observation, oauthCalls, statsigCalls)
+			}
+		})
+	}
+}
+
+func TestEnhancedCountryFilterRequiresMeasuredSupportedCountry(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		statsig statsigProbeResult
+		want    bool
+	}{
+		{"HK", statsigProbeResult{decision: statsigReachable, country: "HK"}, false},
+		{"MO", statsigProbeResult{decision: statsigReachable, country: "MO"}, false},
+		{"CN", statsigProbeResult{decision: statsigReachable, country: "CN"}, false},
+		{"unknown", statsigProbeResult{decision: statsigReachable, country: "ZZ"}, false},
+		{"missing", statsigProbeResult{decision: statsigUnexpectedResponse}, false},
+		{"partial", statsigProbeResult{decision: statsigUnexpectedResponse, country: "US"}, false},
+		{"timeout", statsigProbeResult{decision: statsigTransportFailure}, false},
+		{"TW", statsigProbeResult{decision: statsigReachable, country: "TW"}, true},
+		{"JP", statsigProbeResult{decision: statsigReachable, country: "JP"}, true},
+		{"US", statsigProbeResult{decision: statsigReachable, country: "US"}, true},
+		{"supported territory", statsigProbeResult{decision: statsigReachable, country: "AX"}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, enhanced := range []bool{false, true} {
+				prober := &MihomoProber{
+					options: MihomoOptions{Attempts: 1, EnhancedFilter: enhanced},
+					probeOAuth: func(context.Context, *http.Client, string, string, time.Duration) oauthProbeResult {
+						return oauthProbeResult{decision: oauthRegionSupported}
+					},
+					probeStatsig: func(context.Context, *http.Client, string, string, time.Duration) statsigProbeResult {
+						return tc.statsig
+					},
+					probeIPPaths: func(context.Context, *http.Client) IPVerification { return IPVerification{Available: true} },
+				}
+				if enhanced {
+					prober.probeStreams = func(context.Context, *http.Client) *streamVerification {
+						return &streamVerification{SuccessfulPairs: 2}
+					}
+				}
+				got := prober.probeCandidate(t.Context(), Candidate{Name: "US label"}, &http.Client{})
+				want := !enhanced || tc.want
+				if got.Available != want || (got.IPVerification != nil) != want || (got.Streaming != nil) != (enhanced && want) {
+					t.Fatalf("enhanced=%t: observation %+v, want qualified=%t", enhanced, got, want)
+				}
+				if enhanced && !want && tc.statsig.decision == statsigReachable &&
+					(got.StatsigStatus != statsigUnsupportedCountry || got.StatsigCountry != tc.statsig.country || got.StatsigError == "") {
+					t.Fatalf("missing country rejection evidence: %+v", got)
+				}
 			}
 		})
 	}
@@ -307,12 +356,12 @@ func TestProbeCandidateRunsStreamingOnlyAfterIPAdmission(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			prober := &MihomoProber{
-				options: MihomoOptions{Attempts: 1},
+				options: MihomoOptions{Attempts: 1, EnhancedFilter: tt.enhanced},
 				probeOAuth: func(context.Context, *http.Client, string, string, time.Duration) oauthProbeResult {
 					return oauthProbeResult{decision: oauthRegionSupported}
 				},
 				probeStatsig: func(context.Context, *http.Client, string, string, time.Duration) statsigProbeResult {
-					return statsigProbeResult{decision: statsigReachable}
+					return statsigProbeResult{decision: statsigReachable, country: "TW"}
 				},
 				probeIPPaths: func(context.Context, *http.Client) IPVerification {
 					return IPVerification{Available: tt.ipAvailable, RegionRejected: !tt.ipAvailable}

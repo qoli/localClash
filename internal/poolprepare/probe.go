@@ -390,7 +390,7 @@ func Qualify(ctx context.Context, pool poolcontract.Pool, input poolcontract.Inp
 		prober, err := chatgptavailable.NewMihomoProber(chatgptavailable.MihomoOptions{
 			CorePath: opts.CorePath, RuntimeParent: opts.ProbeDir,
 			Definitions: input.Proxies, Concurrency: opts.Concurrency,
-			VerifyStreaming: opts.EnhancedFilter,
+			EnhancedFilter: opts.EnhancedFilter,
 		})
 		if err != nil {
 			return capability.Result{}, err

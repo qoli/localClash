@@ -33,11 +33,12 @@ const (
 	statsigClientKey = "client-zUdXdSTygXJdzoE0sWTkP8GKTVsUMF2IRM7ShVO2JAG"
 	// The observed response is about 0.4 MiB compressed and just over 4 MiB
 	// decoded. Leave at least 2 MiB of growth room in each stream. Reaching a
-	// limit loses the country flag, not the candidate's admission.
+	// limit leaves the country unverified for enhanced filtering.
 	statsigMaxCompressedBytes   = 4 * 1024 * 1024
 	statsigMaxDecompressedBytes = 8 * 1024 * 1024
 	statsigReachable            = "reachable"
 	statsigRejected             = "rejected"
+	statsigUnsupportedCountry   = "unsupported_country"
 	statsigReadLimitExceeded    = "read_limit_exceeded"
 	statsigUnexpectedResponse   = "unexpected_response"
 	statsigTransportFailure     = "transport_failure"
@@ -56,7 +57,7 @@ type MihomoOptions struct {
 	StatsigEndpoint      string
 	StatsigClientKey     string
 	DNSOverHTTPSEndpoint string
-	VerifyStreaming      bool
+	EnhancedFilter       bool
 }
 
 type MihomoProber struct {
@@ -137,7 +138,7 @@ func NewMihomoProber(options MihomoOptions) (*MihomoProber, error) {
 	}
 	prober := &MihomoProber{options: options, timings: newProbeTimings(), probeOAuth: probeOAuthToken, probeStatsig: requestStatsig}
 	prober.probeIPPaths = prober.verifyIPPaths
-	if options.VerifyStreaming {
+	if options.EnhancedFilter {
 		prober.streamSlots = make(chan struct{}, streamingConcurrency)
 		prober.probeStreams = prober.probeStreaming
 	}
@@ -297,10 +298,12 @@ func (p *MihomoProber) probeCandidate(ctx context.Context, candidate Candidate, 
 		DecompressedBytes:    statsigResult.decompressedBytes,
 		StatsigError:         errorString(statsigResult.result.err),
 	}
-	// A failed measurement must not publish partial country data or inherit a
-	// country from an earlier refresh. An empty country has neutral Smart weight.
-	if statsigResult.result.decision != statsigReachable {
+	// Keep a measured unsupported country in the diagnostics, but discard partial data.
+	if statsigResult.result.decision != statsigReachable && statsigResult.result.decision != statsigUnsupportedCountry {
 		observation.StatsigCountry = ""
+	}
+	if p.options.EnhancedFilter && statsigResult.result.decision != statsigReachable {
+		observation.Available = false
 	}
 	if observation.Available {
 		ipStarted := time.Now()
@@ -382,12 +385,16 @@ func (p *MihomoProber) probeStatsigEndpointAttempts(ctx context.Context, client 
 		attemptCtx, connections := p.traceConnections(ctx)
 		outcome.attempts = attempt
 		outcome.result = p.probeStatsig(attemptCtx, client, endpoint, p.options.StatsigClientKey, p.options.RequestTimeout)
+		if p.options.EnhancedFilter && outcome.result.decision == statsigReachable && !supportedStatsigCountry(outcome.result.country) {
+			outcome.result.decision = statsigUnsupportedCountry
+			outcome.result.err = fmt.Errorf("Statsig country %q is outside the ChatGPT supported list", outcome.result.country)
+		}
 		p.recordTiming(ctx, started, probeTiming{Phase: "statsig", Attempt: attempt, Outcome: outcome.result.decision,
 			HTTPStatus: outcome.result.httpStatus, WireBytes: outcome.result.compressedBytes,
 			DecodedBytes: outcome.result.decompressedBytes, BodyMS: outcome.result.bodyDuration.Milliseconds()}, connections)
 		outcome.compressedBytes += outcome.result.compressedBytes
 		outcome.decompressedBytes += outcome.result.decompressedBytes
-		if outcome.result.decision == statsigReachable || outcome.result.errorCode == oauthRegionUnsupported {
+		if outcome.result.decision == statsigReachable || outcome.result.decision == statsigUnsupportedCountry || outcome.result.errorCode == oauthRegionUnsupported {
 			return outcome
 		}
 		if !waitToRetry(ctx, attempt, p.options.Attempts, p.options.RetryDelay) {

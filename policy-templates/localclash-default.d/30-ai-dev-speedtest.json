@@ -35,7 +35,7 @@
           }
         ],
         "optional": true,
-        "reason": "由独立探测进程验证 OAuth 地区准入；Statsig 只提供出口国家加权，读取失败时使用中性权重 1，不影响节点资格。",
+        "reason": "通过 OAuth 探测后，按 Statsig 实测地区加权。启用篩選增強时，仅接受测得 ChatGPT 支持地区且通过串流检查的线路。",
         "boundary": "chatgpt_service_qualified_subscription_nodes"
       },
       "ChatGPT 台灣優先": {
@@ -69,7 +69,7 @@
           }
         ],
         "optional": true,
-        "reason": "由独立探测进程验证 OAuth 地区准入；Statsig 只提供出口国家加权，读取失败时使用中性权重 1，不影响节点资格。",
+        "reason": "通过 OAuth 探测后，按 Statsig 实测地区加权。启用篩選增強时，仅接受测得 ChatGPT 支持地区且通过串流检查的线路。",
         "boundary": "chatgpt_service_qualified_subscription_nodes"
       }
     },

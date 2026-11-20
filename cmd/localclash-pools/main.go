@@ -86,7 +86,7 @@ func run(ctx context.Context, args []string) error {
 	case "refresh", "schedule":
 		workDir := flags.String("runtime", "", "Mihomo runtime directory")
 		period := flags.String("period", defaultPeriod, "5m, 15m, 30m, 1h or daily-08")
-		enhancedFilter := flags.Bool("enhanced-filter", false, "require additional connectivity for the automatic pool and complete SSE and WebSocket streams for the ChatGPT pool")
+		enhancedFilter := flags.Bool("enhanced-filter", false, "require additional connectivity for the automatic pool and a supported Statsig country and complete SSE and WebSocket streams for the ChatGPT pool")
 		if err := flags.Parse(args[1:]); err != nil {
 			return err
 		}

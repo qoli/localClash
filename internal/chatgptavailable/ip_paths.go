@@ -16,7 +16,7 @@ const dnsOverHTTPSEndpoint = "https://cloudflare-dns.com/dns-query"
 
 // IPVerification requires OAuth admission through an IP target, in addition to
 // the domain probe. Explicit OAuth region rejection vetoes every positive;
-// Statsig paths provide country diagnostics only.
+// enhanced filtering also vetoes a measured unsupported Statsig country.
 type IPVerification struct {
 	Available      bool                `json:"available"`
 	RegionRejected bool                `json:"region_rejected"`
@@ -187,6 +187,9 @@ func (p *MihomoProber) probeResolvedIP(ctx context.Context, client *http.Client,
 func admitIPPaths(paths []IPPathObservation) (bool, bool) {
 	oauth := map[string]bool{}
 	for _, path := range paths {
+		if path.Endpoint == "statsig" && path.Status == statsigUnsupportedCountry {
+			return false, true
+		}
 		if path.Endpoint != "oauth" {
 			continue
 		}

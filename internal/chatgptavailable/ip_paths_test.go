@@ -125,6 +125,7 @@ func TestAdmitIPPaths(t *testing.T) {
 		{"split-families", []IPPathObservation{v4OAuth, v6Statsig}, true, false},
 		{"statsig-read-limit", []IPPathObservation{v4OAuth, {Endpoint: "statsig", Family: "ipv4", Status: statsigReadLimitExceeded}}, true, false},
 		{"oauth-region-veto", []IPPathObservation{v4OAuth, v4Statsig, {Endpoint: "oauth", Family: "ipv6", Status: oauthRegionUnsupported, HTTPStatus: 403, ErrorCode: oauthRegionUnsupported}}, false, true},
+		{"enhanced-statsig-country-veto", []IPPathObservation{v4OAuth, v4Statsig, {Endpoint: "statsig", Family: "ipv6", Status: statsigUnsupportedCountry, Country: "HK"}}, false, true},
 		{"statsig-region-does-not-veto-oauth", []IPPathObservation{v6OAuth, v6Statsig, {Endpoint: "statsig", Family: "ipv4", Status: statsigRejected, HTTPStatus: 403, ErrorCode: oauthRegionUnsupported}}, true, false},
 		{"other-403-is-not-region-veto", []IPPathObservation{v4OAuth, v4Statsig, {Endpoint: "statsig", Family: "ipv6", Status: statsigRejected, HTTPStatus: 403}}, true, false},
 	} {
