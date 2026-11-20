@@ -559,10 +559,10 @@ enabled_packs: []
 	if renderedProxyGroupNames(config["proxy-groups"])["DIRECT"] {
 		t.Fatal("builtin DIRECT must not be materialized as a proxy group")
 	}
-	if got := dns["direct-nameserver"].([]any); len(got) != 1 || got[0] != "180.184.1.1" {
-		t.Fatalf("direct-nameserver = %#v, want Volcengine DNS", got)
+	if got := dns["direct-nameserver"].([]any); len(got) != 1 || got[0] != "https://223.5.5.5/dns-query" {
+		t.Fatalf("direct-nameserver = %#v, want AliDNS DoH", got)
 	}
-	if got := dns["proxy-server-nameserver"].([]any); len(got) != 2 || got[0] != "180.184.1.1" || got[1] != "https://doh.pub/dns-query" {
+	if got := dns["proxy-server-nameserver"].([]any); len(got) != 2 || got[0] != "https://223.5.5.5/dns-query" || got[1] != "https://doh.pub/dns-query" {
 		t.Fatalf("proxy-server-nameserver changed: %#v", got)
 	}
 }

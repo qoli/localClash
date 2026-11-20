@@ -1,5 +1,5 @@
 {
-  "description": "Router transparent proxy profile with Volcengine DNS, explicit CIDR-filtered fallback, and optional qualified ECS policies.",
+  "description": "Router transparent proxy profile with encrypted DNS, explicit CIDR-filtered fallback, and optional qualified ECS policies.",
   "mihomo": {
     "mixed-port": 7893,
     "redir-port": 7892,
@@ -48,19 +48,19 @@
       "fake-ip-filter-mode": "blacklist",
       "cache-algorithm": "arc",
       "nameserver": [
-        "180.184.1.1",
+        "https://223.5.5.5/dns-query",
         "https://doh.pub/dns-query"
       ],
       "proxy-server-nameserver": [
-        "180.184.1.1",
+        "https://223.5.5.5/dns-query",
         "https://doh.pub/dns-query"
       ],
       "direct-nameserver": [
-        "180.184.1.1"
+        "https://223.5.5.5/dns-query"
       ],
       "direct-nameserver-follow-policy": true,
       "default-nameserver": [
-        "180.184.1.1"
+        "https://223.5.5.5/dns-query"
       ],
       "fallback": [
         "https://8.8.8.8/dns-query#DNSProxy",
