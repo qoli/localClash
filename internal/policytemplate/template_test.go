@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
+	"strings"
 	"testing"
 
 	"localclash/internal/localconfig"
@@ -211,8 +213,8 @@ func TestRealLocalClashDefaultTemplateIsLayered(t *testing.T) {
 	if summary.ID != TemplateLocalClashDefault || config.Version != localconfig.ConfigSchemaVersion {
 		t.Fatalf("template = %+v config version = %d, want current localclash default", summary, config.Version)
 	}
-	if len(config.ProxyGroups) != 12 || len(config.PolicyGroups) != 34 || len(config.Packs) != 37 || len(config.TransportRules) != 1 || len(config.CustomRules) != 8 {
-		t.Fatalf("default template counts: proxy_groups=%d policy_groups=%d packs=%d transport_rules=%d custom_rules=%d, want 12/34/37/1/8", len(config.ProxyGroups), len(config.PolicyGroups), len(config.Packs), len(config.TransportRules), len(config.CustomRules))
+	if len(config.ProxyGroups) != 12 || len(config.PolicyGroups) != 35 || len(config.Packs) != 37 || len(config.TransportRules) != 1 || len(config.CustomRules) != 10 {
+		t.Fatalf("default template counts: proxy_groups=%d policy_groups=%d packs=%d transport_rules=%d custom_rules=%d, want 12/35/37/1/10", len(config.ProxyGroups), len(config.PolicyGroups), len(config.Packs), len(config.TransportRules), len(config.CustomRules))
 	}
 	if hasPack(config.Packs, "blackmatrix7", "Crypto") {
 		t.Fatal("default template must not include the broad Crypto pack")
@@ -347,7 +349,9 @@ func TestRealLocalClashDefaultTemplateIsLayered(t *testing.T) {
 		"🕹 Bahamut":  {"🇹🇼 台湾节点", "🎯 手动选择", "🌐 全球直连"},
 		"🤖 ChatGPT":  {"🇺🇸 美国节点", "🇯🇵 日本节点", "🇸🇬 新加坡节点", "🎯 手动选择", "⚡ 自动选择", "🇹🇼 台湾节点", "🇰🇷 韩国节点", "ChatGPT 美國優先", "ChatGPT 台灣優先"},
 		"🧠 AI":       {"⚡ 自动选择", "🎯 手动选择", "🇸🇬 新加坡节点", "🇭🇰 香港节点", "🇺🇸 美国节点", "🇯🇵 日本节点", "🇹🇼 台湾节点", "🇰🇷 韩国节点", "🌐 全球直连"},
-		"📥 大模型下载":    {"🌐 全球直连", "⚡ 自动选择", "🇺🇸 美国节点", "🇭🇰 香港节点", "🇯🇵 日本节点", "🇸🇬 新加坡节点", "🇹🇼 台湾节点", "🇰🇷 韩国节点"},
+		"📥 大模型下载":    {"🌐 全球直连", "⚡ 自动选择", "📦 大流量优选", "🇺🇸 美国节点", "🇭🇰 香港节点", "🇯🇵 日本节点", "🇸🇬 新加坡节点", "🇹🇼 台湾节点", "🇰🇷 韩国节点"},
+		"📺 Emby":     {"⚡ 自动选择", "🎯 手动选择", "📦 大流量优选", "🌐 全球直连", "🇭🇰 香港节点", "🇺🇸 美国节点", "🇯🇵 日本节点", "🇸🇬 新加坡节点", "🇹🇼 台湾节点", "🇰🇷 韩国节点"},
+		"📁 下载与媒体":    {"⚡ 自动选择", "🎯 手动选择", "🇭🇰 香港节点", "🇺🇸 美国节点", "🇯🇵 日本节点", "🇸🇬 新加坡节点", "🇹🇼 台湾节点", "🇰🇷 韩国节点", "📦 大流量优选"},
 		"🍎 Apple":    {"🌐 全球直连", "🎯 手动选择", "⚡ 自动选择", "🇭🇰 香港节点", "🇺🇸 美国节点", "🇯🇵 日本节点", "🇸🇬 新加坡节点", "🇹🇼 台湾节点", "🇰🇷 韩国节点"},
 		"🧲 BT/PT 下载": {"🌐 全球直连", "⚡ 自动选择", "🎯 手动选择", "🇭🇰 香港节点", "🇯🇵 日本节点", "🇺🇸 美国节点", "🇸🇬 新加坡节点", "🇹🇼 台湾节点", "🇰🇷 韩国节点"},
 	}
@@ -478,6 +482,40 @@ func TestRealLocalClashDefaultTemplateIsLayered(t *testing.T) {
 	}
 	if config.FallbackTarget != "🌐 全球直连" {
 		t.Fatalf("fallback_target = %q, want switchable global direct policy", config.FallbackTarget)
+	}
+}
+
+func TestDefaultDownloadAndMediaHosts(t *testing.T) {
+	config, _, err := Build(filepath.Join("..", "..", DefaultDir), TemplateLocalClashDefault)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for id, hosts := range map[string][]string{
+		"download-media-hosts":    {"pbs.twimg.com", "video.twimg.com", "i.redd.it", "v.redd.it", "cdn.discordapp.com", "i.imgur.com", "upload.wikimedia.org", "images.unsplash.com"},
+		"software-artifact-hosts": {"release-assets.githubusercontent.com", "codeload.github.com", "pkg-containers.githubusercontent.com", "files.pythonhosted.org", "static.crates.io", "production.cloudflare.docker.com", "cdimage.ubuntu.com", "downloads.sourceforge.net"},
+	} {
+		group := customRuleByID(config.CustomRules, id)
+		if group == nil || group.Target != "📁 下载与媒体" {
+			t.Fatalf("%s target: got %+v", id, group)
+		}
+		for _, host := range hosts {
+			if !slices.Contains(group.Rules, localconfig.CustomRuleLine{Type: "domain", Value: host}) {
+				t.Errorf("%s missing exact host %s", id, host)
+			}
+		}
+		if id == "software-artifact-hosts" && !slices.Contains(group.Rules, localconfig.CustomRuleLine{Type: "domain_suffix", Value: "dl.sourceforge.net"}) {
+			t.Error("SourceForge download mirrors missing")
+		}
+		for _, rule := range group.Rules {
+			if rule.Type != "domain" && rule.Type != "domain_suffix" {
+				t.Fatalf("%s has unexpected rule type %q", id, rule.Type)
+			}
+			for _, other := range []string{"api.github.com", "raw.githubusercontent.com", "x.com", "abs.twimg.com", "gateway.discord.gg", "discord.com", "www.reddit.com", "redditstatic.com", "pypi.org", "auth.docker.io", "sourceforge.net", "other.s3.amazonaws.com", "other.r2.cloudflarestorage.com", "download.nvidia.com", "steamcontent.com"} {
+				if rule.Value == other || (rule.Type == "domain_suffix" && strings.HasSuffix(other, "."+rule.Value)) {
+					t.Errorf("%s captures unrelated host %s with %+v", id, other, rule)
+				}
+			}
+		}
 	}
 }
 

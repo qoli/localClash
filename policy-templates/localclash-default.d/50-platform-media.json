@@ -3,16 +3,23 @@
   "description": "Add Apple, Google, Microsoft, TikTok, and streaming media groups.",
   "config": {
     "version": 3,
-    "proxy_groups": {
-      "📦 大流量优选": {
-        "mode": "auto",
-        "capability": "youtube.sustained-download.v1",
-        "optional": true,
-        "reason": "按 YouTube 视频分段的持续下载能力优选，实测不足时补足 30 个可选出口。",
-        "boundary": "youtube_sustained_subscription_nodes"
-      }
-    },
     "policy_groups": {
+      "📁 下载与媒体": {
+        "mode": "manual",
+        "exits": [
+          "⚡ 自动选择",
+          "🎯 手动选择",
+          "🇭🇰 香港节点",
+          "🇺🇸 美国节点",
+          "🇯🇵 日本节点",
+          "🇸🇬 新加坡节点",
+          "🇹🇼 台湾节点",
+          "🇰🇷 韩国节点",
+          "📦 大流量优选"
+        ],
+        "reason": "为软件包、发行镜像、社交附件及图片视频下载选择出口。",
+        "boundary": "business_to_exit_layer"
+      },
       "📺 YouTube": {
         "mode": "manual",
         "exits": [
@@ -187,6 +194,7 @@
         "exits": [
           "⚡ 自动选择",
           "🎯 手动选择",
+          "📦 大流量优选",
           "🌐 全球直连",
           "🇭🇰 香港节点",
           "🇺🇸 美国节点",
@@ -215,6 +223,51 @@
         "boundary": "business_to_exit_layer"
       }
     },
+    "custom_rules": [
+      {
+        "id": "download-media-hosts",
+        "target": "📁 下载与媒体",
+        "reason": "Selected media delivery hosts from SukkaW cdn, narrowed to image, attachment and video endpoints.",
+        "rules": [
+          { "type": "domain", "value": "pbs.twimg.com" },
+          { "type": "domain", "value": "video.twimg.com" },
+          { "type": "domain", "value": "i.redd.it" },
+          { "type": "domain", "value": "v.redd.it" },
+          { "type": "domain", "value": "preview.redd.it" },
+          { "type": "domain", "value": "external-preview.redd.it" },
+          { "type": "domain", "value": "cdn.discordapp.com" },
+          { "type": "domain", "value": "media.discordapp.net" },
+          { "type": "domain", "value": "i.imgur.com" },
+          { "type": "domain", "value": "i.pinimg.com" },
+          { "type": "domain", "value": "upload.wikimedia.org" },
+          { "type": "domain", "value": "images.unsplash.com" },
+          { "type": "domain", "value": "images.pexels.com" }
+        ]
+      },
+      {
+        "id": "software-artifact-hosts",
+        "target": "📁 下载与媒体",
+        "reason": "Selected software distribution hosts from SukkaW download and v2fly-dlc github/docker, including SourceForge download mirrors.",
+        "rules": [
+          { "type": "domain", "value": "release-assets.githubusercontent.com" },
+          { "type": "domain", "value": "codeload.github.com" },
+          { "type": "domain", "value": "pkg-containers.githubusercontent.com" },
+          { "type": "domain", "value": "github-production-release-asset-2e65be.s3.amazonaws.com" },
+          { "type": "domain", "value": "production.cloudflare.docker.com" },
+          { "type": "domain", "value": "docker-images-prod.6aa30f8b08e16409b46e0173d6de2f56.r2.cloudflarestorage.com" },
+          { "type": "domain", "value": "files.pythonhosted.org" },
+          { "type": "domain", "value": "static.crates.io" },
+          { "type": "domain", "value": "static.rust-lang.org" },
+          { "type": "domain", "value": "plugins-artifacts.gradle.org" },
+          { "type": "domain", "value": "downloads.sourceforge.net" },
+          { "type": "domain", "value": "cdimage.debian.org" },
+          { "type": "domain", "value": "cdimage.ubuntu.com" },
+          { "type": "domain", "value": "downloads.openwrt.org" },
+          { "type": "domain", "value": "download-installer.cdn.mozilla.net" },
+          { "type": "domain_suffix", "value": "dl.sourceforge.net" }
+        ]
+      }
+    ],
     "packs": [
       {
         "source": "v2fly-dlc",

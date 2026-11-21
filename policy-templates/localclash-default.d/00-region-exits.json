@@ -4,6 +4,13 @@
   "config": {
     "version": 3,
     "proxy_groups": {
+      "📦 大流量优选": {
+        "mode": "auto",
+        "capability": "youtube.sustained-download.v1",
+        "optional": true,
+        "reason": "按 YouTube 视频分段的持续下载能力优选，实测不足时补足 30 个可选出口。",
+        "boundary": "youtube_sustained_subscription_nodes"
+      },
       "🎯 手动选择": {
         "mode": "manual",
         "match": {
