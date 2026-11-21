@@ -782,9 +782,6 @@ func runMCP(args []string, state appinit.RuntimeState) error {
 	if fs.NArg() != 0 {
 		return fmt.Errorf("unexpected positional arguments: %v", fs.Args())
 	}
-	opts = mcp.NormalizeHTTPOptions(opts)
-	fmt.Fprintf(os.Stderr, "localClash MCP HTTP listening on %s\n", mcp.HTTPURL(opts))
-	fmt.Fprintln(os.Stderr, "health check: http://"+opts.Addr+"/health")
 	return mcp.ListenAndServeHTTPWithState(context.Background(), state, opts)
 }
 

@@ -20,7 +20,7 @@ The local source checkout for the Mihomo Meta core is `/Volumes/Data/Github/miho
 - `go run . core download --dry-run`: verify Mihomo release asset selection without writing binaries.
 - `go run . config render --json`: render `.runtime/mihomo/config.yaml` through the product flow using patch-registry intent, local subscriptions, and pack inputs.
 - `go run . mihomo config-test --json`: run explicit `mihomo -t` validation and record the config hash attestation used by hot reload.
-- `scripts/test-mcp-http.sh`: run the local HTTP MCP doctor smoke test.
+- `scripts/test-mcp-http.sh`: build this checkout and run its MCP doctor on an OS-assigned loopback port. Run it against an initialized test workspace (`LOCALCLASH_WORKDIR`). A passing result requires the overall doctor status to be `ok`. To inspect an already-running service, call `doctor` at that service's MCP endpoint.
 - `scripts/test-mcp-cli.sh`: run the third-party MCP client compatibility smoke test.
 
 ## Coding Style & Naming Conventions

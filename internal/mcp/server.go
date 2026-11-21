@@ -245,6 +245,9 @@ func ListenAndServeHTTPWithState(ctx context.Context, state appinit.RuntimeState
 	if err != nil {
 		return err
 	}
+	opts.Addr = listener.Addr().String()
+	fmt.Fprintf(os.Stderr, "localClash MCP HTTP listening on %s\n", HTTPURL(opts))
+	fmt.Fprintln(os.Stderr, "health check: http://"+opts.Addr+"/health")
 	mcpServer.startWatchdog()
 	errCh := make(chan error, 1)
 	go func() {
