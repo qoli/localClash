@@ -1637,10 +1637,8 @@ func renameSourceProxies(source Source, doc subscriptionDoc, prefixSource bool, 
 				return nil, 0, fmt.Errorf("source %q proxy %q has invalid dialer-proxy; expected a non-empty proxy or policy-group name", source.ID, plan.originalName)
 			}
 			targetName := dialerProxy
-			// Some subscriptions insert a space after the country flag in a
-			// node label but keep the unspaced label in its dialer references.
 			if len(renamedTargets[targetName]) == 0 && !groupNames[targetName] {
-				targetName = flagSpacedNodeName(targetName)
+				targetName = decoratedDialerName(targetName)
 			}
 			targets := renamedTargets[targetName]
 			switch len(targets) {
@@ -1659,7 +1657,12 @@ func renameSourceProxies(source Source, doc subscriptionDoc, prefixSource bool, 
 	return proxies, renamed, nil
 }
 
-func flagSpacedNodeName(name string) string {
+// Some sources decorate node names but keep the original dialer references.
+// Match only the known label forms, with the rest of the name kept verbatim.
+func decoratedDialerName(name string) string {
+	if strings.HasPrefix(name, "🌐") {
+		return "🏴‍☠️ " + name
+	}
 	first, firstWidth := utf8.DecodeRuneInString(name)
 	second, secondWidth := utf8.DecodeRuneInString(name[firstWidth:])
 	if first < '🇦' || first > '🇿' || second < '🇦' || second > '🇿' {
