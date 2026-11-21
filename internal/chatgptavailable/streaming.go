@@ -20,13 +20,13 @@ import (
 )
 
 const (
-	streamSSEURL         = "https://httpbingo.org/sse?delay=0s&duration=5s&count=6"
-	streamWebSocketURL   = "wss://httpbingo.org/websocket/echo"
+	streamSSEURL         = "https://httpbingo.org/sse?delay=0s&duration=5s&count=3"
+	streamWebSocketURL   = "wss://ws.postman-echo.com/raw"
 	streamingConcurrency = 6
 	streamingAttempts    = 3
 	streamingPasses      = 2
 	streamingTimeout     = 16 * time.Second
-	sseEvents            = 6
+	sseEvents            = 3
 	sseMinimumSpan       = 3 * time.Second
 	webSocketEchoGap     = 2500 * time.Millisecond
 )
@@ -211,7 +211,7 @@ func readSSE(body io.Reader, result *streamObservation, started time.Time, minim
 	var first time.Time
 	var event, data string
 	var hasData bool
-	for scanner.Scan() {
+	for result.Messages < sseEvents && scanner.Scan() {
 		line := scanner.Text()
 		switch {
 		case strings.HasPrefix(line, "event:"):
@@ -227,8 +227,7 @@ func readSSE(body io.Reader, result *streamObservation, started time.Time, minim
 					ID        *int  `json:"id"`
 					Timestamp int64 `json:"timestamp"`
 				}
-				if event != "ping" || result.Messages == sseEvents ||
-					json.Unmarshal([]byte(data), &payload) != nil ||
+				if event != "ping" || json.Unmarshal([]byte(data), &payload) != nil ||
 					payload.ID == nil || *payload.ID != result.Messages || payload.Timestamp <= 0 {
 					return "unexpected_sse_event"
 				}
@@ -237,10 +236,10 @@ func readSSE(body io.Reader, result *streamObservation, started time.Time, minim
 			event, data, hasData = "", "", false
 		}
 	}
-	if err := scanner.Err(); err != nil {
-		return streamError(err)
-	}
-	if result.Messages != sseEvents || hasData || event != "" {
+	if result.Messages < sseEvents {
+		if err := scanner.Err(); err != nil {
+			return streamError(err)
+		}
 		return "eof_before_completion"
 	}
 	if result.SpanMS < minimumSpan.Milliseconds() {
@@ -267,7 +266,7 @@ func probeWebSocket(ctx context.Context, client *http.Client, endpoint string, p
 
 	var first time.Time
 	result.Stage = "echo"
-	for index, payload := range []string{"localclash-stream-1", "localclash-stream-2", "localclash-stream-3"} {
+	for index, payload := range []string{"localclash-stream-1", "localclash-stream-2"} {
 		if index > 0 {
 			select {
 			case <-time.After(pause):

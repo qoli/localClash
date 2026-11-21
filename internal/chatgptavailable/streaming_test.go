@@ -63,14 +63,15 @@ func TestStreamingAdmissionRequiresTwoCompletePairs(t *testing.T) {
 }
 
 func TestReadSSEChecksEventSequenceAndFraming(t *testing.T) {
-	complete := sseTestEvents(sseEvents)
+	complete := sseTestEvents(3)
 	tests := []struct {
 		name, body, expected string
 		span                 time.Duration
 	}{
 		{"complete", complete, "", 0},
+		{"complete before stream ends", complete + "event: other\ndata: {}\n\n", "", 0},
 		{"buffered", complete, "buffered_stream", sseMinimumSpan},
-		{"missing events", sseTestEvents(4), "eof_before_completion", 0},
+		{"missing third event", sseTestEvents(2), "eof_before_completion", 0},
 		{"unframed last event", strings.TrimSuffix(complete, "\n"), "eof_before_completion", 0},
 		{"reordered", strings.Replace(complete, "\"id\":2", "\"id\":1", 1), "unexpected_sse_event", 0},
 		{"wrong type", strings.Replace(complete, "event: ping", "event: done", 1), "unexpected_sse_event", 0},
@@ -114,14 +115,14 @@ func TestProbeSSERejectsIncompleteHTTP2Bodies(t *testing.T) {
 	}
 }
 
-func TestProbeWebSocketRequiresAllEchoes(t *testing.T) {
+func TestProbeWebSocketRequiresTwoEchoes(t *testing.T) {
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		conn, err := websocket.Accept(w, r, nil)
 		if err != nil {
 			return
 		}
 		defer conn.CloseNow()
-		for index := range 3 {
+		for index := range 2 {
 			kind, message, err := conn.Read(t.Context())
 			if err != nil {
 				return
@@ -138,7 +139,7 @@ func TestProbeWebSocketRequiresAllEchoes(t *testing.T) {
 	client := streamHTTPClient(server.Client(), false)
 	defer client.CloseIdleConnections()
 	secureURL := "wss" + strings.TrimPrefix(server.URL, "https")
-	if result := probeWebSocket(t.Context(), client, secureURL, 0); !result.passed() || result.HTTPStatus != 101 || result.Messages != 3 {
+	if result := probeWebSocket(t.Context(), client, secureURL, 0); !result.passed() || result.HTTPStatus != 101 || result.Messages != 2 {
 		t.Fatalf("complete WebSocket = %+v", result)
 	}
 	if result := probeWebSocket(t.Context(), client, secureURL+"/close", 0); result.passed() || result.HTTPStatus != 101 ||
