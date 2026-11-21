@@ -3,15 +3,12 @@ package poolprepare
 import (
 	"bufio"
 	"context"
-	"crypto/tls"
 	"errors"
 	"fmt"
 	"image/jpeg"
 	"io"
 	"net"
 	"net/http"
-	"net/smtp"
-	"strings"
 	"sync"
 	"time"
 
@@ -20,7 +17,6 @@ import (
 
 const (
 	enhancedProbeTimeout = 10 * time.Second
-	smtpProbeAddress     = "smtp.gmail.com:587"
 	ubuntuUpdatesURL     = "http://archive.ubuntu.com/ubuntu/dists/noble-updates/InRelease"
 	ubuntuSecurityURL    = "http://security.ubuntu.com/ubuntu/dists/noble-security/InRelease"
 	tmdbImageURL         = "https://image.tmdb.org/t/p/w92/1E5baAaEse26fej7uHcjOgEE2t2.jpg"
@@ -69,7 +65,7 @@ func (observation enhancedObservation) record(summary *capability.EnhancedProbeS
 	}
 }
 
-func measureEnhanced(ctx context.Context, client *http.Client, dial func(context.Context, string) (net.Conn, error)) enhancedObservation {
+func measureEnhanced(ctx context.Context, client *http.Client) enhancedObservation {
 	start := time.Now()
 	ctx, cancel := context.WithTimeout(ctx, enhancedProbeTimeout)
 	defer cancel()
@@ -81,7 +77,6 @@ func measureEnhanced(ctx context.Context, client *http.Client, dial func(context
 		target string
 		probe  func() (int, error)
 	}{
-		{"smtp_starttls", smtpProbeAddress, func() (int, error) { return 0, probeSMTP(ctx, dial, smtpProbeAddress, nil) }},
 		{"ubuntu_updates", ubuntuUpdatesURL, func() (int, error) {
 			return probeContent(ctx, &httpClient, ubuntuUpdatesURL, func(body io.Reader) error { return readUbuntuRelease(body, "noble-updates") })
 		}},
@@ -179,54 +174,11 @@ func readMicrosoftConnect(body io.Reader) error {
 	return nil
 }
 
-func probeSMTP(ctx context.Context, dial func(context.Context, string) (net.Conn, error), address string, tlsConfig *tls.Config) error {
-	conn, err := dial(ctx, address)
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-	stop := context.AfterFunc(ctx, func() { conn.Close() })
-	defer stop()
-	if deadline, ok := ctx.Deadline(); ok {
-		if err := conn.SetDeadline(deadline); err != nil {
-			return err
-		}
-	}
-	host, _, err := net.SplitHostPort(address)
-	if err != nil {
-		return err
-	}
-	client, err := smtp.NewClient(conn, host)
-	if err != nil {
-		return fmt.Errorf("SMTP greeting: %w", err)
-	}
-	defer client.Close()
-	if err := client.Hello("localhost"); err != nil {
-		return fmt.Errorf("SMTP EHLO: %w", err)
-	}
-	if available, _ := client.Extension("STARTTLS"); !available {
-		return errors.New("SMTP STARTTLS is unavailable")
-	}
-	if tlsConfig == nil {
-		tlsConfig = &tls.Config{ServerName: host}
-	}
-	// StartTLS verifies the certificate and repeats EHLO over the encrypted tunnel.
-	if err := client.StartTLS(tlsConfig); err != nil {
-		return fmt.Errorf("SMTP STARTTLS: %w", err)
-	}
-	// The verified TLS EHLO completes the support check. QUIT is session cleanup.
-	_ = client.Quit()
-	return nil
-}
-
 func probeError(err error) string {
 	var networkError net.Error
 	if errors.Is(err, context.DeadlineExceeded) || (errors.As(err, &networkError) && networkError.Timeout()) {
 		return "timeout"
 	}
 	// Keep diagnostics free of candidate proxy definitions and credentials.
-	if strings.Contains(err.Error(), "SMTP") {
-		return "smtp_error"
-	}
 	return "request_or_content_error"
 }

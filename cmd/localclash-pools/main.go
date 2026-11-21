@@ -44,10 +44,11 @@ func run(ctx context.Context, args []string) error {
 			return errors.New("usage: localclash-pools features")
 		}
 		return json.NewEncoder(os.Stdout).Encode(struct {
+			SMTPPool                 bool `json:"smtp_pool"`
 			YouTubeBulk              bool `json:"youtube_bulk"`
 			EnhancedFilter           bool `json:"enhanced_filter"`
 			EnhancedChatGPTStreaming bool `json:"enhanced_chatgpt_streaming"`
-		}{YouTubeBulk: true, EnhancedFilter: true, EnhancedChatGPTStreaming: true})
+		}{SMTPPool: true, YouTubeBulk: true, EnhancedFilter: true, EnhancedChatGPTStreaming: true})
 	case "prepare":
 		core := flags.String("core", "", "Mihomo executable")
 		workDir := flags.String("runtime", "", "Mihomo runtime directory")

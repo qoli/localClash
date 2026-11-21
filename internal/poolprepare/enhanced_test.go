@@ -1,19 +1,12 @@
 package poolprepare
 
 import (
-	"bufio"
 	"bytes"
 	"context"
-	"crypto/tls"
-	"errors"
-	"fmt"
 	"image"
 	"image/jpeg"
 	"io"
-	"net"
 	"net/http"
-	"net/http/httptest"
-	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -71,7 +64,7 @@ func TestEnhancedProbesRunConcurrentlyAndAffectQualification(t *testing.T) {
 	if err := jpeg.Encode(&thumbnail, image.NewRGBA(image.Rect(0, 0, 92, 138)), nil); err != nil {
 		t.Fatal(err)
 	}
-	started := make(chan string, 5)
+	started := make(chan string, 4)
 	release := make(chan struct{})
 	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		started <- req.URL.String()
@@ -79,7 +72,7 @@ func TestEnhancedProbesRunConcurrentlyAndAffectQualification(t *testing.T) {
 		var body string
 		switch req.URL.String() {
 		case ubuntuUpdatesURL:
-			body = ubuntuRelease("noble-updates")
+			body = "unavailable"
 		case ubuntuSecurityURL:
 			body = ubuntuRelease("noble-security")
 		case tmdbImageURL:
@@ -93,16 +86,12 @@ func TestEnhancedProbesRunConcurrentlyAndAffectQualification(t *testing.T) {
 	})}
 	done := make(chan enhancedObservation, 1)
 	go func() {
-		done <- measureEnhanced(t.Context(), client, func(ctx context.Context, address string) (net.Conn, error) {
-			started <- address
-			<-release
-			return nil, errors.New("blocked SMTP")
-		})
+		done <- measureEnhanced(t.Context(), client)
 	}()
 	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
 	seen := make(map[string]bool)
-	for range 5 {
+	for range 4 {
 		select {
 		case target := <-started:
 			seen[target] = true
@@ -113,12 +102,12 @@ func TestEnhancedProbesRunConcurrentlyAndAffectQualification(t *testing.T) {
 	}
 	close(release)
 	observation := <-done
-	if len(seen) != 5 || observation.CheckedAt.IsZero() || observation.passed() {
+	if len(seen) != 4 || observation.CheckedAt.IsZero() || observation.passed() {
 		t.Fatalf("observations = %+v, targets = %v", observation, seen)
 	}
 	summary := &capability.EnhancedProbeSummary{Checks: make(map[string]capability.NetworkProbeSummary)}
 	observation.record(summary)
-	if summary.Probed != 1 || summary.Passed != 0 || summary.Checks["smtp_starttls"].Passed != 0 || summary.Checks["tmdb_image"].Passed != 1 {
+	if summary.Probed != 1 || summary.Passed != 0 || len(summary.Checks) != 4 || summary.Checks["ubuntu_updates"].Passed != 0 || summary.Checks["tmdb_image"].Passed != 1 {
 		t.Fatalf("summary = %+v", summary)
 	}
 	measured := measurement{worstDoH: time.Millisecond, youtube: &youtubeObservation{HTTPStatus: http.StatusNoContent}}
@@ -132,102 +121,5 @@ func TestEnhancedProbesRunConcurrentlyAndAffectQualification(t *testing.T) {
 	observation.Checks[0].Passed = true
 	if !measured.qualified() {
 		t.Fatal("a node passing all enhanced checks was rejected")
-	}
-}
-
-func TestSMTPRequiresGreetingSTARTTLSAndVerifiedCertificate(t *testing.T) {
-	certificateServer := httptest.NewTLSServer(http.NotFoundHandler())
-	defer certificateServer.Close()
-	trustedTLS := certificateServer.Client().Transport.(*http.Transport).TLSClientConfig.Clone()
-	trustedTLS.ServerName = "example.com"
-	for _, mode := range []string{"success", "reject greeting", "no STARTTLS", "untrusted certificate"} {
-		t.Run(mode, func(t *testing.T) {
-			commands := make(chan []string, 1)
-			dial := func(context.Context, string) (net.Conn, error) {
-				client, server := net.Pipe()
-				go func() {
-					defer server.Close()
-					var received []string
-					defer func() { commands <- received }()
-					if mode == "reject greeting" {
-						fmt.Fprint(server, "554 unavailable\r\n")
-						return
-					}
-					fmt.Fprint(server, "220 smtp.example ready\r\n")
-					reader := bufio.NewReader(server)
-					for {
-						line, err := reader.ReadString('\n')
-						if err != nil {
-							return
-						}
-						command := strings.TrimSpace(line)
-						received = append(received, command)
-						switch command {
-						case "EHLO localhost":
-							if len(received) == 1 && mode != "no STARTTLS" {
-								fmt.Fprint(server, "250-smtp.example\r\n250 STARTTLS\r\n")
-							} else {
-								fmt.Fprint(server, "250 smtp.example\r\n")
-							}
-						case "STARTTLS":
-							fmt.Fprint(server, "220 begin TLS\r\n")
-							encrypted := tls.Server(server, certificateServer.TLS)
-							if err := encrypted.Handshake(); err != nil {
-								return
-							}
-							server = encrypted
-							reader = bufio.NewReader(server)
-						case "QUIT":
-							fmt.Fprint(server, "221 bye\r\n")
-							return
-						default:
-							t.Errorf("unexpected SMTP command %q", command)
-							return
-						}
-					}
-				}()
-				return client, nil
-			}
-			ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
-			defer cancel()
-			config := trustedTLS
-			if mode == "untrusted certificate" {
-				config = nil
-			}
-			err := probeSMTP(ctx, dial, "example.com:587", config)
-			if (err == nil) != (mode == "success") {
-				t.Fatalf("SMTP %s = %v", mode, err)
-			}
-			got := <-commands
-			if mode == "success" && !reflect.DeepEqual(got, []string{"EHLO localhost", "STARTTLS", "EHLO localhost", "QUIT"}) {
-				t.Fatalf("SMTP commands = %v", got)
-			}
-		})
-	}
-}
-
-func TestSMTPStalledGreetingHonorsCancellation(t *testing.T) {
-	ctx, cancel := context.WithCancel(t.Context())
-	connected := make(chan struct{})
-	dial := func(context.Context, string) (net.Conn, error) {
-		client, server := net.Pipe()
-		go func() {
-			defer server.Close()
-			close(connected)
-			io.Copy(io.Discard, server)
-		}()
-		return client, nil
-	}
-	done := make(chan error, 1)
-	go func() { done <- probeSMTP(ctx, dial, smtpProbeAddress, nil) }()
-	<-connected
-	cancel()
-	select {
-	case err := <-done:
-		if err == nil {
-			t.Fatal("canceled SMTP probe succeeded")
-		}
-	case <-time.After(time.Second):
-		t.Fatal("SMTP greeting kept waiting after cancellation")
 	}
 }

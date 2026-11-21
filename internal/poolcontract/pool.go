@@ -11,6 +11,7 @@ import (
 )
 
 const (
+	SMTPCapability       = "smtp.gmail.starttls.v1"
 	AutoCapability       = "network.doh.qualified.v1"
 	ChatGPTCapability    = "openai.chatgpt.oauth_statsig.v1"
 	AutoLimit            = 50
@@ -29,6 +30,8 @@ type Pool struct {
 
 func Lookup(capability string) (Pool, bool) {
 	switch capability {
+	case SMTPCapability:
+		return Pool{capability, "localclash-qualified-smtp"}, true
 	case BulkCapability:
 		return Pool{capability, "localclash-qualified-youtube-bulk"}, true
 	case AutoCapability:

@@ -8,10 +8,10 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-func TestPreparedAutoProviderRequiresYouTubeQualificationVersion(t *testing.T) {
+func TestPreparedAutoProviderRejectsPreSMTPSplitSnapshot(t *testing.T) {
 	pool, _ := Lookup(AutoCapability)
 	path := filepath.Join(t.TempDir(), pool.Provider+".yaml")
-	legacy := []byte(`{"x-localclash-qualification-version":2,"proxies":[{"name":"old","type":"ss"}]}`)
+	legacy := []byte(`{"x-localclash-qualification-version":3,"proxies":[{"name":"old","type":"ss"}]}`)
 	if err := WriteFile(path, legacy); err != nil {
 		t.Fatal(err)
 	}

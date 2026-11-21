@@ -139,7 +139,7 @@ func decodePoolConfig(data []byte) (poolcontract.Input, []poolcontract.Pool, err
 		return poolcontract.Input{}, nil, errors.New("loaded configuration has no matching managed pool revision")
 	}
 	var pools []poolcontract.Pool
-	for _, id := range []string{poolcontract.AutoCapability, poolcontract.ChatGPTCapability, poolcontract.BulkCapability} {
+	for _, id := range []string{poolcontract.AutoCapability, poolcontract.ChatGPTCapability, poolcontract.SMTPCapability, poolcontract.BulkCapability} {
 		pool, _ := poolcontract.Lookup(id)
 		provider, exists := config.Providers[pool.Provider]
 		if !exists {

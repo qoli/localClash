@@ -211,14 +211,27 @@ func TestRealLocalClashDefaultTemplateIsLayered(t *testing.T) {
 	if summary.ID != TemplateLocalClashDefault || config.Version != localconfig.ConfigSchemaVersion {
 		t.Fatalf("template = %+v config version = %d, want current localclash default", summary, config.Version)
 	}
-	if len(config.ProxyGroups) != 11 || len(config.PolicyGroups) != 33 || len(config.Packs) != 37 || len(config.TransportRules) != 1 || len(config.CustomRules) != 7 {
-		t.Fatalf("default template counts: proxy_groups=%d policy_groups=%d packs=%d transport_rules=%d custom_rules=%d, want 11/33/37/1/7", len(config.ProxyGroups), len(config.PolicyGroups), len(config.Packs), len(config.TransportRules), len(config.CustomRules))
+	if len(config.ProxyGroups) != 12 || len(config.PolicyGroups) != 34 || len(config.Packs) != 37 || len(config.TransportRules) != 1 || len(config.CustomRules) != 8 {
+		t.Fatalf("default template counts: proxy_groups=%d policy_groups=%d packs=%d transport_rules=%d custom_rules=%d, want 12/34/37/1/8", len(config.ProxyGroups), len(config.PolicyGroups), len(config.Packs), len(config.TransportRules), len(config.CustomRules))
 	}
 	if hasPack(config.Packs, "blackmatrix7", "Crypto") {
 		t.Fatal("default template must not include the broad Crypto pack")
 	}
 	if _, exists := config.PolicyGroups["🪙 Crypto"]; exists {
 		t.Fatal("default template must not include the withdrawn Crypto group")
+	}
+	smtp := config.ProxyGroups["📮 SMTP 支持出口"]
+	if smtp.Capability != poolcontract.SMTPCapability || !smtp.Optional || smtp.Mode != "manual" {
+		t.Fatalf("SMTP pool = %+v", smtp)
+	}
+	var submission []localconfig.CustomRuleLine
+	for _, custom := range config.CustomRules {
+		if custom.Target == "📧 SMTP" {
+			submission = append(submission, custom.Rules...)
+		}
+	}
+	if !reflect.DeepEqual(submission, []localconfig.CustomRuleLine{{Type: "domain_tcp", Value: "smtp.gmail.com:587"}}) {
+		t.Fatalf("SMTP rules = %+v", submission)
 	}
 	wantBinanceExits := []string{"🇹🇼 台湾节点", "🇺🇸 美国节点", "🇯🇵 日本节点", "⚡ 自动选择", "🎯 手动选择"}
 	if group := config.PolicyGroups["🪙 Binance"]; group.Mode != "manual" || !reflect.DeepEqual(group.Exits, wantBinanceExits) {
@@ -328,6 +341,7 @@ func TestRealLocalClashDefaultTemplateIsLayered(t *testing.T) {
 		t.Fatalf("transport rule = %+v, want QUIC UDP/443 target", got)
 	}
 	wantExitsByGroup := map[string][]string{
+		"📧 SMTP":     {"⚡ 自动选择", "🇭🇰 香港节点", "🇹🇼 台湾节点", "🇯🇵 日本节点", "🇸🇬 新加坡节点", "🇺🇸 美国节点", "🇰🇷 韩国节点", "🎯 手动选择", "DIRECT", "📮 SMTP 支持出口"},
 		"🎮 Steam":    {"⚡ 自动选择", "🎯 手动选择", "🌐 全球直连", "🇭🇰 香港节点", "🇺🇸 美国节点", "🇯🇵 日本节点", "🇸🇬 新加坡节点", "🇹🇼 台湾节点", "🇰🇷 韩国节点"},
 		"🎮 游戏平台":     {"🌐 全球直连", "🎯 手动选择", "⚡ 自动选择", "🇭🇰 香港节点", "🇺🇸 美国节点", "🇯🇵 日本节点", "🇸🇬 新加坡节点", "🇹🇼 台湾节点", "🇰🇷 韩国节点"},
 		"🕹 Bahamut":  {"🇹🇼 台湾节点", "🎯 手动选择", "🌐 全球直连"},

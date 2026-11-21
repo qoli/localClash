@@ -192,9 +192,7 @@ func probeAutoBatch(ctx context.Context, proxies []map[string]any, candidates []
 		defer client.CloseIdleConnections()
 		measured := measureAuto(ctx, client)
 		if opts.EnhancedFilter && measured.basicQualified() {
-			observation := measureEnhanced(ctx, client, func(ctx context.Context, address string) (net.Conn, error) {
-				return session.DialContext(ctx, index, address)
-			})
+			observation := measureEnhanced(ctx, client)
 			measured.enhanced = &observation
 		}
 		return measured
@@ -384,6 +382,8 @@ func Qualify(ctx context.Context, pool poolcontract.Pool, input poolcontract.Inp
 		opts.Concurrency = DefaultConcurrency
 	}
 	switch pool.Capability {
+	case poolcontract.SMTPCapability:
+		return qualifySMTP(ctx, input, names, opts)
 	case poolcontract.BulkCapability:
 		if !opts.EnhancedFilter {
 			return poolcontract.BulkSeed(names), nil

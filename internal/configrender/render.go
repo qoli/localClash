@@ -183,7 +183,7 @@ func Render(opts Options) (Result, error) {
 			selection = &customSelection
 		}
 		if !poolsEnabled || !enhanced {
-			selection = withoutBulkPool(selection)
+			selection = withoutInactivePools(selection, poolsEnabled)
 		}
 		selection = selectionWithRequiredTargets(selection, requiredTargets)
 		renderedFragment, renderStats, err := rulespkg.RenderSelectionWithStats(*selection, opts.RulesCacheDir, proxyNames)
@@ -727,11 +727,11 @@ func buildDynamicConfig(proxies []any, fragment *rulespkg.Fragment, fallbackTarg
 }
 
 // An empty optional group is removed by the normal selection renderer.
-func withoutBulkPool(selection *rulespkg.Selection) *rulespkg.Selection {
+func withoutInactivePools(selection *rulespkg.Selection, poolsEnabled bool) *rulespkg.Selection {
 	copy := *selection
 	copy.ProxyGroups = maps.Clone(selection.ProxyGroups)
 	for name, group := range copy.ProxyGroups {
-		if group.PoolCapability == poolcontract.BulkCapability {
+		if group.PoolCapability == poolcontract.BulkCapability || (!poolsEnabled && group.PoolCapability == poolcontract.SMTPCapability) {
 			copy.ProxyGroups[name] = rulespkg.ProxyGroup{Optional: true, Auto: true}
 		}
 	}

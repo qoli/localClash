@@ -933,3 +933,31 @@ func proxyGroupNames(groups []map[string]any) map[string]bool {
 	}
 	return out
 }
+
+func TestDomainTCPRulePrecedesProviderAndHonorsUserOverride(t *testing.T) {
+	selection := Selection{
+		PriorityCustomRules: []CustomRule{{
+			ID: "custom-site", Target: "DIRECT", Rules: []CustomRuleLine{{Type: "domain", Value: "mail.example"}},
+		}},
+		CustomRules: []CustomRule{{
+			ID: "submission", Target: "REJECT", Rules: []CustomRuleLine{{Type: "domain_tcp", Value: "mail.example:587"}},
+		}},
+		RuleProviders: []ExternalRuleProvider{{
+			ID: "mail", Target: "DIRECT", Type: "file", Behavior: "domain", Format: "yaml", Path: "./mail.yaml",
+		}},
+	}
+	fragment, err := RenderFragment(selection, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"DOMAIN,mail.example,DIRECT", "AND,((DOMAIN,mail.example),(NETWORK,TCP),(DST-PORT,587)),REJECT", "RULE-SET,mail,DIRECT"}
+	if !reflect.DeepEqual(fragment.Rules, want) {
+		t.Fatalf("rules=%v", fragment.Rules)
+	}
+	for _, value := range []string{"mail.example", ":587", "mail.example:0", "mail.example:65536", "mail.example,REJECT:587"} {
+		selection.CustomRules[0].Rules[0].Value = value
+		if _, err := RenderFragment(selection, nil); err == nil {
+			t.Errorf("accepted invalid domain_tcp endpoint %q", value)
+		}
+	}
+}

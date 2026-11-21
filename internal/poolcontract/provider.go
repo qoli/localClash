@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	autoQualificationVersion    = 3
+	autoQualificationVersion    = 4
 	chatGPTQualificationVersion = 2
 	StatsigCountryKey           = "x-localclash-statsig-country"
 )
@@ -23,7 +23,7 @@ type providerDocument struct {
 func PreparedProvider(pool Pool, path string) (bool, error) {
 	var version int
 	switch pool.Capability {
-	case BulkCapability:
+	case SMTPCapability, BulkCapability:
 		version = 1
 	case AutoCapability:
 		version = autoQualificationVersion
@@ -88,7 +88,7 @@ func ProviderData(pool Pool, input Input, qualified []string, statsigCountries m
 	}
 	document := providerDocument{Proxies: proxies}
 	switch pool.Capability {
-	case BulkCapability:
+	case SMTPCapability, BulkCapability:
 		document.QualificationVersion = 1
 	case AutoCapability:
 		document.QualificationVersion = autoQualificationVersion

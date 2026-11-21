@@ -11,7 +11,7 @@ import (
 	"localclash/internal/poolcontract"
 )
 
-const autoHistoryVersion = 1
+const autoHistoryVersion = 2
 
 type autoObservation struct {
 	WorstDoHNS          int64                `json:"worst_doh_ns,omitempty"`
@@ -50,16 +50,38 @@ func readAutoHistory(runtimeDir string) (map[string]autoObservation, error) {
 	if err := json.Unmarshal(data, &saved); err != nil {
 		return observations, fmt.Errorf("decode automatic probe history: %w", err)
 	}
-	if saved.Version != autoHistoryVersion {
+	if saved.Version != 1 && saved.Version != autoHistoryVersion {
 		return observations, fmt.Errorf("unsupported automatic probe history version %d", saved.Version)
 	}
 	for fingerprint, observation := range saved.Nodes {
+		// Pre-split history could push a fast exit to the back of every queue
+		// solely because SMTP failed. Reconsider it using its measured DoH time.
+		// History orders probes only. Admission still requires a fresh success.
+		if saved.Version == 1 && observation.ConsecutiveFailures > 0 && observation.Enhanced.failedOnlySMTP() {
+			observation.ConsecutiveFailures = 0
+		}
 		if observation.WorstDoHNS >= 0 && observation.ConsecutiveFailures >= 0 &&
 			(observation.WorstDoHNS > 0 || observation.ConsecutiveFailures > 0) {
 			observations[fingerprint] = observation
 		}
 	}
 	return observations, nil
+}
+
+func (o *enhancedObservation) failedOnlySMTP() bool {
+	if o == nil {
+		return false
+	}
+	smtpFailed := false
+	for _, check := range o.Checks {
+		if !check.Passed {
+			if check.Probe != "smtp_starttls" {
+				return false
+			}
+			smtpFailed = true
+		}
+	}
+	return smtpFailed
 }
 
 func writeAutoHistory(runtimeDir string, candidates []autoCandidate, observations map[string]autoObservation) error {

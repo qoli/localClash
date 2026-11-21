@@ -336,8 +336,8 @@ func inputSchemaForTool(name string) map[string]any {
 			"type":                 "object",
 			"additionalProperties": false,
 			"properties": map[string]any{
-				"type":       map[string]any{"type": "string", "enum": []string{"domain", "domain_suffix", "domain_wildcard", "domain_regex", "ip_cidr", "ip_cidr6", "geoip"}, "description": "Mihomo rule type to generate. Use domain_wildcard for Mihomo * and ? host matching, or domain_regex for regular expressions."},
-				"value":      map[string]any{"type": "string", "description": "Domain, domain suffix, domain wildcard, domain regex, CIDR, or GEOIP tag value."},
+				"type":       map[string]any{"type": "string", "enum": []string{"domain", "domain_tcp", "domain_suffix", "domain_wildcard", "domain_regex", "ip_cidr", "ip_cidr6", "geoip"}, "description": "Mihomo rule type to generate. Use domain_wildcard for Mihomo * and ? host matching, or domain_regex for regular expressions."},
+				"value":      map[string]any{"type": "string", "description": "Domain, domain:port for domain_tcp, domain suffix, domain wildcard, domain regex, CIDR, or GEOIP tag value."},
 				"no_resolve": map[string]any{"type": "boolean", "description": "Append no-resolve for IP CIDR or GEOIP rules when needed."},
 			},
 			"required": []string{"type", "value"},

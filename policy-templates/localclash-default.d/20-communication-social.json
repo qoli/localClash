@@ -3,7 +3,31 @@
   "description": "Add communication and social media business groups.",
   "config": {
     "version": 3,
+    "proxy_groups": {
+      "📮 SMTP 支持出口": {
+        "mode": "manual",
+        "capability": "smtp.gmail.starttls.v1",
+        "optional": true,
+        "reason": "只列出已通过 Gmail SMTP 587 STARTTLS 握手的出口。"
+      }
+    },
     "policy_groups": {
+      "📧 SMTP": {
+        "mode": "manual",
+        "exits": [
+          "⚡ 自动选择",
+          "🇭🇰 香港节点",
+          "🇹🇼 台湾节点",
+          "🇯🇵 日本节点",
+          "🇸🇬 新加坡节点",
+          "🇺🇸 美国节点",
+          "🇰🇷 韩国节点",
+          "🎯 手动选择",
+          "DIRECT",
+          "📮 SMTP 支持出口"
+        ],
+        "reason": "为 Gmail SMTP 提交连接选择出口，默认自动选择。"
+      },
       "💬 通信服务": {
         "mode": "manual",
         "exits": [
@@ -68,6 +92,13 @@
       }
     ],
     "custom_rules": [
+      {
+        "id": "gmail-smtp-submission",
+        "target": "📧 SMTP",
+        "rules": [
+          { "type": "domain_tcp", "value": "smtp.gmail.com:587" }
+        ]
+      },
       {
         "id": "telegram-geoip",
         "target": "💬 通信服务",

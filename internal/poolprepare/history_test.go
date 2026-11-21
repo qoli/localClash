@@ -101,3 +101,23 @@ func TestAutoHistoryRecordsLatestYouTubeAttemptWithLegacyHistory(t *testing.T) {
 		t.Fatalf("history after a skipped YouTube check = %+v, YouTube %+v, error %v", got, got.YouTube, err)
 	}
 }
+
+func TestLegacySMTPFailuresDoNotDemoteAutoCandidates(t *testing.T) {
+	dir := t.TempDir()
+	path := autoHistoryPath(dir)
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		t.Fatal(err)
+	}
+	legacy := []byte(`{"version":1,"nodes":{
+ "smtp":{"worst_doh_ns":200,"consecutive_failures":3,"enhanced":{"checks":[{"probe":"smtp_starttls","passed":false},{"probe":"tmdb_image","passed":true}]}},
+ "both":{"worst_doh_ns":300,"consecutive_failures":2,"enhanced":{"checks":[{"probe":"smtp_starttls","passed":false},{"probe":"tmdb_image","passed":false}]}},
+ "basic":{"consecutive_failures":1}
+ }}`)
+	if err := os.WriteFile(path, legacy, 0600); err != nil {
+		t.Fatal(err)
+	}
+	history, err := readAutoHistory(dir)
+	if err != nil || history["smtp"].WorstDoHNS != 200 || history["smtp"].ConsecutiveFailures != 0 || history["both"].ConsecutiveFailures != 2 || history["basic"].ConsecutiveFailures != 1 {
+		t.Fatalf("history=%v err=%v", history, err)
+	}
+}

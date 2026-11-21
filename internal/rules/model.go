@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/netip"
 	"net/url"
 	"os"
@@ -647,6 +648,16 @@ func renderCustomRuleLines(custom CustomRule, target string) ([]string, error) {
 	return lines, nil
 }
 
+// ParseDomainTCP reads an exact host:port for a TCP-only domain rule.
+func ParseDomainTCP(value string) (string, uint16, error) {
+	host, service, err := net.SplitHostPort(value)
+	port, portErr := strconv.ParseUint(service, 10, 16)
+	if err != nil || portErr != nil || port == 0 || host == "" || strings.ContainsAny(host, ",():/\\*?[] \t\r\n") {
+		return "", 0, fmt.Errorf("invalid domain_tcp endpoint %q", value)
+	}
+	return host, uint16(port), nil
+}
+
 func renderCustomRuleLine(id string, rule CustomRuleLine, target string) (string, error) {
 	value := strings.TrimSpace(rule.Value)
 	if value == "" {
@@ -654,6 +665,12 @@ func renderCustomRuleLine(id string, rule CustomRuleLine, target string) (string
 	}
 	var kind string
 	switch strings.ToLower(strings.TrimSpace(rule.Type)) {
+	case "domain_tcp":
+		host, port, err := ParseDomainTCP(value)
+		if err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("AND,((DOMAIN,%s),(NETWORK,TCP),(DST-PORT,%d)),%s", host, port, target), nil
 	case "domain":
 		kind = "DOMAIN"
 	case "domain_suffix":

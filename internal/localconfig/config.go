@@ -1345,6 +1345,10 @@ func normalizeCustomRuleLine(id string, rule CustomRuleLine) (CustomRuleLine, er
 		return CustomRuleLine{}, fmt.Errorf("custom rule %q contains an empty value", id)
 	}
 	switch rule.Type {
+	case "domain_tcp":
+		if _, _, err := rules.ParseDomainTCP(rule.Value); err != nil {
+			return CustomRuleLine{}, fmt.Errorf("custom rule %q: %w", id, err)
+		}
 	case "domain", "domain_suffix", "domain_wildcard", "domain_regex", "ip_cidr", "ip_cidr6", "geoip":
 	default:
 		return CustomRuleLine{}, fmt.Errorf("custom rule %q type %q is unsupported", id, rule.Type)

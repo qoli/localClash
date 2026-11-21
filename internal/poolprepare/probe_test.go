@@ -109,7 +109,7 @@ func TestEnhancedAutoQualificationUsesBasicResultsForShortRounds(t *testing.T) {
 					switch {
 					case index < test.basicPassed:
 						attempt.enhanced = &enhancedObservation{Checks: []networkObservation{{
-							Probe: "smtp_starttls", Passed: index < test.enhancedPassed,
+							Probe: "ubuntu_updates", Passed: index < test.enhancedPassed,
 						}}}
 					case index%2 == 0:
 						attempt.youtube.HTTPStatus = http.StatusForbidden
