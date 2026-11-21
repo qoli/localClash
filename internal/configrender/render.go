@@ -4,6 +4,7 @@ import (
 	"encoding/gob"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"sort"
@@ -39,6 +40,7 @@ type Options struct {
 	RulesCacheDir      string
 	RuntimeProfilePath string
 	PoolsEnabled       *bool
+	EnhancedFilter     *bool
 	CustomSitesProxy   string
 	CustomSitesDirect  string
 	CustomSitesReject  string
@@ -140,6 +142,14 @@ func Render(opts Options) (Result, error) {
 	finish(nil, map[string]any{"proxy_count": len(proxyNames)})
 	requiredTargets := dnsProxyGroupReferences(profile.Mihomo["dns"])
 
+	poolsEnabled := !runtimeFile.PoolsDisabled
+	if opts.PoolsEnabled != nil {
+		poolsEnabled = *opts.PoolsEnabled
+	}
+	enhanced := runtimeFile.EnhancedFilter
+	if opts.EnhancedFilter != nil {
+		enhanced = *opts.EnhancedFilter
+	}
 	var fragment *rulespkg.Fragment
 	var selection *rulespkg.Selection
 	if opts.Selection != nil || opts.PacksSelectionPath != "" {
@@ -172,6 +182,9 @@ func Render(opts Options) (Result, error) {
 			}
 			selection = &customSelection
 		}
+		if !poolsEnabled || !enhanced {
+			selection = withoutBulkPool(selection)
+		}
 		selection = selectionWithRequiredTargets(selection, requiredTargets)
 		renderedFragment, renderStats, err := rulespkg.RenderSelectionWithStats(*selection, opts.RulesCacheDir, proxyNames)
 		if err != nil {
@@ -195,10 +208,6 @@ func Render(opts Options) (Result, error) {
 	if err != nil {
 		finish(err, nil)
 		return Result{}, err
-	}
-	poolsEnabled := !runtimeFile.PoolsDisabled
-	if opts.PoolsEnabled != nil {
-		poolsEnabled = *opts.PoolsEnabled
 	}
 	if err := configurePools(dynamic, source, selection, poolsEnabled, runtimeFile.Core == runtimeprofile.CoreSmart); err != nil {
 		finish(err, nil)
@@ -717,6 +726,18 @@ func buildDynamicConfig(proxies []any, fragment *rulespkg.Fragment, fallbackTarg
 	return config, nil
 }
 
+// An empty optional group is removed by the normal selection renderer.
+func withoutBulkPool(selection *rulespkg.Selection) *rulespkg.Selection {
+	copy := *selection
+	copy.ProxyGroups = maps.Clone(selection.ProxyGroups)
+	for name, group := range copy.ProxyGroups {
+		if group.PoolCapability == poolcontract.BulkCapability {
+			copy.ProxyGroups[name] = rulespkg.ProxyGroup{Optional: true, Auto: true}
+		}
+	}
+	return &copy
+}
+
 func configurePools(dynamic, source map[string]any, selection *rulespkg.Selection, enabled, smart bool) error {
 	if !enabled {
 		dynamic[poolcontract.DisabledKey] = true
@@ -750,6 +771,20 @@ func configurePools(dynamic, source map[string]any, selection *rulespkg.Selectio
 			"payload": []map[string]any{poolcontract.Reject()},
 		}
 		groupType := stringValue(poolGroups[i]["type"])
+		if pool.Capability == poolcontract.BulkCapability {
+			if !smart && groupType == "url-test" {
+				poolGroups[i]["type"] = "fallback"
+			}
+			names, err := proxyprobe.SelectableNames(input.Proxies)
+			if err != nil {
+				return err
+			}
+			seed, _, err := poolcontract.BulkProxies(input, poolcontract.BulkSeed(names))
+			if err != nil {
+				return err
+			}
+			provider["payload"] = seed
+		}
 		if smart && pool.Capability == poolcontract.ChatGPTCapability && (groupType == "url-test" || groupType == "smart") {
 			provider["override"] = map[string]any{"override-expr": []string{poolcontract.ChatGPTSmartOverride}}
 		} else if providers[pool.Provider] != nil {
@@ -861,6 +896,9 @@ func applySmartCoreProxyGroups(config map[string]any, opts runtimeprofile.SmartO
 			if selection != nil {
 				if selected, exists := selection.ProxyGroups[name]; exists {
 					priority := selected.SmartPriority
+					if selected.PoolCapability == poolcontract.BulkCapability && len(priority) == 0 {
+						priority = poolcontract.BulkSmartPriority()
+					}
 					measuredCountry := selected.PoolCapability == poolcontract.ChatGPTCapability
 					if measuredCountry {
 						priority = poolcontract.ChatGPTSmartPriority(priority)

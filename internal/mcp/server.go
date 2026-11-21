@@ -2540,9 +2540,10 @@ func (s *Server) evaluateLocalClashAfterRefresh(ctx context.Context, configPath,
 	profile, _, err := runtimeprofile.Load(presetPath)
 	if err == nil && !profile.PoolsDisabled {
 		impact.Capabilities, err = s.preparePools(ctx, poollaunch.Options{
-			Workspace: s.workspaceRoot(),
-			Core:      corePath,
-			Runtime:   filepath.Dir(outputPath),
+			EnhancedFilter: profile.EnhancedFilter,
+			Workspace:      s.workspaceRoot(),
+			Core:           corePath,
+			Runtime:        filepath.Dir(outputPath),
 		}, config, subscriptionDoc)
 	}
 	if err != nil {

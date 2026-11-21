@@ -37,6 +37,7 @@ func Prepare(ctx context.Context, input poolcontract.Input, pools []poolcontract
 		}
 		pending := make([]poolPreparation, 0, len(pools))
 		for _, pool := range pools {
+
 			path := filepath.Join(opts.RuntimeDir, pool.Path(input.Revision))
 			if !opts.Force && !opts.EnhancedFilter {
 				ready, err := poolcontract.PreparedProvider(pool, path)
@@ -81,7 +82,7 @@ func Prepare(ctx context.Context, input poolcontract.Input, pools []poolcontract
 }
 
 func writeProvider(item poolPreparation, input poolcontract.Input) error {
-	data, _, err := poolcontract.ProviderData(item.pool, input, item.result.Qualified, item.result.StatsigCountries)
+	data, _, err := poolcontract.ResultProviderData(item.pool, input, item.result)
 	if err != nil {
 		return err
 	}

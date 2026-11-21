@@ -292,9 +292,10 @@ func refreshProductCapabilities(ctx context.Context, state appinit.RuntimeState,
 	started := time.Now()
 	writeProductCapabilityStage(logOutput, "started", started, nil, nil)
 	results, err := preparePoolWorker(ctx, poollaunch.Options{
-		Workspace: productWorkspaceRoot(state),
-		Core:      mihomoMaterialCore(normalizeCorePathForState(state, state.Paths.CorePath)),
-		Runtime:   state.Paths.MihomoRuntimeDir,
+		EnhancedFilter: profile.EnhancedFilter,
+		Workspace:      productWorkspaceRoot(state),
+		Core:           mihomoMaterialCore(normalizeCorePathForState(state, state.Paths.CorePath)),
+		Runtime:        state.Paths.MihomoRuntimeDir,
 	}, config, subscriptionDoc)
 	profiles := make([]map[string]any, 0, len(results))
 	for _, result := range results {

@@ -22,6 +22,7 @@ import (
 	"localclash/internal/corerun"
 	"localclash/internal/mihomoapi"
 	"localclash/internal/poolcontract"
+	"localclash/internal/proxyprobe"
 	"localclash/internal/runtimesupervision"
 
 	"gopkg.in/yaml.v3"
@@ -138,7 +139,7 @@ func decodePoolConfig(data []byte) (poolcontract.Input, []poolcontract.Pool, err
 		return poolcontract.Input{}, nil, errors.New("loaded configuration has no matching managed pool revision")
 	}
 	var pools []poolcontract.Pool
-	for _, id := range []string{poolcontract.AutoCapability, poolcontract.ChatGPTCapability} {
+	for _, id := range []string{poolcontract.AutoCapability, poolcontract.ChatGPTCapability, poolcontract.BulkCapability} {
 		pool, _ := poolcontract.Lookup(id)
 		provider, exists := config.Providers[pool.Provider]
 		if !exists {
@@ -284,7 +285,7 @@ func (live *activeRuntime) update(ctx context.Context, pool poolcontract.Pool, e
 }
 
 func publish(ctx context.Context, live *activeRuntime, pool poolcontract.Pool, path string, input poolcontract.Input, result capability.Result) error {
-	data, names, err := poolcontract.ProviderData(pool, input, result.Qualified, result.StatsigCountries)
+	data, names, err := poolcontract.ResultProviderData(pool, input, result)
 	if err != nil {
 		return err
 	}
@@ -341,6 +342,41 @@ func verifyPoolInputs(previous, current runtimesupervision.State, config []byte,
 	return nil
 }
 
+// A missing file can be legitimate on the first refresh. Validate the inline
+// seed against the actual loaded members before using it as the rollback image.
+func (live *activeRuntime) bootstrapProvider(pool poolcontract.Pool, members []string) ([]byte, error) {
+	var data []byte
+	var expected []string
+	var err error
+	if pool.Capability == poolcontract.BulkCapability {
+		config, err := os.ReadFile(live.state.ConfigPath)
+		if err != nil {
+			return nil, err
+		}
+		input, _, err := decodePoolConfig(config)
+		if err != nil {
+			return nil, err
+		}
+		names, err := proxyprobe.SelectableNames(input.Proxies)
+		if err != nil {
+			return nil, err
+		}
+		data, expected, err = poolcontract.ResultProviderData(pool, input, poolcontract.BulkSeed(names))
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		data, expected, err = poolcontract.ProviderData(pool, poolcontract.Input{}, nil, nil)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if !slices.Equal(members, expected) {
+		return nil, errors.New("loaded provider has members but its provider file is missing")
+	}
+	return data, nil
+}
+
 func (live *activeRuntime) publishProvider(ctx context.Context, pool poolcontract.Pool, path string, data []byte, names, chatGPTGroups []string) error {
 	previous, err := os.ReadFile(path)
 	missing := errors.Is(err, os.ErrNotExist)
@@ -352,10 +388,7 @@ func (live *activeRuntime) publishProvider(ctx context.Context, pool poolcontrac
 		return err
 	}
 	if missing {
-		if !slices.Equal(previousNames, []string{poolcontract.RejectName}) {
-			return errors.New("loaded provider has members but its provider file is missing")
-		}
-		previous, _, err = poolcontract.ProviderData(poolcontract.Pool{}, poolcontract.Input{}, nil, nil)
+		previous, err = live.bootstrapProvider(pool, previousNames)
 		if err != nil {
 			return err
 		}

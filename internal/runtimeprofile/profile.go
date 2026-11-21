@@ -46,6 +46,7 @@ var dynamicConfigKeys = map[string]bool{
 }
 
 type File struct {
+	EnhancedFilter       bool               `yaml:"-" json:"enhanced_filter"`
 	Version              int                `yaml:"version" json:"version"`
 	Mode                 string             `yaml:"mode" json:"mode"`
 	Core                 string             `yaml:"core" json:"core"`
@@ -63,10 +64,11 @@ type Profile struct {
 }
 
 type diskFile struct {
-	Version       int    `yaml:"version" json:"version"`
-	Mode          string `yaml:"mode" json:"mode"`
-	Core          string `yaml:"core" json:"core"`
-	PoolsDisabled *bool  `json:"pools_disabled"`
+	EnhancedFilter bool   `json:"enhanced_filter,omitempty"`
+	Version        int    `yaml:"version" json:"version"`
+	Mode           string `yaml:"mode" json:"mode"`
+	Core           string `yaml:"core" json:"core"`
+	PoolsDisabled  *bool  `json:"pools_disabled"`
 }
 
 type Core struct {
@@ -194,6 +196,16 @@ func SetPoolsEnabled(path string, enabled bool) error {
 	}
 	file.PoolsDisabled = !enabled
 	return write(path, file)
+}
+
+func SetPoolOptions(path string, enabled, enhanced bool) error {
+	file, _, err := Load(path)
+	if err != nil {
+		return err
+	}
+	file.PoolsDisabled = !enabled
+	file.EnhancedFilter = enhanced
+	return write(normalizePath(path), file)
 }
 
 // PreviewConfigure resolves a requested selection without changing the profile.
@@ -358,6 +370,7 @@ func normalizeDiskFile(file diskFile) File {
 	}
 	out := DefaultFile()
 	out.Version = file.Version
+	out.EnhancedFilter = file.EnhancedFilter
 	out.Mode = file.Mode
 	out.Core = file.Core
 	if file.PoolsDisabled != nil {
@@ -539,10 +552,11 @@ func write(path string, file File) error {
 		}
 	}
 	disk := diskFile{
-		Version:       file.Version,
-		Mode:          file.Mode,
-		Core:          file.Core,
-		PoolsDisabled: &file.PoolsDisabled,
+		EnhancedFilter: file.EnhancedFilter,
+		Version:        file.Version,
+		Mode:           file.Mode,
+		Core:           file.Core,
+		PoolsDisabled:  &file.PoolsDisabled,
 	}
 	data, err := json.MarshalIndent(disk, "", "  ")
 	if err != nil {

@@ -29,6 +29,8 @@ type Pool struct {
 
 func Lookup(capability string) (Pool, bool) {
 	switch capability {
+	case BulkCapability:
+		return Pool{capability, "localclash-qualified-youtube-bulk"}, true
 	case AutoCapability:
 		return Pool{capability, "localclash-qualified-auto"}, true
 	case ChatGPTCapability:

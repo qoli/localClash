@@ -384,6 +384,11 @@ func Qualify(ctx context.Context, pool poolcontract.Pool, input poolcontract.Inp
 		opts.Concurrency = DefaultConcurrency
 	}
 	switch pool.Capability {
+	case poolcontract.BulkCapability:
+		if !opts.EnhancedFilter {
+			return poolcontract.BulkSeed(names), nil
+		}
+		return qualifyBulk(ctx, input, names, opts)
 	case poolcontract.AutoCapability:
 		return qualifyAuto(ctx, input, names, opts)
 	case poolcontract.ChatGPTCapability:

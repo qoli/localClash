@@ -211,8 +211,8 @@ func TestRealLocalClashDefaultTemplateIsLayered(t *testing.T) {
 	if summary.ID != TemplateLocalClashDefault || config.Version != localconfig.ConfigSchemaVersion {
 		t.Fatalf("template = %+v config version = %d, want current localclash default", summary, config.Version)
 	}
-	if len(config.ProxyGroups) != 10 || len(config.PolicyGroups) != 33 || len(config.Packs) != 37 || len(config.TransportRules) != 1 || len(config.CustomRules) != 7 {
-		t.Fatalf("default template counts: proxy_groups=%d policy_groups=%d packs=%d transport_rules=%d custom_rules=%d, want 10/33/37/1/7", len(config.ProxyGroups), len(config.PolicyGroups), len(config.Packs), len(config.TransportRules), len(config.CustomRules))
+	if len(config.ProxyGroups) != 11 || len(config.PolicyGroups) != 33 || len(config.Packs) != 37 || len(config.TransportRules) != 1 || len(config.CustomRules) != 7 {
+		t.Fatalf("default template counts: proxy_groups=%d policy_groups=%d packs=%d transport_rules=%d custom_rules=%d, want 11/33/37/1/7", len(config.ProxyGroups), len(config.PolicyGroups), len(config.Packs), len(config.TransportRules), len(config.CustomRules))
 	}
 	if hasPack(config.Packs, "blackmatrix7", "Crypto") {
 		t.Fatal("default template must not include the broad Crypto pack")

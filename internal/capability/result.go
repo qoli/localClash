@@ -5,7 +5,17 @@ import (
 	"strings"
 )
 
+type BulkQuality struct {
+	BelowTarget     int `json:"below_target"`
+	ResolveFailures int `json:"resolve_failures"`
+	RangeFailures   int `json:"range_failures"`
+	Measured        int `json:"measured"`
+	Reserves        int `json:"reserves"`
+}
+
 type Result struct {
+	BulkQuality            *BulkQuality      `json:"youtube_bulk,omitempty"`
+	BulkTiers              map[string]string `json:"-"`
 	Profile                string            `json:"profile"`
 	SnapshotPath           string            `json:"snapshot_path"`
 	Candidates             int               `json:"candidates"`

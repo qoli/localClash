@@ -20,15 +20,18 @@ import (
 )
 
 type Options struct {
-	Workspace string
-	Core      string
-	Runtime   string
+	EnhancedFilter bool
+	Workspace      string
+	Core           string
+	Runtime        string
 }
 
 func Prepare(ctx context.Context, opts Options, cfg localconfig.Config, doc map[string]any) ([]capability.Result, error) {
 	profiles := make([]string, 0, len(cfg.ProxyGroups))
 	for _, group := range cfg.ProxyGroups {
-		profiles = append(profiles, group.Capability)
+		if group.Capability != poolcontract.BulkCapability || opts.EnhancedFilter {
+			profiles = append(profiles, group.Capability)
+		}
 	}
 	return PrepareProfiles(ctx, opts, profiles, doc)
 }

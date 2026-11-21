@@ -15,6 +15,7 @@ import (
 	"localclash/internal/corerun"
 	"localclash/internal/materialtxn"
 	"localclash/internal/mihomotest"
+	"localclash/internal/poolcontract"
 	"localclash/internal/poollaunch"
 	"localclash/internal/rules"
 	"localclash/internal/runtimeprofile"
@@ -22,47 +23,69 @@ import (
 )
 
 type poolConfigStatus struct {
-	Enabled  bool `json:"enabled"`
-	Reloaded bool `json:"reloaded"`
+	EnhancedFilter bool `json:"enhanced_filter"`
+	Enabled        bool `json:"enabled"`
+	Reloaded       bool `json:"reloaded"`
 }
 
 func runProductPools(args []string, state appinit.RuntimeState) error {
 	flags := flag.NewFlagSet("config pools", flag.ContinueOnError)
 	asJSON := flags.Bool("json", false, "print product JSON response")
-	var enabled *bool
-	flags.Func("enabled", "enable or disable qualified proxy pools", func(value string) error {
-		if value != "true" && value != "false" {
-			return errors.New("enabled must be true or false")
+	var enabled, enhanced *bool
+	boolOption := func(target **bool) func(string) error {
+		return func(value string) error {
+			if value != "true" && value != "false" {
+				return errors.New("pool option must be true or false")
+			}
+			on := value == "true"
+			*target = &on
+			return nil
 		}
-		on := value == "true"
-		enabled = &on
-		return nil
-	})
+	}
+	flags.Func("enabled", "enable or disable qualified proxy pools", boolOption(&enabled))
+	flags.Func("enhanced-filter", "expose the enhanced YouTube throughput pool", boolOption(&enhanced))
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
 	if !*asJSON || flags.NArg() != 0 {
-		return errors.New("usage: localclash config pools [--enabled true|false] --json")
+		return errors.New("usage: localclash config pools [--enabled true|false] [--enhanced-filter true|false] --json")
 	}
-	if enabled == nil {
+	if enabled == nil && enhanced == nil {
 		profile, _, err := runtimeprofile.Load(state.Paths.RuntimeProfilePath)
 		if err != nil {
 			return err
 		}
-		return printProductOK(productEnvelope{OK: true, Summary: "Pool capability settings read.", Status: poolConfigStatus{Enabled: !profile.PoolsDisabled}})
+		return printProductOK(productEnvelope{OK: true, Summary: "Pool capability settings read.", Status: poolConfigStatus{Enabled: !profile.PoolsDisabled, EnhancedFilter: profile.EnhancedFilter}})
 	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
-	status := poolConfigStatus{Enabled: *enabled}
+	var status poolConfigStatus
 	changed := false
 	err := runtimesupervision.WithLock(state.Paths.RuntimeRoot, func() error {
 		profile, _, err := runtimeprofile.Load(state.Paths.RuntimeProfilePath)
 		// An older profile with no setting may still have pools in its rendered config.
-		if err != nil || (profile.PoolsSettingExplicit && profile.PoolsDisabled == !*enabled) {
+		if err != nil {
 			return err
 		}
-		reloaded, err := configureProductPools(ctx, state, *enabled)
+		status.Enabled = !profile.PoolsDisabled
+		status.EnhancedFilter = profile.EnhancedFilter
+		if enabled != nil {
+			status.Enabled = *enabled
+		}
+		if enhanced != nil {
+			status.EnhancedFilter = *enhanced
+		}
+		changePools := enabled != nil && (!profile.PoolsSettingExplicit || status.Enabled == profile.PoolsDisabled)
+		if !changePools && status.EnhancedFilter == profile.EnhancedFilter {
+			return nil
+		}
+		if !changePools && !status.Enabled {
+			err := runtimeprofile.SetPoolOptions(state.Paths.RuntimeProfilePath, false, status.EnhancedFilter)
+			changed = err == nil
+			return err
+		}
+		reloaded, err := configureProductPools(ctx, state, status.Enabled, status.EnhancedFilter, changePools)
 		changed = err == nil
 		status.Reloaded = reloaded
 		return err
@@ -76,7 +99,7 @@ func runProductPools(args []string, state appinit.RuntimeState) error {
 	})
 }
 
-func configureProductPools(ctx context.Context, state appinit.RuntimeState, enabled bool) (bool, error) {
+func configureProductPools(ctx context.Context, state appinit.RuntimeState, enabled, enhanced, changePools bool) (bool, error) {
 	paths := state.Paths
 	previousHash, err := mihomotest.ConfigSHA256(paths.GeneratedConfig)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -84,7 +107,7 @@ func configureProductPools(ctx context.Context, state appinit.RuntimeState, enab
 	}
 	source, err := configrender.ReadSubscription(paths.SubscriptionPath)
 	if errors.Is(err, os.ErrNotExist) && previousHash == "" && !corerun.Status(runtimeStatusOptions(state)).Running {
-		return false, runtimeprofile.SetPoolsEnabled(paths.RuntimeProfilePath, enabled)
+		return false, runtimeprofile.SetPoolOptions(paths.RuntimeProfilePath, enabled, enhanced)
 	}
 	if err != nil {
 		return false, fmt.Errorf("read merged subscriptions for pool configuration: %w", err)
@@ -103,6 +126,7 @@ func configureProductPools(ctx context.Context, state appinit.RuntimeState, enab
 	opts.OutputPath = filepath.Join(dir, "config.yaml")
 	opts.Source = source
 	opts.PoolsEnabled = &enabled
+	opts.EnhancedFilter = &enhanced
 	if enabled && opts.PacksSelectionPath != "" {
 		selection, err := rules.LoadSelection(opts.PacksSelectionPath)
 		if err != nil {
@@ -111,7 +135,9 @@ func configureProductPools(ctx context.Context, state appinit.RuntimeState, enab
 		opts.Selection = &selection
 		profiles := make([]string, 0, len(selection.ProxyGroups))
 		for _, group := range selection.ProxyGroups {
-			profiles = append(profiles, group.PoolCapability)
+			if (group.PoolCapability == poolcontract.BulkCapability && enhanced) || (group.PoolCapability != poolcontract.BulkCapability && changePools) {
+				profiles = append(profiles, group.PoolCapability)
+			}
 		}
 		if _, err := poollaunch.PrepareProfiles(ctx, poollaunch.Options{
 			Workspace: productWorkspaceRoot(state),
@@ -166,7 +192,7 @@ func configureProductPools(ctx context.Context, state appinit.RuntimeState, enab
 		if !test.Passed {
 			return errors.New("pool configuration did not pass Mihomo validation")
 		}
-		if err := runtimeprofile.SetPoolsEnabled(paths.RuntimeProfilePath, enabled); err != nil || !running {
+		if err := runtimeprofile.SetPoolOptions(paths.RuntimeProfilePath, enabled, enhanced); err != nil || !running {
 			return err
 		}
 		reloadOpts.ConfigSHA256 = test.ConfigSHA256

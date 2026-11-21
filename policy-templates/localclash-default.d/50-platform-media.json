@@ -3,12 +3,22 @@
   "description": "Add Apple, Google, Microsoft, TikTok, and streaming media groups.",
   "config": {
     "version": 3,
+    "proxy_groups": {
+      "📦 大流量优选": {
+        "mode": "auto",
+        "capability": "youtube.sustained-download.v1",
+        "optional": true,
+        "reason": "按 YouTube 视频分段的持续下载能力优选，实测不足时补足 30 个可选出口。",
+        "boundary": "youtube_sustained_subscription_nodes"
+      }
+    },
     "policy_groups": {
       "📺 YouTube": {
         "mode": "manual",
         "exits": [
           "⚡ 自动选择",
           "🎯 手动选择",
+          "📦 大流量优选",
           "🇸🇬 新加坡节点",
           "🇭🇰 香港节点",
           "🇺🇸 美国节点",

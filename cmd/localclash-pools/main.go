@@ -44,9 +44,10 @@ func run(ctx context.Context, args []string) error {
 			return errors.New("usage: localclash-pools features")
 		}
 		return json.NewEncoder(os.Stdout).Encode(struct {
+			YouTubeBulk              bool `json:"youtube_bulk"`
 			EnhancedFilter           bool `json:"enhanced_filter"`
 			EnhancedChatGPTStreaming bool `json:"enhanced_chatgpt_streaming"`
-		}{EnhancedFilter: true, EnhancedChatGPTStreaming: true})
+		}{YouTubeBulk: true, EnhancedFilter: true, EnhancedChatGPTStreaming: true})
 	case "prepare":
 		core := flags.String("core", "", "Mihomo executable")
 		workDir := flags.String("runtime", "", "Mihomo runtime directory")
@@ -119,6 +120,9 @@ func rebuild(ctx context.Context, input poolcontract.Input, pools []poolcontract
 		opts := poolprepare.Options{CorePath: live.state.LauncherPath, RuntimeDir: workDir, ProbeDir: stage, EnhancedFilter: enhancedFilter}
 		var failures error
 		for _, pool := range pools {
+			if pool.Capability == poolcontract.BulkCapability && !enhancedFilter {
+				continue
+			}
 			path := filepath.Join(workDir, pool.Path(input.Revision))
 			if enhancedFilter && pool.Capability == poolcontract.AutoCapability {
 				var err error
@@ -161,6 +165,7 @@ func nextRun(now time.Time, period string) (time.Time, error) {
 }
 
 type scheduleStatus struct {
+	BulkQuality      *capability.BulkQuality          `json:"youtube_bulk,omitempty"`
 	EnhancedFilter   bool                             `json:"enhanced_filter"`
 	AutoQuality      *capability.AutoQuality          `json:"auto_quality,omitempty"`
 	ChatGPTStreaming *capability.EnhancedProbeSummary `json:"chatgpt_streaming,omitempty"`
@@ -223,6 +228,7 @@ func schedule(ctx context.Context, workDir, period string, enhancedFilter bool) 
 		}
 		finished := time.Now()
 		status.DurationMS = finished.Sub(started).Milliseconds()
+		status.BulkQuality = nil
 		status.AutoQuality = nil
 		status.ChatGPTStreaming = nil
 		status.ChatGPTDiscardedEmpty = false
@@ -236,6 +242,8 @@ func schedule(ctx context.Context, workDir, period string, enhancedFilter bool) 
 		for _, result := range results {
 			status.Qualified[result.Profile] = result.QualifiedCount
 			switch result.Profile {
+			case poolcontract.BulkCapability:
+				status.BulkQuality = result.BulkQuality
 			case poolcontract.AutoCapability:
 				status.AutoQuality = result.AutoQuality
 				if enhancedFilter && result.AutoQuality != nil && result.AutoQuality.VideoDegradedSkipped != nil {
