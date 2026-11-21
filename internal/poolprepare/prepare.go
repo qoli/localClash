@@ -65,14 +65,14 @@ func Prepare(ctx context.Context, input poolcontract.Input, pools []poolcontract
 		var failures error
 		for _, item := range pending {
 			result, err := item.result, item.err
-			if err == nil {
+			if err == nil && !result.DiscardedEmpty {
 				err = writeProvider(item, input)
+				result.SnapshotPath = item.path
 			}
 			if err != nil {
 				failures = errors.Join(failures, fmt.Errorf("%s: %w", item.pool.Provider, err))
 				continue
 			}
-			result.SnapshotPath = item.path
 			results = append(results, result)
 		}
 		return failures

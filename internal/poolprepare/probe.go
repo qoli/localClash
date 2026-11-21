@@ -396,9 +396,14 @@ func Qualify(ctx context.Context, pool poolcontract.Pool, input poolcontract.Inp
 			return capability.Result{}, err
 		}
 		snapshot := filepath.Join(opts.ProbeDir, pool.Provider+".json")
-		return chatgptavailable.RebuildSelected(ctx, input.Proxies, names, prober, chatgptavailable.Options{
+		result, err := chatgptavailable.RebuildSelected(ctx, input.Proxies, names, prober, chatgptavailable.Options{
 			SnapshotPath: snapshot, VerifyStreaming: opts.EnhancedFilter,
 		})
+		if err == nil && opts.EnhancedFilter && len(result.Qualified) == 0 {
+			result.DiscardedEmpty = true
+			result.SnapshotPath = ""
+		}
+		return result, err
 	default:
 		return capability.Result{}, fmt.Errorf("unsupported pool %q", pool.Capability)
 	}

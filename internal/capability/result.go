@@ -25,6 +25,8 @@ type Result struct {
 	AutoQuality            *AutoQuality      `json:"auto_quality,omitempty"`
 	// ChatGPTStreaming counts distinct tested exits. Its per-check counters count attempts.
 	ChatGPTStreaming *EnhancedProbeSummary `json:"chatgpt_streaming,omitempty"`
+	// DiscardedEmpty marks an empty enhanced ChatGPT result skipped at publication.
+	DiscardedEmpty bool `json:"discarded_empty,omitempty"`
 }
 
 type AutoQuality struct {

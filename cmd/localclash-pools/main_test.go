@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -10,7 +11,38 @@ import (
 	"time"
 
 	"localclash/internal/poolcontract"
+	"localclash/internal/runtimesupervision"
 )
+
+func TestRebuildDiscardsEmptyEnhancedChatGPTResult(t *testing.T) {
+	pool, _ := poolcontract.Lookup(poolcontract.ChatGPTCapability)
+	input := poolcontract.Input{Revision: "test"}
+	workDir := t.TempDir()
+	path := filepath.Join(workDir, pool.Path(input.Revision))
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	previous := []byte(`{"proxies":[{"name":"TW 01","type":"ss","x-localclash-statsig-country":"TW"}]}`)
+	if err := os.WriteFile(path, previous, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	live := &activeRuntime{workDir: workDir, state: runtimesupervision.State{LauncherPath: executable}}
+	results, err := rebuild(t.Context(), input, []poolcontract.Pool{pool}, live, nil, true, time.Time{})
+	if err != nil || len(results) != 1 {
+		t.Fatalf("rebuild = %+v, %v", results, err)
+	}
+	got := results[0]
+	if !got.DiscardedEmpty || got.QualifiedCount != 0 || got.SnapshotPath != "" || got.ChatGPTStreaming == nil {
+		t.Fatalf("discarded round = %+v", got)
+	}
+	if data, err := os.ReadFile(path); err != nil || !bytes.Equal(data, previous) {
+		t.Fatalf("previous provider changed: %s, %v", data, err)
+	}
+}
 
 func TestSchedulerRecordsEnhancedModeAndPreservesLegacyStatus(t *testing.T) {
 	for _, enhanced := range []bool{false, true} {

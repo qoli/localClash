@@ -129,14 +129,14 @@ func rebuild(ctx context.Context, input poolcontract.Input, pools []poolcontract
 				}
 			}
 			result, err := poolprepare.Qualify(ctx, pool, input, opts)
-			if err == nil {
+			if err == nil && !result.DiscardedEmpty {
 				err = publish(ctx, live, pool, path, input, result)
+				result.SnapshotPath = path
 			}
 			if err != nil {
 				failures = errors.Join(failures, fmt.Errorf("%s: %w", pool.Provider, err))
 				continue
 			}
-			result.SnapshotPath = path
 			results = append(results, result)
 		}
 		return failures
@@ -170,6 +170,8 @@ type scheduleStatus struct {
 	LastAutoProbeAt  *time.Time                       `json:"last_auto_probe_at,omitempty"`
 	Qualified        map[string]int                   `json:"qualified,omitempty"`
 	Error            string                           `json:"error,omitempty"`
+	// Qualified counts this run's probe results even when publication was skipped.
+	ChatGPTDiscardedEmpty bool `json:"chatgpt_discarded_empty,omitempty"`
 }
 
 func schedule(ctx context.Context, workDir, period string, enhancedFilter bool) error {
@@ -223,6 +225,7 @@ func schedule(ctx context.Context, workDir, period string, enhancedFilter bool) 
 		status.DurationMS = finished.Sub(started).Milliseconds()
 		status.AutoQuality = nil
 		status.ChatGPTStreaming = nil
+		status.ChatGPTDiscardedEmpty = false
 		status.LastRunAt = &finished
 		status.Error = ""
 		if err != nil {
@@ -240,6 +243,7 @@ func schedule(ctx context.Context, workDir, period string, enhancedFilter bool) 
 				}
 			case poolcontract.ChatGPTCapability:
 				status.ChatGPTStreaming = result.ChatGPTStreaming
+				status.ChatGPTDiscardedEmpty = result.DiscardedEmpty
 			}
 		}
 		due, _ = nextRun(due, period)
