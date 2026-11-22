@@ -451,3 +451,18 @@ func TestProbeCandidateStopsOAuthAfterConclusiveUnsupportedButStillRunsStatsig(t
 		t.Fatalf("observation = %+v OAuth calls=%d Statsig calls=%d", observation, oauthCalls, statsigCalls)
 	}
 }
+
+func TestRetrySpacingAccountsForCompletedAttempt(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	if !waitToRetry(ctx, 1, 2, time.Now().Add(-time.Second)) {
+		t.Fatal("slow attempt should already be eligible to retry")
+	}
+	if waitToRetry(ctx, 2, 2, time.Now()) {
+		t.Fatal("exhausted retry budget")
+	}
+	cancel()
+	if waitToRetry(ctx, 1, 2, time.Now().Add(-time.Second)) {
+		t.Fatal("cancelled retry after a slow attempt")
+	}
+}

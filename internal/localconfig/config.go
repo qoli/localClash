@@ -365,6 +365,18 @@ func WriteSelection(path string, selection rules.Selection) error {
 }
 
 func Resolve(opts ResolveOptions) (Resolved, error) {
+	return resolve(opts, nil)
+}
+
+// ResolveForRender returns the merged subscription read during resolution so
+// the renderer uses the same snapshot. It is nil when resolution did not read it.
+func ResolveForRender(opts ResolveOptions) (Resolved, map[string]any, error) {
+	var merged map[string]any
+	resolved, err := resolve(opts, &merged)
+	return resolved, merged, err
+}
+
+func resolve(opts ResolveOptions, merged *map[string]any) (Resolved, error) {
 	opts = normalizeResolveOptions(opts)
 	stage := localConfigStageEmitter(opts.OnStage)
 	if opts.Config.Version == 0 {
@@ -381,6 +393,7 @@ func Resolve(opts ResolveOptions) (Resolved, error) {
 		nodes = append([]SubscriptionNode(nil), opts.SubscriptionNodes...)
 	} else {
 		nodes, err = LoadSubscriptionNodes(SubscriptionNodeOptions{
+			merged:              merged,
 			SubscriptionPath:    opts.SubscriptionPath,
 			SubscriptionConfig:  opts.SubscriptionConfig,
 			SubscriptionRuntime: opts.SubscriptionRuntime,
@@ -749,6 +762,7 @@ func matchSourceScope(match *Match) int {
 }
 
 type SubscriptionNodeOptions struct {
+	merged              *map[string]any
 	SubscriptionPath    string
 	SubscriptionConfig  string
 	SubscriptionRuntime string
@@ -767,7 +781,7 @@ func LoadSubscriptionNodes(opts SubscriptionNodeOptions) ([]SubscriptionNode, er
 		})
 		finish(nil, nil)
 		finish = stage("load_merged_subscription_nodes", map[string]any{"subscription": opts.SubscriptionPath})
-		nodes, err := loadMergedSubscriptionNodes(opts.SubscriptionPath, stage)
+		nodes, err := loadMergedSubscriptionNodes(opts, stage)
 		if err != nil {
 			finish(err, nil)
 			return nil, err
@@ -847,8 +861,10 @@ func displayNameForSubscriptionSource(sourceID, displayName string) string {
 	return trimmed[:2]
 }
 
-func loadMergedSubscriptionNodes(path string, stage localConfigStageFunc) ([]SubscriptionNode, error) {
-	doc, err := readGobMapObserved(path, stage, "merged_subscription", nil)
+func loadMergedSubscriptionNodes(opts SubscriptionNodeOptions, stage localConfigStageFunc) ([]SubscriptionNode, error) {
+	path := opts.SubscriptionPath
+	artifact, err := opts.readMergedSubscription(stage, "merged_subscription")
+	doc := artifact.Data
 	if err != nil {
 		return nil, err
 	}
@@ -882,7 +898,7 @@ func loadSourceSubscriptionNodes(opts SubscriptionNodeOptions) ([]SubscriptionNo
 		return nil, err
 	}
 	finish(nil, map[string]any{"source_count": len(sources.Sources)})
-	activeSourceIDs, activeSourcesDeclared, err := loadActiveSubscriptionSourceIDs(opts.SubscriptionPath, sources, stage)
+	activeSourceIDs, activeSourcesDeclared, err := loadActiveSubscriptionSourceIDs(opts, sources, stage)
 	if err != nil {
 		return nil, err
 	}
@@ -920,7 +936,8 @@ func loadSourceSubscriptionNodes(opts SubscriptionNodeOptions) ([]SubscriptionNo
 	return nodes, nil
 }
 
-func loadActiveSubscriptionSourceIDs(path string, sources subscriptionSources, stage localConfigStageFunc) (map[string]bool, bool, error) {
+func loadActiveSubscriptionSourceIDs(opts SubscriptionNodeOptions, sources subscriptionSources, stage localConfigStageFunc) (map[string]bool, bool, error) {
+	path := opts.SubscriptionPath
 	finish := stage("read_subscription_active_sources", map[string]any{"path": path})
 	if _, err := os.Stat(path); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -930,7 +947,7 @@ func loadActiveSubscriptionSourceIDs(path string, sources subscriptionSources, s
 		finish(err, nil)
 		return nil, false, err
 	}
-	artifact, err := readGobArtifactObserved(path, stage, "merged_subscription_active_sources", nil)
+	artifact, err := opts.readMergedSubscription(stage, "merged_subscription_active_sources")
 	if err != nil {
 		finish(err, nil)
 		return nil, false, err
@@ -969,6 +986,14 @@ func loadActiveSubscriptionSourceIDs(path string, sources subscriptionSources, s
 	}
 	finish(nil, map[string]any{"declared": true, "active_source_count": len(active)})
 	return active, true, nil
+}
+
+func (opts SubscriptionNodeOptions) readMergedSubscription(stage localConfigStageFunc, prefix string) (persistedSubscriptionArtifact, error) {
+	artifact, err := readGobArtifactObserved(opts.SubscriptionPath, stage, prefix, nil)
+	if opts.merged != nil && err == nil {
+		*opts.merged = artifact.Data
+	}
+	return artifact, err
 }
 
 func readGobMapObserved(path string, stage localConfigStageFunc, prefix string, fields map[string]any) (map[string]any, error) {

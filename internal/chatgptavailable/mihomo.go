@@ -51,7 +51,7 @@ type MihomoOptions struct {
 	Concurrency          int
 	Attempts             int
 	RequestTimeout       time.Duration
-	RetryDelay           time.Duration
+	RetryDelay           time.Duration // Minimum spacing between the starts of consecutive attempts.
 	OAuthEndpoint        string
 	OAuthClientID        string
 	StatsigEndpoint      string
@@ -357,7 +357,7 @@ func (p *MihomoProber) probeOAuthEndpointAttempts(ctx context.Context, client *h
 		if outcome.result.decision == oauthRegionSupported || outcome.result.decision == oauthRegionUnsupported {
 			return outcome
 		}
-		if !waitToRetry(ctx, attempt, p.options.Attempts, p.options.RetryDelay) {
+		if !waitToRetry(ctx, attempt, p.options.Attempts, started.Add(p.options.RetryDelay)) {
 			if ctx.Err() != nil {
 				outcome.result.err = ctx.Err()
 			}
@@ -397,7 +397,7 @@ func (p *MihomoProber) probeStatsigEndpointAttempts(ctx context.Context, client 
 		if outcome.result.decision == statsigReachable || outcome.result.decision == statsigUnsupportedCountry || outcome.result.errorCode == oauthRegionUnsupported {
 			return outcome
 		}
-		if !waitToRetry(ctx, attempt, p.options.Attempts, p.options.RetryDelay) {
+		if !waitToRetry(ctx, attempt, p.options.Attempts, started.Add(p.options.RetryDelay)) {
 			if ctx.Err() != nil {
 				outcome.result.err = ctx.Err()
 			}
@@ -407,9 +407,14 @@ func (p *MihomoProber) probeStatsigEndpointAttempts(ctx context.Context, client 
 	return outcome
 }
 
-func waitToRetry(ctx context.Context, attempt, attempts int, delay time.Duration) bool {
+func waitToRetry(ctx context.Context, attempt, attempts int, retryAt time.Time) bool {
 	if attempt >= attempts || ctx.Err() != nil {
 		return false
+	}
+	// A slow transport may already have spent the retry interval waiting.
+	delay := time.Until(retryAt)
+	if delay <= 0 {
+		return ctx.Err() == nil
 	}
 	timer := time.NewTimer(delay)
 	defer timer.Stop()

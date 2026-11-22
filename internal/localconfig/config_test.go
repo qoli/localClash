@@ -893,3 +893,25 @@ func writeTestSubscriptionArtifact(t *testing.T, path, content string, sourceIDs
 		t.Fatal(closeErr)
 	}
 }
+
+func TestResolveForRenderKeepsTheMergedSnapshot(t *testing.T) {
+	for _, configured := range []bool{false, true} {
+		dir := t.TempDir()
+		merged := filepath.Join(dir, "subscription.gob")
+		opts := ResolveOptions{SubscriptionPath: merged, SubscriptionConfig: filepath.Join(dir, "sources.json"), SubscriptionRuntime: dir, RulesCache: filepath.Join(dir, "rules")}
+		writeTestPackCache(t, opts.RulesCache, "blackmatrix7", "blackmatrix7", testRulePack("Steam", "DIRECT"))
+		writeTestSubscriptionArtifact(t, merged, "proxies: [{name: HK, type: ss}]\nmarker: merged\n", []string{"source"})
+		if configured {
+			writeTestFile(t, opts.SubscriptionConfig, `{"sources":[{"id":"source"}]}`)
+			writeTestFile(t, filepath.Join(dir, "source.gob"), "proxies: [{name: HK, type: ss}]\nmarker: source\n")
+		}
+		opts.Config = Config{ProxyGroups: map[string]ProxyGroup{"Group": {Mode: "manual", Nodes: []string{"HK"}}}}
+		resolved, data, err := ResolveForRender(opts)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if data["marker"] != "merged" || !reflect.DeepEqual(resolved.Selection.ProxyGroups["Group"].Nodes, []string{"HK"}) {
+			t.Fatalf("configured=%t: wrong subscription snapshot or selected members", configured)
+		}
+	}
+}

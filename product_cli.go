@@ -1546,7 +1546,7 @@ func renderProductConfig(state appinit.RuntimeState) (map[string]any, []string, 
 		if err != nil {
 			return nil, nil, err
 		}
-		resolved, err := localconfig.Resolve(localconfig.ResolveOptions{
+		resolved, merged, err := localconfig.ResolveForRender(localconfig.ResolveOptions{
 			Config:              config,
 			SubscriptionPath:    state.Paths.SubscriptionPath,
 			SubscriptionConfig:  state.Paths.SubscriptionConfig,
@@ -1564,6 +1564,8 @@ func renderProductConfig(state appinit.RuntimeState) (map[string]any, []string, 
 			return nil, nil, err
 		}
 		opts.PacksSelectionPath = selectionPath
+		opts.Selection = &resolved.Selection
+		opts.Source = merged
 		if source != "patch_registry" {
 			source = "compiled_intent"
 		}

@@ -1007,7 +1007,7 @@ func buildArtifacts(ctx context.Context, config localconfig.Config, opts buildOp
 			return result, err
 		}
 	}
-	resolved, err := localconfig.Resolve(localconfig.ResolveOptions{
+	resolved, merged, err := localconfig.ResolveForRender(localconfig.ResolveOptions{
 		Config:              config,
 		SubscriptionPath:    opts.Subscription,
 		SubscriptionConfig:  opts.SubscriptionConfig,
@@ -1037,6 +1037,8 @@ func buildArtifacts(ctx context.Context, config localconfig.Config, opts buildOp
 	}
 	customSitePaths := customsites.DefaultPaths(filepath.Dir(opts.ConfigPath))
 	renderResult, err := configrender.Render(configrender.Options{
+		Source:             merged,
+		Selection:          &resolved.Selection,
 		SourcePath:         opts.Subscription,
 		OutputPath:         targetOutput,
 		PacksSelectionPath: targetSelection,

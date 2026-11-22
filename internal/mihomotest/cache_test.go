@@ -270,3 +270,64 @@ func TestVerifyCachedValidationUsesEstablishedFingerprint(t *testing.T) {
 		})
 	}
 }
+
+func TestInspectCacheStatusIdentifiesCoreByContent(t *testing.T) {
+	dir := t.TempDir()
+	core := filepath.Join(dir, "lc-mihomo-smart")
+	counter := core + ".calls"
+	script := "#!/bin/sh\nif [ \"$1\" = -v ]; then echo v >> \"$0.calls\"; echo version-A; fi\n"
+	writeTestFile(t, core, script, 0755)
+	config := filepath.Join(dir, "config.yaml")
+	writeTestFile(t, config, "mode: rule\n", 0600)
+	opts := ValidationOptions{CorePath: core, ConfigPath: config, WorkDir: dir, CachePath: filepath.Join(dir, "validation.json")}
+	ctx := context.Background()
+	if _, err := ValidateCached(ctx, opts); err != nil {
+		t.Fatal(err)
+	}
+	before := readTestFile(t, counter)
+	var inspector StatusInspector
+	for i := 0; i < 2; i++ {
+		status := inspector.Inspect(ctx, opts)
+		if !status.Matched || !status.Passed || status.CoreVersion != "version-A" {
+			t.Fatalf("unchanged core: %+v", status)
+		}
+	}
+	if readTestFile(t, counter) != before {
+		t.Fatal("read-only status executed an already identified core")
+	}
+	info, err := os.Stat(core)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeTestFile(t, core, strings.Replace(script, "version-A", "version-B", 1), 0755)
+	if err := os.Chtimes(core, info.ModTime(), info.ModTime()); err != nil {
+		t.Fatal(err)
+	}
+	status := inspector.Inspect(ctx, opts)
+	if status.Matched || status.CoreVersion != "version-B" {
+		t.Fatalf("replaced core: %+v", status)
+	}
+}
+
+func TestStatusInspectorSharesFirstVersionQueryWithoutValidation(t *testing.T) {
+	dir := t.TempDir()
+	core := filepath.Join(dir, "mihomo")
+	config := filepath.Join(dir, "config.yaml")
+	writeTestFile(t, core, "#!/bin/sh\necho call >> \"$0.calls\"\necho current\n", 0755)
+	writeTestFile(t, config, "mode: rule\n", 0600)
+	opts := ValidationOptions{CorePath: core, ConfigPath: config, CachePath: filepath.Join(dir, "missing.json")}
+	var inspector StatusInspector
+	results := make(chan CacheStatusResult, 8)
+	for i := 0; i < cap(results); i++ {
+		go func() { results <- inspector.Inspect(t.Context(), opts) }()
+	}
+	for i := 0; i < cap(results); i++ {
+		got := <-results
+		if got.Matched || got.Status != "missing" || got.CoreVersion != "current" {
+			t.Errorf("status without a validation record = %+v", got)
+		}
+	}
+	if got := readTestFile(t, core+".calls"); got != "call\n" {
+		t.Errorf("version queries = %q, want a single call", got)
+	}
+}

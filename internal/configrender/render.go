@@ -654,7 +654,6 @@ func ReadSubscription(path string) (map[string]any, error) {
 	var artifact struct {
 		Version int
 		Data    map[string]any
-		Raw     []byte
 	}
 	if err := gob.NewDecoder(file).Decode(&artifact); err != nil {
 		return nil, err

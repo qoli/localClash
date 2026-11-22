@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -180,6 +181,24 @@ func ValidateCached(ctx context.Context, opts ValidationOptions) (ValidationResu
 }
 
 func CacheStatus(ctx context.Context, opts ValidationOptions) CacheStatusResult {
+	return cacheStatus(ctx, opts, nil)
+}
+
+// StatusInspector reuses the identity of the core for read-only MCP queries.
+// Each server keeps one entry. Validation and runtime lifecycle checks remain live.
+type StatusInspector struct {
+	mu      sync.Mutex
+	path    string
+	file    os.FileInfo
+	digest  string
+	version string
+}
+
+func (s *StatusInspector) Inspect(ctx context.Context, opts ValidationOptions) CacheStatusResult {
+	return cacheStatus(ctx, opts, s)
+}
+
+func cacheStatus(ctx context.Context, opts ValidationOptions, inspector *StatusInspector) CacheStatusResult {
 	opts = normalizeValidationOptions(opts)
 	out := CacheStatusResult{
 		CachePath:  opts.CachePath,
@@ -193,13 +212,16 @@ func CacheStatus(ctx context.Context, opts ValidationOptions) CacheStatusResult 
 		out.Error = err.Error()
 		return out
 	}
+	var cache validationCacheFile
 	if out.Present {
-		if _, err := readValidationCache(opts.CachePath); err != nil {
+		var err error
+		cache, err = readValidationCache(opts.CachePath)
+		if err != nil {
 			out.Error = "read validation cache: " + err.Error()
 			return out
 		}
 	}
-	metadata, err := buildInputMetadata(ctx, opts)
+	metadata, err := inputMetadata(ctx, opts, inspector, cache.Entries)
 	if err != nil {
 		out.Error = err.Error()
 		return out
@@ -214,7 +236,7 @@ func CacheStatus(ctx context.Context, opts ValidationOptions) CacheStatusResult 
 		out.Status = "missing"
 		return out
 	}
-	if cached, ok := findCachedValidationByMetadata(opts.CachePath, metadata); ok {
+	if cached, ok := cachedValidationByMetadata(cache, metadata); ok {
 		out.Matched = true
 		out.MatchMode = "metadata"
 		out.Passed = cached.Passed
@@ -303,6 +325,7 @@ type validationFingerprint struct {
 }
 
 type validationInputMetadata struct {
+	CoreSHA256    string
 	ConfigPath    string
 	ConfigSize    int64
 	ConfigModTime string
@@ -346,9 +369,12 @@ func buildFingerprintWithMetadata(opts ValidationOptions, metadata validationInp
 	if err != nil {
 		return validationFingerprint{}, fmt.Errorf("hash generated config: %w", err)
 	}
-	coreSHA, err := sha256File(opts.CorePath)
-	if err != nil {
-		return validationFingerprint{}, fmt.Errorf("hash core: %w", err)
+	coreSHA := metadata.CoreSHA256
+	if coreSHA == "" {
+		coreSHA, err = sha256File(opts.CorePath)
+		if err != nil {
+			return validationFingerprint{}, fmt.Errorf("hash core: %w", err)
+		}
 	}
 	return validationFingerprint{
 		ConfigSHA256:  configSHA,
@@ -363,6 +389,10 @@ func buildFingerprintWithMetadata(opts ValidationOptions, metadata validationInp
 }
 
 func buildInputMetadata(ctx context.Context, opts ValidationOptions) (validationInputMetadata, error) {
+	return inputMetadata(ctx, opts, nil, nil)
+}
+
+func inputMetadata(ctx context.Context, opts ValidationOptions, inspector *StatusInspector, entries []ValidationResult) (validationInputMetadata, error) {
 	configInfo, err := os.Stat(opts.ConfigPath)
 	if err != nil {
 		return validationInputMetadata{}, fmt.Errorf("stat generated config: %w", err)
@@ -371,11 +401,17 @@ func buildInputMetadata(ctx context.Context, opts ValidationOptions) (validation
 	if err != nil {
 		return validationInputMetadata{}, fmt.Errorf("stat core: %w", err)
 	}
-	version, err := coreVersion(ctx, opts.CorePath)
+	var digest, version string
+	if inspector != nil {
+		version, digest, err = inspector.identify(ctx, opts.CorePath, coreInfo, entries)
+	} else {
+		version, err = coreVersion(ctx, opts.CorePath)
+	}
 	if err != nil {
 		return validationInputMetadata{}, err
 	}
 	return validationInputMetadata{
+		CoreSHA256:    digest,
 		ConfigPath:    opts.ConfigPath,
 		ConfigSize:    configInfo.Size(),
 		ConfigModTime: configInfo.ModTime().UTC().Format(time.RFC3339Nano),
@@ -387,11 +423,63 @@ func buildInputMetadata(ctx context.Context, opts ValidationOptions) (validation
 	}, nil
 }
 
+// identify can use a persisted version on the first query only after checking
+// the bytes. Further queries can also use the filesystem change timestamp:
+// even an in-place write followed by restoring mtime changes ctime.
+func (s *StatusInspector) identify(ctx context.Context, path string, info os.FileInfo, entries []ValidationResult) (string, string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	executable, err := exec.LookPath(path)
+	if err != nil {
+		return "", "", fmt.Errorf("query core version: %w", err)
+	}
+	change := coreChangeTime(info)
+	if path == s.path && !change.IsZero() && s.file != nil && os.SameFile(s.file, info) && change.Equal(coreChangeTime(s.file)) && s.file.Size() == info.Size() && s.file.ModTime().Equal(info.ModTime()) {
+		return s.version, s.digest, nil
+	}
+	digest, hashErr := sha256File(executable)
+	if hashErr != nil {
+		// Executing a binary can be permitted even when it cannot be read.
+		version, err := coreVersion(ctx, path)
+		return version, "", err
+	}
+	version := ""
+	if path == s.path && digest == s.digest {
+		version = s.version
+	} else {
+		for _, entry := range entries {
+			if entry.CorePath == path && entry.CoreSHA256 == digest && entry.CoreVersion != "" {
+				version = entry.CoreVersion
+				break
+			}
+		}
+	}
+	if version == "" {
+		version, err = coreVersion(ctx, path)
+		if err != nil {
+			return "", "", err
+		}
+	}
+	after, err := os.Stat(executable)
+	if err != nil {
+		return "", "", err
+	}
+	if !os.SameFile(info, after) || info.Size() != after.Size() || !info.ModTime().Equal(after.ModTime()) || !change.Equal(coreChangeTime(after)) {
+		return "", "", errors.New("core changed while reading its version")
+	}
+	s.path, s.file, s.digest, s.version = path, after, digest, version
+	return version, digest, nil
+}
+
 func findCachedValidationByMetadata(path string, metadata validationInputMetadata) (ValidationResult, bool) {
 	cache, err := readValidationCache(path)
 	if err != nil {
 		return ValidationResult{}, false
 	}
+	return cachedValidationByMetadata(cache, metadata)
+}
+
+func cachedValidationByMetadata(cache validationCacheFile, metadata validationInputMetadata) (ValidationResult, bool) {
 	for _, entry := range cache.Entries {
 		if entry.ConfigPath == metadata.ConfigPath &&
 			entry.ConfigSize == metadata.ConfigSize &&
@@ -399,6 +487,7 @@ func findCachedValidationByMetadata(path string, metadata validationInputMetadat
 			entry.CorePath == metadata.CorePath &&
 			entry.CoreSize == metadata.CoreSize &&
 			entry.CoreModTime == metadata.CoreModTime &&
+			(metadata.CoreSHA256 == "" || entry.CoreSHA256 == metadata.CoreSHA256) &&
 			entry.CoreVersion == metadata.CoreVersion &&
 			entry.CoreType == metadata.CoreType {
 			return entry, true

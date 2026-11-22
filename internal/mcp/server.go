@@ -48,6 +48,7 @@ import (
 const latestSupportedProtocolVersion = "2025-11-25"
 
 type Server struct {
+	validationStatus      mihomotest.StatusInspector
 	downloadCore          coredownload.DownloadFunc
 	state                 *appinit.RuntimeState
 	version               string
@@ -1374,7 +1375,7 @@ func (s *Server) configValidationState(in configToolInput, generatedPresent bool
 			"next_actions": []string{"configure or download a Mihomo core before runtime validation"},
 		}
 	}
-	return mihomotest.CacheStatus(context.Background(), mihomotest.ValidationOptions{
+	return s.validationStatus.Inspect(context.Background(), mihomotest.ValidationOptions{
 		CorePath:   in.Core,
 		ConfigPath: in.Output,
 		WorkDir:    in.RuntimeDir,
@@ -1470,6 +1471,8 @@ func (s *Server) callConfigRender(ctx context.Context, args json.RawMessage) (to
 
 func renderCurrentConfig(ctx context.Context, in configToolInput, force bool) (map[string]any, error) {
 	selectionPath := ""
+	var merged map[string]any
+	var selection *rules.Selection
 	source := "base"
 	warnings := []string{}
 	if registryHasPatches(in.PatchesDir) {
@@ -1490,7 +1493,7 @@ func renderCurrentConfig(ctx context.Context, in configToolInput, force bool) (m
 			finishTaskStage(finish, err, nil)
 			return nil, err
 		}
-		resolved, err := localconfig.Resolve(localconfig.ResolveOptions{
+		resolved, sourceDoc, err := localconfig.ResolveForRender(localconfig.ResolveOptions{
 			Config:              config,
 			SubscriptionPath:    in.Subscription,
 			SubscriptionConfig:  in.SubscriptionConfig,
@@ -1507,6 +1510,8 @@ func renderCurrentConfig(ctx context.Context, in configToolInput, force bool) (m
 			return nil, err
 		}
 		selectionPath = in.Selection
+		selection = &resolved.Selection
+		merged = sourceDoc
 		if source != "patch_registry" {
 			source = "compiled_intent"
 		}
@@ -1524,6 +1529,8 @@ func renderCurrentConfig(ctx context.Context, in configToolInput, force bool) (m
 	customSitePaths := customsites.DefaultPaths(filepath.Dir(in.Config))
 	result, err := configrender.Render(configrender.Options{
 		SourcePath:         in.Subscription,
+		Source:             merged,
+		Selection:          selection,
 		OutputPath:         in.Output,
 		Force:              force,
 		PacksSelectionPath: selectionPath,

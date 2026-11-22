@@ -152,7 +152,7 @@ func (p *MihomoProber) resolveIPTargets(ctx context.Context, client *http.Client
 		}
 		p.recordTiming(ctx, started, probeTiming{Phase: "dns", Service: spec.endpoint,
 			Attempt: attempt, Outcome: outcome, Addresses: len(addresses)}, connections)
-		if err == nil || !waitToRetry(ctx, attempt, p.options.Attempts, p.options.RetryDelay) {
+		if err == nil || !waitToRetry(ctx, attempt, p.options.Attempts, started.Add(p.options.RetryDelay)) {
 			break
 		}
 	}

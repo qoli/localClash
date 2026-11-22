@@ -293,7 +293,7 @@ func Render(ctx context.Context, opts Options) (Result, error) {
 		finish(err, nil)
 		return Result{}, err
 	}
-	resolved, err := localconfig.Resolve(localconfig.ResolveOptions{
+	resolved, merged, err := localconfig.ResolveForRender(localconfig.ResolveOptions{
 		Config:              config,
 		SubscriptionPath:    opts.Subscription,
 		SubscriptionConfig:  opts.SubscriptionConfig,
@@ -352,6 +352,8 @@ func Render(ctx context.Context, opts Options) (Result, error) {
 	finish = stage("render_candidate", map[string]any{"output": outputPath})
 	customSitePaths := customsites.DefaultPaths(filepath.Dir(opts.ConfigPath))
 	if _, err := configrender.Render(configrender.Options{
+		Source:             merged,
+		Selection:          &resolved.Selection,
 		SourcePath:         opts.Subscription,
 		OutputPath:         outputPath,
 		PacksSelectionPath: selectionPath,
@@ -446,7 +448,7 @@ func Apply(ctx context.Context, opts ApplyOptions) (ApplyResult, error) {
 		return ApplyResult{}, err
 	}
 	config = preserveExistingPolicyTemplate(opts.ConfigPath, config)
-	resolved, err := localconfig.Resolve(localconfig.ResolveOptions{
+	resolved, merged, err := localconfig.ResolveForRender(localconfig.ResolveOptions{
 		Config:              config,
 		SubscriptionPath:    opts.Subscription,
 		SubscriptionConfig:  opts.SubscriptionConfig,
@@ -487,6 +489,8 @@ func Apply(ctx context.Context, opts ApplyOptions) (ApplyResult, error) {
 	finish = stage("render_candidate", map[string]any{"output": tempOutput})
 	customSitePaths := customsites.DefaultPaths(filepath.Dir(opts.ConfigPath))
 	renderResult, err := configrender.Render(configrender.Options{
+		Source:             merged,
+		Selection:          &resolved.Selection,
 		SourcePath:         opts.Subscription,
 		OutputPath:         tempOutput,
 		PacksSelectionPath: tempSelection,
