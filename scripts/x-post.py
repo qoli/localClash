@@ -402,18 +402,14 @@ class ArcCDPPublisher:
         )
 
     def _publish_in_page(self, page: Any, post: PreparedPost, timeout_error: type[Exception]) -> PublishReceipt:
+        from playwright.sync_api import expect
+
         account_name = post.request.account[1:]
         page.goto(DEFAULT_COMPOSE_URL, wait_until="domcontentloaded")
 
         profile_link = page.locator('a[data-testid="AppTabBar_Profile_Link"]')
-        profile_link.wait_for(state="attached")
-        profile_href = profile_link.get_attribute("href")
-        if profile_href != f"/{account_name}":
-            raise ScriptError(
-                f"Arc is signed into the wrong X account: expected /{account_name}, got {profile_href!r}"
-            )
-
         composer = page.locator('div[role="dialog"][aria-modal="true"]')
+        composer = composer.or_(page.get_by_role("dialog").filter(has=page.locator("textarea")))
         composer.wait_for(state="visible")
         if composer.count() != 1:
             raise ScriptError(
@@ -421,14 +417,22 @@ class ArcCDPPublisher:
                 f"found {composer.count()}."
             )
 
-        editor = composer.locator('div[data-testid="tweetTextarea_0"]')
+        textarea = composer.locator("textarea")
+        editor = composer.locator('div[data-testid="tweetTextarea_0"]').or_(textarea)
         editor.wait_for(state="visible")
         if editor.count() != 1:
             raise ScriptError(
                 "X active modal composer must contain exactly one editor; "
                 f"found {editor.count()}."
             )
-        file_input = composer.locator('input[data-testid="fileInput"]')
+        if textarea.count():
+            # The new composer labels the posting account's avatar with its handle.
+            composer.get_by_alt_text(post.request.account, exact=True).wait_for(state="visible")
+        else:
+            profile_link.wait_for(state="attached")
+            if profile_link.get_attribute("href") != f"/{account_name}":
+                raise ScriptError(f"Arc is not signed into the expected X account {post.request.account}.")
+        file_input = composer.locator('input[data-testid="fileInput"]').or_(composer.locator('input[type="file"]'))
         if file_input.count() != 1:
             raise ScriptError(
                 "X active modal composer must contain exactly one file input; "
@@ -445,19 +449,23 @@ class ArcCDPPublisher:
                 "buffer": image_bytes,
             }
         )
-        image_preview = composer.locator('div[data-testid="attachments"] img')
+        image_preview = composer.locator('div[data-testid="attachments"] img').or_(composer.locator('img[src^="blob:"]'))
         image_preview.wait_for(state="visible")
 
         editor.click()
         editor.fill(post.request.text)
-        actual_text = editor.evaluate("element => element.innerText")
+        actual_text = textarea.input_value() if textarea.count() else editor.inner_text()
         post_button = composer.locator('button[data-testid="tweetButton"]')
+        if textarea.count():
+            post_button = composer.get_by_role("button", name=re.compile(r"^(貼文|Post)$"))
         post_button.wait_for(state="visible")
         if post_button.count() != 1:
             raise ScriptError(
                 "X active modal composer must contain exactly one Post button; "
                 f"found {post_button.count()}."
             )
+        # The attachment preview appears before X finishes uploading the image.
+        expect(post_button).to_be_enabled(timeout=30000)
         validate_composer(
             expected_text=post.request.text,
             actual_inner_text=actual_text,
@@ -502,13 +510,14 @@ class ArcCDPPublisher:
 
     def _verify_status(self, page: Any, post: PreparedPost, status_url: str) -> None:
         page.goto(status_url, wait_until="domcontentloaded")
-        article = page.locator('article[data-testid="tweet"]').first
+        photo_path = f"{urlsplit(status_url).path}/photo/1"
+        article = page.locator("article").filter(has=page.locator(f'a[href="{photo_path}"]'))
         article.wait_for(state="visible")
         account_name = post.request.account[1:]
         if article.locator(f'a[href="/{account_name}"]').count() < 1:
             raise ScriptError(f"Published X post does not show the expected account {post.request.account}.")
 
-        text = article.locator('div[data-testid="tweetText"]')
+        text = article.locator('div[data-testid="tweetText"], div[dir="auto"][lang].whitespace-pre-wrap')
         text.wait_for(state="visible")
         # X adds hidden URL prefixes and layout line breaks to innerText.
         # Read text nodes without those link decorations; targets are checked below.
