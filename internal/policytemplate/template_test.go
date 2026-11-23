@@ -223,7 +223,7 @@ func TestRealLocalClashDefaultTemplateIsLayered(t *testing.T) {
 		t.Fatal("default template must not include the withdrawn Crypto group")
 	}
 	smtp := config.ProxyGroups["📮 SMTP 支持出口"]
-	if smtp.Capability != poolcontract.SMTPCapability || !smtp.Optional || smtp.Mode != "manual" {
+	if smtp.Capability != poolcontract.SMTPCapability || !smtp.Optional || smtp.Mode != "auto" {
 		t.Fatalf("SMTP pool = %+v", smtp)
 	}
 	var submission []localconfig.CustomRuleLine

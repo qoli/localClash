@@ -5,10 +5,10 @@
     "version": 3,
     "proxy_groups": {
       "📮 SMTP 支持出口": {
-        "mode": "manual",
+        "mode": "auto",
         "capability": "smtp.gmail.starttls.v1",
         "optional": true,
-        "reason": "只列出已通过 Gmail SMTP 587 STARTTLS 握手的出口。"
+        "reason": "从通过 Gmail SMTP 587 STARTTLS 握手的出口中，按 Mihomo 运行时探测自动选择。"
       }
     },
     "policy_groups": {

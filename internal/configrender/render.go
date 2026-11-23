@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -784,7 +785,18 @@ func configurePools(dynamic, source map[string]any, selection *rulespkg.Selectio
 			}
 			provider["payload"] = seed
 		}
-		if smart && pool.Capability == poolcontract.ChatGPTCapability && (groupType == "url-test" || groupType == "smart") {
+		if pool.Capability == poolcontract.SMTPCapability && groupType == "url-test" {
+			group := poolGroups[i]
+			status := strconv.Itoa(poolcontract.AutoHTTPSProbeStatus)
+			group["expected-status"] = status
+			provider["health-check"] = map[string]any{
+				"enable":          true,
+				"url":             group["url"],
+				"interval":        group["interval"],
+				"lazy":            false,
+				"expected-status": status,
+			}
+		} else if smart && pool.Capability == poolcontract.ChatGPTCapability && (groupType == "url-test" || groupType == "smart") {
 			provider["override"] = map[string]any{"override-expr": []string{poolcontract.ChatGPTSmartOverride}}
 		} else if providers[pool.Provider] != nil {
 			continue
