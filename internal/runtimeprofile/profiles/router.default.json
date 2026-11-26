@@ -1,5 +1,5 @@
 {
-  "description": "Router transparent proxy profile with encrypted DNS, explicit CIDR-filtered fallback, and optional qualified ECS policies.",
+  "description": "Router transparent proxy profile with encrypted DNS, explicit CIDR-filtered fallback, and Apple TV CDN ECS /0 policy.",
   "mihomo": {
     "mixed-port": 7893,
     "redir-port": 7892,
@@ -70,6 +70,12 @@
       "nameserver-policy": {
         "*": [
           "192.168.6.1#DIRECT"
+        ],
+        "geosite:apple-tvplus": [
+          "https://8.8.8.8/dns-query#DNSProxy&ecs=0.0.0.0/0&ecs-override=true"
+        ],
+        "hls-svod-aoc-ap1.itunes.g.aaplimg.com": [
+          "https://8.8.8.8/dns-query#DNSProxy&ecs=0.0.0.0/0&ecs-override=true"
         ],
         "geosite:private": [
           "192.168.6.1#DIRECT"
