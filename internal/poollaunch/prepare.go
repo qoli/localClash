@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -80,6 +81,9 @@ func PrepareProfiles(ctx context.Context, opts Options, profiles []string, doc m
 			return nil, fmt.Errorf("prepare qualified pools: %w: %s", err, message)
 		}
 		return nil, fmt.Errorf("start pool worker from %s (install matching localClash base assets): %w", binary, err)
+	}
+	if os.Getenv(capability.ChatGPTProbeTimingsEnv) == "1" {
+		_, _ = stderr.WriteTo(os.Stderr)
 	}
 	var results []capability.Result
 	if err := json.Unmarshal(output, &results); err != nil {

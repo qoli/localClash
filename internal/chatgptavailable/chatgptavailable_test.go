@@ -84,8 +84,8 @@ func TestRebuildPublishesOnlyQualifiedNodes(t *testing.T) {
 	if !strings.Contains(string(data), `"profile": "openai.chatgpt.oauth_statsig.v1"`) {
 		t.Fatalf("snapshot missing profile: %s", data)
 	}
-	if !strings.Contains(string(data), `"version": 8`) || !strings.Contains(string(data), `"qualified": [`) || !strings.Contains(string(data), `"oauth_admission_status": "region_supported"`) || !strings.Contains(string(data), `"oauth_error_code": "token_expired"`) || !strings.Contains(string(data), `"statsig_status": "reachable"`) || !strings.Contains(string(data), `"statsig_country": "US"`) {
-		t.Fatalf("snapshot missing v8 qualified nodes and OAuth plus Statsig evidence: %s", data)
+	if !strings.Contains(string(data), fmt.Sprintf(`"version": %d`, SnapshotVersion)) || !strings.Contains(string(data), `"qualified": [`) || !strings.Contains(string(data), `"oauth_admission_status": "region_supported"`) || !strings.Contains(string(data), `"oauth_error_code": "token_expired"`) || !strings.Contains(string(data), `"statsig_status": "reachable"`) || !strings.Contains(string(data), `"statsig_country": "US"`) {
+		t.Fatalf("snapshot missing current qualified nodes and OAuth plus Statsig evidence: %s", data)
 	}
 	qualified, err := LoadQualified(snapshotPath)
 	if err != nil {
@@ -345,6 +345,7 @@ func TestReadSnapshotTreatsLegacyQualificationsAsAbsent(t *testing.T) {
 		{name: "oauth-v6", version: 6, profile: "openai.chatgpt.oauth_token.v1"},
 		{name: "intersection-v6", version: 6, profile: ProfileID},
 		{name: "domain-only-v7", version: 7, profile: ProfileID},
+		{name: "domain-first-v8", version: 8, profile: ProfileID},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -409,13 +410,13 @@ func TestRebuildPersistsIPRejectionEvidence(t *testing.T) {
 
 func TestLoadQualifiedRejectsMalformedCurrentSnapshot(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "chatgpt.json")
-	data := `{
-  "version": 8,
+	data := fmt.Sprintf(`{
+  "version": %d,
   "profile": "openai.chatgpt.oauth_statsig.v1",
   "updated_at": "2026-08-15T00:00:00Z",
   "qualified": ["US 01", "US 01"],
   "nodes": {}
-}`
+}`, SnapshotVersion)
 	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
 		t.Fatal(err)
 	}

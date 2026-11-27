@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os"
 	"slices"
@@ -47,6 +48,7 @@ const (
 type MihomoOptions struct {
 	CorePath             string
 	RuntimeParent        string
+	GeoIPPath            string // Optional local database for probe timing diagnostics.
 	Definitions          []map[string]any
 	Concurrency          int
 	Attempts             int
@@ -150,8 +152,19 @@ func (p *MihomoProber) Probe(ctx context.Context, candidates []Candidate) ([]Obs
 		return nil, errors.New("ChatGPT capability probe candidates are required")
 	}
 	var observations []Observation
+	var countries map[netip.Addr]string
+	if p.timings != nil && p.options.GeoIPPath != "" {
+		started := time.Now()
+		var err error
+		countries, err = geoipCountries(p.options.GeoIPPath, candidates)
+		outcome := "ok"
+		if err != nil {
+			outcome = "unavailable"
+		}
+		p.recordTiming(ctx, started, probeTiming{Phase: "geoip_lookup", Outcome: outcome}, nil)
+	}
 	for batch := range slices.Chunk(candidates, proxyprobe.BatchSize) {
-		result, err := p.probeBatch(ctx, batch, len(observations))
+		result, err := p.probeBatch(ctx, batch, len(observations), countries)
 		if err != nil {
 			return nil, err
 		}
@@ -160,7 +173,7 @@ func (p *MihomoProber) Probe(ctx context.Context, candidates []Candidate) ([]Obs
 	return observations, nil
 }
 
-func (p *MihomoProber) probeBatch(ctx context.Context, candidates []Candidate, offset int) ([]Observation, error) {
+func (p *MihomoProber) probeBatch(ctx context.Context, candidates []Candidate, offset int, countries map[netip.Addr]string) ([]Observation, error) {
 	started := time.Now()
 	names := make([]string, len(candidates))
 	definitions := p.options.Definitions
@@ -201,25 +214,28 @@ func (p *MihomoProber) probeBatch(ctx context.Context, candidates []Candidate, o
 		go func() {
 			defer wg.Done()
 			for index := range jobs {
-				client, clientErr := session.HTTPClient(index, p.options.RequestTimeout, true)
-				if clientErr != nil {
-					observations[index] = Observation{
-						Fingerprint:          candidates[index].Fingerprint,
-						OAuthAdmissionStatus: oauthTransportFailure,
-						OAuthError:           clientErr.Error(),
-						StatsigStatus:        statsigTransportFailure,
-						StatsigError:         clientErr.Error(),
-					}
-					continue
-				}
+				started := time.Now()
+				candidate := candidates[index]
 				candidateCtx := ctx
 				if p.timings != nil {
 					candidateCtx = context.WithValue(ctx, timingCandidate, offset+index+1)
 				}
-				observations[index] = p.probeCandidate(candidateCtx, candidates[index], client)
-				// The proxy listener is unique to the candidate. Release its
-				// idle tunnels before taking another candidate from the queue.
-				client.CloseIdleConnections()
+				client, clientErr := session.HTTPClient(index, p.options.RequestTimeout, true)
+				if clientErr != nil {
+					observation := Observation{Fingerprint: candidate.Fingerprint}
+					if p.options.EnhancedFilter {
+						observation.StatsigStatus, observation.StatsigError = statsigTransportFailure, clientErr.Error()
+					} else {
+						observation.OAuthAdmissionStatus, observation.OAuthError = oauthTransportFailure, clientErr.Error()
+					}
+					observations[index] = observation
+				} else {
+					observations[index] = p.probeCandidate(candidateCtx, candidate, client)
+					client.CloseIdleConnections()
+				}
+				if p.timings != nil {
+					p.recordTiming(candidateCtx, started, candidateTiming(candidate, countries, observations[index]), nil)
+				}
 			}
 		}()
 	}
@@ -250,38 +266,42 @@ func SelectableProxyNames(proxies []map[string]any) ([]string, error) {
 
 func (p *MihomoProber) probeCandidate(ctx context.Context, candidate Candidate, client *http.Client) Observation {
 	started := time.Now()
-	domainCtx, stopDomain := context.WithCancel(ctx)
-	defer stopDomain()
-	oauthDone := make(chan oauthAttemptResult, 1)
-	statsigDone := make(chan statsigAttemptResult, 1)
-	go func(done chan<- oauthAttemptResult) { done <- p.probeOAuthAttempts(domainCtx, client) }(oauthDone)
-	go func(done chan<- statsigAttemptResult) { done <- p.probeStatsigAttempts(domainCtx, client) }(statsigDone)
-
-	var oauthResult oauthAttemptResult
-	var statsigResult statsigAttemptResult
-	stopSibling := func(service, decision string) {
-		if domainCtx.Err() == nil {
-			stopDomain()
-			p.recordTiming(ctx, started, probeTiming{Phase: "domain_gate_stop", Service: service, Outcome: decision}, nil)
-		}
-	}
-	for oauthDone != nil || statsigDone != nil {
-		select {
-		case oauthResult = <-oauthDone:
-			oauthDone = nil
-			if oauthResult.result.decision != oauthRegionSupported && statsigDone != nil {
-				stopSibling("oauth", oauthResult.result.decision)
-			}
-		case statsigResult = <-statsigDone:
-			statsigDone = nil
-		}
-	}
-	p.recordTiming(ctx, started, probeTiming{Phase: "domain_pair"}, nil)
-
+	verification := p.probeIPPaths(ctx, client)
 	observation := Observation{
+		Fingerprint:     candidate.Fingerprint,
+		Available:       verification.Available && !verification.RegionRejected && ctx.Err() == nil,
+		ServiceRejected: verification.RegionRejected,
+		IPVerification:  &verification,
+	}
+	p.recordTiming(ctx, started, probeTiming{
+		Phase: "ip_verification", Outcome: timingOutcome(observation), Addresses: len(verification.Paths),
+	}, nil)
+	if !observation.Available {
+		observation.Duration = time.Since(started)
+		return observation
+	}
+
+	domainStarted := time.Now()
+	var statsigResult statsigAttemptResult
+	var oauthResult oauthAttemptResult
+	if p.options.EnhancedFilter {
+		statsigResult = p.probeStatsigAttempts(ctx, client)
+		if statsigResult.result.decision == statsigReachable && ctx.Err() == nil {
+			oauthResult = p.probeOAuthAttempts(ctx, client)
+		}
+	} else {
+		oauthResult = p.probeOAuthAttempts(ctx, client)
+		if oauthResult.result.decision == oauthRegionSupported && ctx.Err() == nil {
+			statsigResult = p.probeStatsigAttempts(ctx, client)
+		}
+	}
+	p.recordTiming(ctx, domainStarted, probeTiming{Phase: "domain_pair"}, nil)
+
+	observation = Observation{
 		Fingerprint:          candidate.Fingerprint,
-		Available:            oauthResult.result.decision == oauthRegionSupported,
+		Available:            oauthResult.result.decision == oauthRegionSupported && ctx.Err() == nil,
 		ServiceRejected:      oauthResult.result.explicitReject,
+		IPVerification:       &verification,
 		OAuthAttempts:        oauthResult.attempts,
 		OAuthAdmissionStatus: oauthResult.result.decision,
 		OAuthHTTPStatus:      oauthResult.result.httpStatus,
@@ -302,25 +322,11 @@ func (p *MihomoProber) probeCandidate(ctx context.Context, candidate Candidate, 
 	if statsigResult.result.decision != statsigReachable && statsigResult.result.decision != statsigUnsupportedCountry {
 		observation.StatsigCountry = ""
 	}
-	if p.options.EnhancedFilter && statsigResult.result.decision != statsigReachable {
-		observation.Available = false
-	}
-	if observation.Available {
-		ipStarted := time.Now()
-		verification := p.probeIPPaths(ctx, client)
-		observation.IPVerification = &verification
-		observation.Available = verification.Available && !verification.RegionRejected
-		observation.ServiceRejected = observation.ServiceRejected || verification.RegionRejected
-		p.recordTiming(ctx, ipStarted, probeTiming{
-			Phase: "ip_verification", Outcome: timingOutcome(observation), Addresses: len(verification.Paths),
-		}, nil)
-	}
 	if observation.Available && p.probeStreams != nil {
 		observation.Streaming = p.probeStreams(ctx, client)
 		observation.Available = observation.Streaming.passed()
 	}
 	observation.Duration = time.Since(started)
-	p.recordTiming(ctx, started, probeTiming{Phase: "candidate", Outcome: timingOutcome(observation)}, nil)
 	return observation
 }
 

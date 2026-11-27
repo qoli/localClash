@@ -119,14 +119,14 @@ func TestAdmitIPPaths(t *testing.T) {
 	}{
 		{"no-IP-positive", nil, false, false},
 		{"ipv4-only", []IPPathObservation{v4OAuth, v4Statsig, {Endpoint: "oauth", Family: "ipv6", Status: oauthTransportFailure}}, true, false},
-		{"ipv6-only", []IPPathObservation{v6OAuth, v6Statsig}, true, false},
+		{"ipv6-only", []IPPathObservation{v6OAuth, v6Statsig}, false, false},
 		{"oauth-without-statsig", []IPPathObservation{v4OAuth}, true, false},
 		{"statsig-without-oauth", []IPPathObservation{v4Statsig}, false, false},
 		{"split-families", []IPPathObservation{v4OAuth, v6Statsig}, true, false},
 		{"statsig-read-limit", []IPPathObservation{v4OAuth, {Endpoint: "statsig", Family: "ipv4", Status: statsigReadLimitExceeded}}, true, false},
 		{"oauth-region-veto", []IPPathObservation{v4OAuth, v4Statsig, {Endpoint: "oauth", Family: "ipv6", Status: oauthRegionUnsupported, HTTPStatus: 403, ErrorCode: oauthRegionUnsupported}}, false, true},
 		{"enhanced-statsig-country-veto", []IPPathObservation{v4OAuth, v4Statsig, {Endpoint: "statsig", Family: "ipv6", Status: statsigUnsupportedCountry, Country: "HK"}}, false, true},
-		{"statsig-region-does-not-veto-oauth", []IPPathObservation{v6OAuth, v6Statsig, {Endpoint: "statsig", Family: "ipv4", Status: statsigRejected, HTTPStatus: 403, ErrorCode: oauthRegionUnsupported}}, true, false},
+		{"statsig-region-does-not-veto-oauth", []IPPathObservation{v4OAuth, v6Statsig, {Endpoint: "statsig", Family: "ipv4", Status: statsigRejected, HTTPStatus: 403, ErrorCode: oauthRegionUnsupported}}, true, false},
 		{"other-403-is-not-region-veto", []IPPathObservation{v4OAuth, v4Statsig, {Endpoint: "statsig", Family: "ipv6", Status: statsigRejected, HTTPStatus: 403}}, true, false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -138,7 +138,7 @@ func TestAdmitIPPaths(t *testing.T) {
 	}
 }
 
-func TestProbeCandidateIPRejectionVetoesDomainSuccess(t *testing.T) {
+func TestProbeCandidateIPFailureSkipsDomainRequests(t *testing.T) {
 	for _, test := range []struct {
 		name string
 		ip   IPVerification
@@ -150,16 +150,18 @@ func TestProbeCandidateIPRejectionVetoesDomainSuccess(t *testing.T) {
 			prober := &MihomoProber{
 				options: MihomoOptions{Attempts: 1},
 				probeOAuth: func(context.Context, *http.Client, string, string, time.Duration) oauthProbeResult {
+					t.Error("domain OAuth ran after IP qualification failed")
 					return oauthProbeResult{decision: oauthRegionSupported}
 				},
 				probeStatsig: func(context.Context, *http.Client, string, string, time.Duration) statsigProbeResult {
+					t.Error("domain Statsig ran after IP qualification failed")
 					return statsigProbeResult{decision: statsigReachable}
 				},
 				probeIPPaths: func(context.Context, *http.Client) IPVerification { return test.ip },
 			}
 			observation := prober.probeCandidate(context.Background(), Candidate{Fingerprint: "hk"}, &http.Client{})
 			if observation.Available || observation.ServiceRejected != test.ip.RegionRejected || observation.IPVerification == nil {
-				t.Fatalf("domain success overrode IP result: %+v", observation)
+				t.Fatalf("unexpected IP rejection evidence: %+v", observation)
 			}
 		})
 	}
@@ -210,42 +212,193 @@ func TestResolveIPsUsesHTTPSDNSContractAndHandlesMissingOrInvalidAnswers(t *test
 	}
 }
 
-func TestVerifyIPPathsTestsEveryResolvedAddressAndPersistsRejection(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		answers := []map[string]any{}
-		if r.URL.Query().Get("type") == "A" {
-			answers = append(answers, map[string]any{"type": 1, "data": "192.0.2.1"}, map[string]any{"type": 1, "data": "192.0.2.2"})
-		} else {
-			answers = append(answers, map[string]any{"type": 28, "data": "2001:db8::1"})
-		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"Status": 0, "Answer": answers})
-	}))
-	defer server.Close()
-	prober := &MihomoProber{
-		options: MihomoOptions{DNSOverHTTPSEndpoint: server.URL, OAuthEndpoint: oauthTokenURL, StatsigEndpoint: statsigInitializeURL, Attempts: 1, RequestTimeout: time.Second},
-		probeOAuth: func(_ context.Context, client *http.Client, _ string, _ string, _ time.Duration) oauthProbeResult {
-			if client.Transport.(*ipTargetTransport).target == "192.0.2.2:443" {
-				return oauthProbeResult{decision: oauthRegionUnsupported, httpStatus: 403, errorCode: oauthRegionUnsupported, explicitReject: true}
+func TestVerifyIPPathsRequiresIPv4BeforeIPv6(t *testing.T) {
+	for _, test := range []struct {
+		name              string
+		oauthOutcomes     map[string]string
+		statsigVetoTarget string
+		statsigFailure    string
+		emptyOAuthA       bool
+		emptyStatsigA     bool
+		wantIPv6          bool
+		wantAvailable     bool
+		wantRejected      bool
+	}{
+		{
+			name:          "second-IPv4-address-vetoes-first-address-pass",
+			oauthOutcomes: map[string]string{"192.0.2.2:443": oauthRegionUnsupported},
+			wantRejected:  true,
+		},
+		{
+			name: "IPv4-OAuth-transport-failures-stop",
+			oauthOutcomes: map[string]string{
+				"192.0.2.1:443": oauthTransportFailure,
+				"192.0.2.2:443": oauthTransportFailure,
+			},
+		},
+		{
+			name:        "missing-IPv4-OAuth-addresses-stop",
+			emptyOAuthA: true,
+		},
+		{
+			name:          "missing-IPv4-Statsig-addresses-allow-IPv6",
+			emptyStatsigA: true,
+			wantIPv6:      true,
+			wantAvailable: true,
+		},
+		{
+			name:           "IPv4-Statsig-transport-failures-allow-IPv6",
+			statsigFailure: statsigTransportFailure,
+			wantIPv6:       true,
+			wantAvailable:  true,
+		},
+		{
+			name:           "IPv4-Statsig-incomplete-response-allows-IPv6",
+			statsigFailure: statsigUnexpectedResponse,
+			wantIPv6:       true,
+			wantAvailable:  true,
+		},
+		{
+			name:           "IPv4-Statsig-read-limit-allows-IPv6",
+			statsigFailure: statsigReadLimitExceeded,
+			wantIPv6:       true,
+			wantAvailable:  true,
+		},
+		{
+			name:              "IPv4-Statsig-failure-retains-IPv6-country-veto",
+			statsigFailure:    statsigTransportFailure,
+			statsigVetoTarget: "[2001:db8::1]:443",
+			wantIPv6:          true,
+			wantRejected:      true,
+		},
+		{
+			name:              "IPv4-Statsig-country-veto-stops",
+			statsigVetoTarget: "192.0.2.2:443",
+			wantRejected:      true,
+		},
+		{
+			name:          "second-IPv4-address-pass-allows-IPv6-OAuth-veto",
+			oauthOutcomes: map[string]string{"192.0.2.1:443": oauthTransportFailure, "[2001:db8::1]:443": oauthRegionUnsupported},
+			wantIPv6:      true,
+			wantRejected:  true,
+		},
+		{
+			name:              "IPv6-Statsig-country-veto",
+			statsigVetoTarget: "[2001:db8::1]:443",
+			wantIPv6:          true,
+			wantRejected:      true,
+		},
+		{
+			name:          "IPv6-OAuth-transport-failure-retains-IPv4-pass",
+			oauthOutcomes: map[string]string{"[2001:db8::1]:443": oauthTransportFailure},
+			wantIPv6:      true,
+			wantAvailable: true,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			wantIPv4Paths := 4
+			if test.emptyOAuthA {
+				wantIPv4Paths -= 2
 			}
-			return oauthProbeResult{decision: oauthRegionSupported, httpStatus: 401}
-		},
-		probeStatsig: func(context.Context, *http.Client, string, string, time.Duration) statsigProbeResult {
-			return statsigProbeResult{decision: statsigReachable, httpStatus: 200, country: "US"}
-		},
-	}
-	verification := prober.verifyIPPaths(context.Background(), server.Client())
-	if verification.Available || !verification.RegionRejected || len(verification.Resolutions) != 4 || len(verification.Paths) != 6 {
-		t.Fatalf("verification = %+v", verification)
-	}
-	for _, resolution := range verification.Resolutions {
-		if resolution.Error != "" || resolution.Attempts != 1 {
-			t.Fatalf("resolution=%+v", resolution)
-		}
-	}
-	for _, path := range verification.Paths {
-		if path.Attempts != 1 || path.Status == "" {
-			t.Fatalf("missing path evidence: %+v", path)
-		}
+			if test.emptyStatsigA {
+				wantIPv4Paths -= 2
+			}
+			var completedIPv4 atomic.Int32
+			var aaaaQueries atomic.Int32
+			var domainCalls atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				query := r.URL.Query()
+				switch {
+				case query.Get("type") == "AAAA":
+					aaaaQueries.Add(1)
+					if got := int(completedIPv4.Load()); got != wantIPv4Paths {
+						t.Errorf("AAAA reached DNS with %d of %d IPv4 paths complete", got, wantIPv4Paths)
+					}
+					_, _ = io.WriteString(w, `{"Status":0,"Answer":[{"type":28,"data":"2001:db8::1"}]}`)
+				case test.emptyOAuthA && query.Get("name") == "auth.openai.com":
+					_, _ = io.WriteString(w, `{"Status":0}`)
+				case test.emptyStatsigA && query.Get("name") == "ab.chatgpt.com":
+					_, _ = io.WriteString(w, `{"Status":0}`)
+				default:
+					_, _ = io.WriteString(w, `{"Status":0,"Answer":[{"type":1,"data":"192.0.2.1"},{"type":1,"data":"192.0.2.2"}]}`)
+				}
+			}))
+			defer server.Close()
+			prober := &MihomoProber{
+				options: MihomoOptions{
+					DNSOverHTTPSEndpoint: server.URL, OAuthEndpoint: oauthTokenURL, StatsigEndpoint: statsigInitializeURL,
+					Attempts: 1, RequestTimeout: time.Second, EnhancedFilter: true,
+				},
+				probeOAuth: func(_ context.Context, client *http.Client, _, _ string, _ time.Duration) oauthProbeResult {
+					transport, pinned := client.Transport.(*ipTargetTransport)
+					if !pinned {
+						domainCalls.Add(1)
+						if int(completedIPv4.Load()) != wantIPv4Paths {
+							t.Error("domain OAuth ran before IPv4 probes completed")
+						}
+						return oauthProbeResult{decision: oauthRegionSupported, httpStatus: 401}
+					}
+					target := transport.target
+					if strings.HasPrefix(target, "192.0.2.") {
+						defer completedIPv4.Add(1)
+					}
+					switch test.oauthOutcomes[target] {
+					case oauthRegionUnsupported:
+						return oauthProbeResult{decision: oauthRegionUnsupported, httpStatus: 403, errorCode: oauthRegionUnsupported, explicitReject: true}
+					case oauthTransportFailure:
+						return oauthTransportError(context.DeadlineExceeded)
+					default:
+						return oauthProbeResult{decision: oauthRegionSupported, httpStatus: 401}
+					}
+				},
+				probeStatsig: func(_ context.Context, client *http.Client, _, _ string, _ time.Duration) statsigProbeResult {
+					transport, pinned := client.Transport.(*ipTargetTransport)
+					if !pinned {
+						domainCalls.Add(1)
+						if int(completedIPv4.Load()) != wantIPv4Paths {
+							t.Error("domain Statsig ran before IPv4 probes completed")
+						}
+						return statsigProbeResult{decision: statsigReachable, httpStatus: 200, country: "US"}
+					}
+					target := transport.target
+					if strings.HasPrefix(target, "192.0.2.") {
+						defer completedIPv4.Add(1)
+					}
+					if test.statsigFailure != "" && strings.HasPrefix(target, "192.0.2.") {
+						return statsigProbeResult{decision: test.statsigFailure, err: context.DeadlineExceeded}
+					}
+					country := "US"
+					if target == test.statsigVetoTarget {
+						country = "HK"
+					}
+					return statsigProbeResult{decision: statsigReachable, httpStatus: 200, country: country}
+				},
+			}
+			prober.probeIPPaths = prober.verifyIPPaths
+			observed := prober.probeCandidate(t.Context(), Candidate{Fingerprint: "candidate"}, server.Client())
+			verification := observed.IPVerification
+			wantAAAA := 0
+			if test.wantIPv6 {
+				wantAAAA = 2
+			}
+			if got := int(aaaaQueries.Load()); got != wantAAAA {
+				t.Errorf("sent %d AAAA requests, want %d", got, wantAAAA)
+			}
+			if got := int(completedIPv4.Load()); got != wantIPv4Paths {
+				t.Errorf("probed %d IPv4 targets, want %d", got, wantIPv4Paths)
+			}
+			wantDomains := 0
+			if test.wantAvailable {
+				wantDomains = 2
+			}
+			if int(domainCalls.Load()) != wantDomains || observed.Available != test.wantAvailable {
+				t.Errorf("domain requests=%d, available=%t, want %d/%t", domainCalls.Load(), observed.Available, wantDomains, test.wantAvailable)
+			}
+			if verification.Available != test.wantAvailable || verification.RegionRejected != test.wantRejected ||
+				len(verification.Resolutions) != 2+wantAAAA || len(verification.Paths) != wantIPv4Paths+wantAAAA {
+				t.Fatalf("verification=%+v", verification)
+			}
+		})
 	}
 }
 

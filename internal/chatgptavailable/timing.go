@@ -4,13 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"net/http/httptrace"
+	"net/netip"
 	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
-)
 
-const probeTimingEnv = "LOCALCLASH_CHATGPT_PROBE_TIMINGS"
+	"localclash/internal/capability"
+)
 
 type timingContextKey int
 
@@ -42,6 +44,36 @@ type probeTiming struct {
 	Messages     int    `json:"messages,omitempty"`
 	FirstMS      int64  `json:"first_ms,omitempty"`
 	SpanMS       int64  `json:"span_ms,omitempty"`
+
+	AddressKind      string `json:"address_kind,omitempty"`
+	Chained          bool   `json:"chained,omitempty"`
+	PredictedCountry string `json:"predicted_country,omitempty"`
+	GeoIPPrediction  string `json:"geoip_prediction,omitempty"`
+	OAuthOutcome     string `json:"oauth_outcome,omitempty"`
+	StatsigOutcome   string `json:"statsig_outcome,omitempty"`
+	StatsigCountry   string `json:"statsig_country,omitempty"`
+}
+
+func candidateTiming(candidate Candidate, countries map[netip.Addr]string, observed Observation) probeTiming {
+	kind, addr := candidateAddress(candidate)
+	code := countries[addr]
+	prediction := "unknown"
+	if code != "" {
+		prediction = "unsupported"
+		if supportedStatsigCountry(code) {
+			prediction = "supported"
+		}
+	}
+	event := probeTiming{
+		Phase: "candidate", Outcome: timingOutcome(observed),
+		AddressKind: kind, Chained: strings.TrimSpace(stringValue(candidate.Proxy["dialer-proxy"])) != "",
+		PredictedCountry: code, GeoIPPrediction: prediction,
+		OAuthOutcome: observed.OAuthAdmissionStatus, StatsigOutcome: observed.StatsigStatus,
+	}
+	if countryCode(observed.StatsigCountry) {
+		event.StatsigCountry = observed.StatsigCountry
+	}
+	return event
 }
 
 type probeTimings struct {
@@ -50,7 +82,7 @@ type probeTimings struct {
 }
 
 func newProbeTimings() *probeTimings {
-	if os.Getenv(probeTimingEnv) != "1" {
+	if os.Getenv(capability.ChatGPTProbeTimingsEnv) != "1" {
 		return nil
 	}
 	return &probeTimings{encoder: json.NewEncoder(os.Stderr)}

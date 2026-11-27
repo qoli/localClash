@@ -394,6 +394,7 @@ func Qualify(ctx context.Context, pool poolcontract.Pool, input poolcontract.Inp
 	case poolcontract.ChatGPTCapability:
 		prober, err := chatgptavailable.NewMihomoProber(chatgptavailable.MihomoOptions{
 			CorePath: opts.CorePath, RuntimeParent: opts.ProbeDir,
+			GeoIPPath:   filepath.Join(opts.RuntimeDir, "geoip.dat"),
 			Definitions: input.Proxies, Concurrency: opts.Concurrency,
 			EnhancedFilter: opts.EnhancedFilter,
 		})

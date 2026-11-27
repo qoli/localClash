@@ -14,9 +14,10 @@ import (
 
 const dnsOverHTTPSEndpoint = "https://cloudflare-dns.com/dns-query"
 
-// IPVerification requires OAuth admission through an IP target, in addition to
-// the domain probe. Explicit OAuth region rejection vetoes every positive;
-// enhanced filtering also vetoes a measured unsupported Statsig country.
+// IPVerification requires OAuth admission through an IPv4 target before probing
+// IPv6. An explicit OAuth region rejection on either family vetoes admission.
+// Enhanced filtering vetoes a measured unsupported Statsig country on either
+// family; inconclusive Statsig IP probes do not block admission.
 type IPVerification struct {
 	Available      bool                `json:"available"`
 	RegionRejected bool                `json:"region_rejected"`
@@ -57,11 +58,28 @@ type ipProbeSpec struct {
 }
 
 func (p *MihomoProber) verifyIPPaths(ctx context.Context, client *http.Client) IPVerification {
+	verification := p.probeIPFamily(ctx, client, "ipv4")
+	verification.Available, verification.RegionRejected = admitIPPaths(verification.Paths)
+	if !verification.Available || ctx.Err() != nil {
+		verification.Available = false
+		return verification
+	}
+
+	ipv6 := p.probeIPFamily(ctx, client, "ipv6")
+	verification.Resolutions = append(verification.Resolutions, ipv6.Resolutions...)
+	verification.Paths = append(verification.Paths, ipv6.Paths...)
+	verification.Available, verification.RegionRejected = admitIPPaths(verification.Paths)
+	verification.Available = verification.Available && ctx.Err() == nil
+	return verification
+}
+
+func (p *MihomoProber) probeIPFamily(ctx context.Context, client *http.Client, family string) IPVerification {
+	if p.timings != nil {
+		ctx = context.WithValue(ctx, timingScope, family)
+	}
 	specs := []ipProbeSpec{
-		{"oauth", p.options.OAuthEndpoint, "ipv4"},
-		{"statsig", p.options.StatsigEndpoint, "ipv4"},
-		{"oauth", p.options.OAuthEndpoint, "ipv6"},
-		{"statsig", p.options.StatsigEndpoint, "ipv6"},
+		{"oauth", p.options.OAuthEndpoint, family},
+		{"statsig", p.options.StatsigEndpoint, family},
 	}
 	type resolutionResult struct {
 		spec        int
@@ -83,22 +101,16 @@ func (p *MihomoProber) verifyIPPaths(ctx context.Context, client *http.Client) I
 	probed := make(chan addressResult)
 	resolutions := make([]IPResolution, len(specs))
 	paths := make([][]IPPathObservation, len(specs))
-	contexts := make([]context.Context, len(specs))
 	for index, spec := range specs {
-		pathCtx := ctx
-		if p.timings != nil {
-			pathCtx = context.WithValue(ctx, timingScope, spec.family)
-		}
-		contexts[index] = pathCtx
 		go func() {
-			observation, endpoint, addresses := p.resolveIPTargets(pathCtx, client, spec)
+			observation, endpoint, addresses := p.resolveIPTargets(ctx, client, spec)
 			resolved <- resolutionResult{spec: index, observation: observation, endpoint: endpoint, addresses: addresses}
 		}()
 	}
 
-	// The four endpoint/family checks share their existing slots. A resolution
-	// can start probing immediately, and an idle slot can check another address
-	// from a family with more answers.
+	// Resolutions and address probes share four slots within each IP family.
+	// Start probing resolved addresses as soon as a slot becomes available.
+	const probeSlots = 4
 	active := len(specs)
 	var pending []addressJob
 	for active > 0 {
@@ -113,12 +125,12 @@ func (p *MihomoProber) verifyIPPaths(ctx context.Context, client *http.Client) I
 			paths[result.job.spec][result.job.index] = result.observation
 		}
 		active--
-		for active < len(specs) && len(pending) > 0 {
+		for active < probeSlots && len(pending) > 0 {
 			job := pending[0]
 			pending = pending[1:]
 			active++
 			go func() {
-				observation := p.probeResolvedIP(contexts[job.spec], client, specs[job.spec], job.endpoint, job.address)
+				observation := p.probeResolvedIP(ctx, client, specs[job.spec], job.endpoint, job.address)
 				probed <- addressResult{job: job, observation: observation}
 			}()
 		}
@@ -127,7 +139,6 @@ func (p *MihomoProber) verifyIPPaths(ctx context.Context, client *http.Client) I
 	for _, observations := range paths {
 		verification.Paths = append(verification.Paths, observations...)
 	}
-	verification.Available, verification.RegionRejected = admitIPPaths(verification.Paths)
 	return verification
 }
 
@@ -185,7 +196,7 @@ func (p *MihomoProber) probeResolvedIP(ctx context.Context, client *http.Client,
 }
 
 func admitIPPaths(paths []IPPathObservation) (bool, bool) {
-	oauth := map[string]bool{}
+	oauthIPv4Supported := false
 	for _, path := range paths {
 		if path.Endpoint == "statsig" && path.Status == statsigUnsupportedCountry {
 			return false, true
@@ -196,11 +207,11 @@ func admitIPPaths(paths []IPPathObservation) (bool, bool) {
 		if path.HTTPStatus == http.StatusForbidden && path.ErrorCode == oauthRegionUnsupported {
 			return false, true
 		}
-		if path.Status == oauthRegionSupported {
-			oauth[path.Family] = true
+		if path.Family == "ipv4" && path.Status == oauthRegionSupported {
+			oauthIPv4Supported = true
 		}
 	}
-	return oauth["ipv4"] || oauth["ipv6"], false
+	return oauthIPv4Supported, false
 }
 
 func (p *MihomoProber) resolveIPs(parent context.Context, client *http.Client, host, family string) ([]netip.Addr, error) {

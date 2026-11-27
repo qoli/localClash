@@ -5,6 +5,8 @@ import (
 	"strings"
 )
 
+const ChatGPTProbeTimingsEnv = "LOCALCLASH_CHATGPT_PROBE_TIMINGS"
+
 type BulkQuality struct {
 	BelowTarget     int `json:"below_target"`
 	ResolveFailures int `json:"resolve_failures"`

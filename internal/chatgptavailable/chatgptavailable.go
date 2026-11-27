@@ -17,7 +17,7 @@ import (
 
 const (
 	ProfileID                   = "openai.chatgpt.oauth_statsig.v1"
-	SnapshotVersion             = 8
+	SnapshotVersion             = 9
 	ConsecutiveFailureThreshold = 1
 )
 
